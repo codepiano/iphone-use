@@ -78,13 +78,21 @@ struct LocalPhoneSetupView: View {
         writeOfflineWaitState("starting")
         await start()
         writeOfflineWaitState("armed")
-        var expired = false
-        let background = UIApplication.shared.beginBackgroundTask(withName: "offline-validation") { expired = true }
-        defer { if background != .invalid { UIApplication.shared.endBackgroundTask(background) } }
-        let deadline = ProcessInfo.processInfo.systemUptime + 150
+        let previousIdleTimer = UIApplication.shared.isIdleTimerDisabled
+        UIApplication.shared.isIdleTimerDisabled = true
+        var background = UIBackgroundTaskIdentifier.invalid
+        background = UIApplication.shared.beginBackgroundTask(withName: "offline-validation") {
+            if background != .invalid { UIApplication.shared.endBackgroundTask(background); background = .invalid }
+            writeOfflineWaitState("background_budget_expired")
+        }
+        defer {
+            UIApplication.shared.isIdleTimerDisabled = previousIdleTimer
+            if background != .invalid { UIApplication.shared.endBackgroundTask(background) }
+        }
+        let deadline = ProcessInfo.processInfo.systemUptime + 1800
         message = "自动验收已准备好：拔掉 USB，在系统设置中关闭 Wi-Fi即可。"
         var observedWiFi = false
-        while !expired && ProcessInfo.processInfo.systemUptime < deadline {
+        while ProcessInfo.processInfo.systemUptime < deadline {
             let path = await runtime.validationTransportSnapshot()
             writeOfflineWaitState("waiting", transport: path)
             if path["wifi_path_active"] == true { observedWiFi = true }
@@ -100,7 +108,7 @@ struct LocalPhoneSetupView: View {
             }
             try? await Task.sleep(nanoseconds: 500_000_000)
         }
-        writeOfflineWaitState(expired ? "background_expired" : "timeout")
+        writeOfflineWaitState("timeout")
         message = "等待断开超时，请恢复连接后重新准备。"
     }
     private func validate(detached: Bool = false, userAttested: Bool = true) async {
