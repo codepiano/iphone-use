@@ -1,0 +1,50 @@
+--- a/idevice/src/services/dvt/xctest/mod.rs
++++ b/idevice/src/services/dvt/xctest/mod.rs
+@@ -2009,11 +2009,43 @@
+                 .unwrap_or(16u8)
+         };
+
+-        // 3. Build XCTestConfiguration
++        // 4. Connect to testmanagerd (ctrl + main) and DVT
++        let conns = connect_testmanagerd(&*self.provider, ios_major_version).await?;
++        Self::run_connections(cfg, listener, timeout, ios_major_version, session_id, xctest_path, conns).await
++    }
++
++    /// Runs through a caller-owned authenticated RSD tunnel. No lockdown,
++    /// usbmuxd, CoreDeviceProxy, or external host is contacted by this entry.
++    /// The caller must hold the RemotePairing control connection until completion.
++    pub async fn run_from_rsd<L: XCUITestListener>(
++        cfg: TestConfig,
++        listener: &mut L,
++        timeout: Option<std::time::Duration>,
++        ios_major_version: u8,
++        mut handle: crate::tcp::handle::AdapterHandle,
++        handshake: RsdHandshake,
++    ) -> Result<(), IdeviceError> {
++        if ios_major_version < 17 {
++            return Err(IdeviceError::UnexpectedResponse("RSD requires iOS 17+".into()));
++        }
++        let dvt = rsd_connect(&mut handle, &handshake,
++            "com.apple.instruments.dtservicehub", "dtservicehub", true).await?;
++        let ctrl = rsd_connect(&mut handle, &handshake,
++            TESTMANAGERD_RSD_SERVICE, "testmanagerd-ctrl", false).await?;
++        let main = rsd_connect(&mut handle, &handshake,
++            TESTMANAGERD_RSD_SERVICE, "testmanagerd-main", false).await?;
++        let conns = TestManagerConnections { ctrl, main, dvt, rsd_handles: vec![handle] };
++        let session_id = uuid::Uuid::new_v4();
++        let xctest_path = format!("/tmp/{}.xctestconfiguration", session_id.to_string().to_uppercase());
++        Self::run_connections(cfg, listener, timeout, ios_major_version, session_id, xctest_path, conns).await
++    }
++
++    async fn run_connections<L: XCUITestListener>(
++        cfg: TestConfig, listener: &mut L, timeout: Option<std::time::Duration>,
++        ios_major_version: u8, session_id: uuid::Uuid, xctest_path: String,
++        mut conns: TestManagerConnections,
++    ) -> Result<(), IdeviceError> {
+         let xctest_config = cfg.build_xctest_configuration(session_id, ios_major_version)?;
+-
+-        // 4. Connect to testmanagerd (ctrl + main) and DVT
+-        let mut conns = connect_testmanagerd(&*self.provider, ios_major_version).await?;
+         let mut ctrl_proxy = TestManagerProxy::open(&mut conns.ctrl, ios_major_version).await?;
+         let mut main_proxy = TestManagerProxy::open(&mut conns.main, ios_major_version).await?;
+         let mut process_control = XCTestProcessControlChannel::open(&mut conns.dvt).await?;

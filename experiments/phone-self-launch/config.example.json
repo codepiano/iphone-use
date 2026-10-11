@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "endpoint": "10.7.0.1",
+  "expected_udid": "SYNTHETIC-REPLACE-WITH-YOUR-DEVICE",
+  "runner_bundle_id": "com.leeguoo.iphone-use.runner.xctrunner",
+  "runner_app_path": "/private/var/containers/Bundle/Application/REPLACE/IPhoneUseRunner-Runner.app",
+  "runner_app_container": "/private/var/mobile/Containers/Data/Application/REPLACE",
+  "runner_bundle_executable": "IPhoneUseRunner-Runner",
+  "runner_environment": {
+    "IPU_RUNNER_TOKEN": "SYNTHETIC-REPLACE-WITH-RANDOM-TOKEN-64-CHARS",
+    "IPU_DAEMON_TOKEN": "SYNTHETIC-REPLACE-WITH-DIFFERENT-RANDOM-TOKEN",
+    "IPU_DAEMON_ENABLED": "1",
+    "IPU_DAEMON_HOST": "127.0.0.1",
+    "IPU_DAEMON_PORT": "8787",
+    "USE_PORT": "8100",
+    "MJPEG_SERVER_PORT": "9100"
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "timestamp": "2026-10-11T04:57:25Z",
+  "operatingSystem": "27.2",
+  "executor": "on-device iOS application",
+  "scope": "TCP and unauthenticated RemotePairing handshake only; no pairing, XCTest launch, input, or Mac-detachment validation",
+  "results": [
+    {
+      "detail": "POSIXErrorCode(rawValue: 1): Operation not permitted",
+      "elapsedMilliseconds": 6,
+      "endpoint": {
+        "host": "127.0.0.1",
+        "port": 62078,
+        "purpose": "lockdown"
+      },
+      "outcome": "tcp_denied"
+    },
+    {
+      "detail": "POSIXErrorCode(rawValue: 54): Connection reset by peer",
+      "elapsedMilliseconds": 14,
+      "endpoint": {
+        "host": "127.0.0.1",
+        "port": 49152,
+        "purpose": "remote pairing candidate"
+      },
+      "outcome": "handshake_receive_failed"
+    },
+    {
+      "detail": "POSIXErrorCode(rawValue: 61): Connection refused",
+      "elapsedMilliseconds": 5269,
+      "endpoint": {
+        "host": "127.0.0.1",
+        "port": 8100,
+        "purpose": "existing runner"
+      },
+      "outcome": "probe_timeout"
+    },
+    {
+      "detail": "POSIXErrorCode(rawValue: 61): Connection refused",
+      "elapsedMilliseconds": 5300,
+      "endpoint": {
+        "host": "127.0.0.1",
+        "port": 8787,
+        "purpose": "embedded daemon"
+      },
+      "outcome": "probe_timeout"
+    }
+  ]
+}
