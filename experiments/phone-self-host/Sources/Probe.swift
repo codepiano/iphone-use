@@ -169,6 +169,7 @@ func localWiFiAddress() -> String? {
                         #endif
                         await tunnel.load()
                         #if DEBUG
+                        if ProcessInfo.processInfo.arguments.contains("--selfhost-stop") { await tunnel.stop() }
                         if ProcessInfo.processInfo.arguments.contains("--selfhost-restart-probe") {
                             await tunnel.restartAndCommand("probe")
                         }

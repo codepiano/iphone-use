@@ -1,0 +1,13 @@
+{
+  "executor": "native assistant via on-phone runner",
+  "observed_at": "2026-10-11T18:22:27Z",
+  "ok": true,
+  "schema": 1,
+  "screenshot_height": 512,
+  "screenshot_sha256": "5df7e88df42d9553521dc44c8178461dfe87765f142d27e647cc5cb7ec8117a9",
+  "screenshot_width": 236,
+  "tap_verified": true,
+  "typing_verified": true,
+  "ui_count_observed": true,
+  "ui_input_observed": true
+}

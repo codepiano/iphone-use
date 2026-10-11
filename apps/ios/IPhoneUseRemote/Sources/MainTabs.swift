@@ -6,6 +6,7 @@ enum AppTab: String, Hashable { case assistant, browser, remote, tasks, settings
 struct MainTabsView: View {
     @ObservedObject var app: AppModel
     @State private var selection: AppTab = .assistant
+    @State private var localRuntimeQA = false
     @ObservedObject private var voiceCall: AssistantVoiceCall
     @StateObject private var workspace = BrowserWorkspace()
 
@@ -34,12 +35,16 @@ struct MainTabsView: View {
         }
         .safeAreaInset(edge: .top) { AssistantVoiceCallBanner(call: voiceCall) }
         .sheet(isPresented: $voiceCall.showing) { AssistantVoiceCallView(call: voiceCall, agent: app.agent) }
+        .sheet(isPresented: $localRuntimeQA) {
+            if #available(iOS 17.4, *) { AppNavigationStack { LocalPhoneSetupView(app: app) } }
+        }
         .tint(Theme.accent)
         .onDisappear { workspace.agent.pause() }
         .appOnChange(of: app.assistantNavigationRequest) { _, request in if request != nil { selection = .assistant } }
         .appOnChange(of: app.focusedID) { _, id in if id != nil, app.focused?.record.isThisPhone != true { selection = .remote } }
         .onAppear {
             #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--local-runtime-qa") { localRuntimeQA = true }
             if let name = UserDefaults.standard.string(forKey: "tab"), let tab = AppTab(rawValue: name) ?? (name == "devices" ? .remote : nil) {
                 selection = tab
             }
@@ -131,6 +136,11 @@ struct AppSettingsView: View {
                 Section("任务") {
                     NavigationLink { ModelSettingsView(agent: app.agent) } label: {
                         Label("模型与服务", systemImage: "sparkles")
+                    }
+                }
+                if #available(iOS 17.4, *) {
+                    Section("本机助手") {
+                        NavigationLink("本机执行服务") { LocalPhoneSetupView(app: app) }
                     }
                 }
                 Section("设备") {

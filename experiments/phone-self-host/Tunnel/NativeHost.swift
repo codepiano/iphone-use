@@ -46,6 +46,7 @@ enum NativeHost {
             var config: [String: Any] = ["mode": mode, "device_host": "10.7.0.1", "bridge_port": bridgePort,
                 "bridge_token": bridgeToken, "runner_bundle": "com.leeguoo.iphone-use.selfhost-runner.xctrunner",
                 "runner_token": runnerToken,
+                "target_app": Bundle.main.object(forInfoDictionaryKey: "IPUTargetApp") as? String ?? "com.leeguoo.iphone-use.selfhost-probe",
                 "developer_image_root": Bundle.main.bundleURL.appendingPathComponent("DeveloperImage").path,
                 "daemon_token": try ProtectedStore.token("daemon_token"),
                 "daemon_password": try ProtectedStore.token("daemon_password")]

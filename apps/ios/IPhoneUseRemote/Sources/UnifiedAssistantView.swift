@@ -6,6 +6,7 @@ struct UnifiedAssistantView: View {
     @ObservedObject var workspace: BrowserWorkspace
     @StateObject private var assistant: UnifiedAssistant
     @State private var pairing = false
+    @State private var localSetup = false
     @State private var models = false
     @State private var library = false
     @State private var flows = false
@@ -48,7 +49,9 @@ struct UnifiedAssistantView: View {
                         if !assistant.phoneAvailable {
                             Text("浏览器已可使用。手机 App 操作需要先连接本机执行服务。")
                                 .font(.footnote).foregroundStyle(.secondary)
-                            Button("配置手机执行服务") { pairing = true }.accessibilityIdentifier("pair-local-phone")
+                            Button("配置手机执行服务") {
+                                if #available(iOS 17.4, *) { localSetup = true } else { pairing = true }
+                            }.accessibilityIdentifier("pair-local-phone")
                         }
                     }
                     ForEach(assistant.history.reversed()) { task in taskCard(task) }
@@ -133,11 +136,16 @@ struct UnifiedAssistantView: View {
                     Menu {
                         Button("模型设置") { models = true }
                         Button("账号与网站资料") { library = true }
-                        Button("配置手机执行服务") { pairing = true }
+                        Button("配置手机执行服务") {
+                                if #available(iOS 17.4, *) { localSetup = true } else { pairing = true }
+                            }
                         Button("流程与定时") { flows = true }.disabled(assistant.local?.client == nil)
                         Button("语音通话") { Task { await app.voiceCall.start(phone: UnifiedVoiceControl(assistant: assistant)) } }
                     } label: { Image(systemName: "ellipsis.circle") }.accessibilityLabel("更多")
                 }
+            }
+            .sheet(isPresented: $localSetup) {
+                if #available(iOS 17.4, *) { AppNavigationStack { LocalPhoneSetupView(app: app) } }
             }
             .sheet(isPresented: $pairing) { PairThisPhoneSheet(app: app) }
             .sheet(isPresented: $models) { AppNavigationStack { ModelSettingsView(agent: app.agent) } }

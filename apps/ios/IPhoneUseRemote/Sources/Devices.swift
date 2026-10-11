@@ -177,7 +177,8 @@ enum DeviceStore {
     static let thisPhoneAddress = "http://127.0.0.1:8787"
 
     static func isThisPhone(_ address: String) -> Bool {
-        same(address, thisPhoneAddress) || same(address, "http://localhost:8787")
+        same(address, thisPhoneAddress) || same(address, "http://localhost:8787") ||
+            same(address, "http://127.0.0.1:18787") || same(address, "http://localhost:18787")
     }
 
     /// `host:port`, which tells two instances on one Mac apart; 本机 for

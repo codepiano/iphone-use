@@ -1,5 +1,6 @@
 import Foundation
 import NetworkExtension
+import Combine
 
 @MainActor final class LocalTunnel: ObservableObject {
     @Published var state = "未启用"
@@ -8,20 +9,22 @@ import NetworkExtension
     @Published var nativePhase = "未启动"
     @Published var nativeError = ""
     private var manager: NETunnelProviderManager?
-    static let bundle = "com.leeguoo.iphone-use.selfhost-probe.tunnel"
+    let bundle: String
+    init(bundle: String = "com.leeguoo.iphone-use.selfhost-probe.tunnel") { self.bundle = bundle }
     func load() async {
         do {
             let managers = try await NETunnelProviderManager.loadAllFromPreferences()
-            manager = managers.first { ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == Self.bundle }
+            manager = managers.first { ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == bundle }
             await refresh()
         } catch { self.error = error.localizedDescription }
     }
     func start() async {
+        error = ""; nativeError = ""
         do {
             if manager == nil { await load() }
             let manager = manager ?? NETunnelProviderManager()
             let config = NETunnelProviderProtocol()
-            config.providerBundleIdentifier = Self.bundle
+            config.providerBundleIdentifier = bundle
             config.serverAddress = "10.7.0.1"
             manager.protocolConfiguration = config
             manager.localizedDescription = "Phone Use 本机开发网络"

@@ -1,0 +1,20 @@
+{
+  "background_observed": true,
+  "background_requested": true,
+  "background_service_verified": true,
+  "elapsed_seconds": 17.120381951332092,
+  "executor": "on-device app via signed local runner HTTP",
+  "finished_at": "2026-10-11T18:12:06Z",
+  "foreground_return_observed": true,
+  "ok": true,
+  "physical_detachment_user_attested": false,
+  "schema": 1,
+  "scope": "real input/source/screenshot in this test app; Mac disconnection requires a separate recorded observation",
+  "screenshot_height": 512,
+  "screenshot_sha256": "f924a112b8f60aaaa8119b61e3f2b0d3d432673a93d428a0c0762045c47d6924",
+  "screenshot_width": 236,
+  "source_verified": true,
+  "started_at": "2026-10-11T18:11:49Z",
+  "tap_observed": true,
+  "typing_observed": true
+}

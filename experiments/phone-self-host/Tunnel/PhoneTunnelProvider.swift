@@ -126,7 +126,7 @@ final class PhoneTunnelProvider: NEPacketTunnelProvider {
             }
             if let bridge, let port = bridge.port {
                 let error = NativeHost.start(mode: command!, bridgePort: port, bridgeToken: bridge.token)
-                hostError = error
+                hostError = error == "native_host_already_active" ? nil : error
             } else { hostError = "bridge_not_ready" }
         } else if command == "stop-host" {
             sessionRequested = false

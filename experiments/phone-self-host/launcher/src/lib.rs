@@ -49,6 +49,8 @@ struct Config {
     #[serde(default)]
     runner_bundle: Option<String>,
     #[serde(default)]
+    target_app: Option<String>,
+    #[serde(default)]
     runner_token: Option<String>,
     #[serde(default)]
     daemon_token: Option<String>,
@@ -536,7 +538,7 @@ async fn session(cfg: Config) -> Result<(), &'static str> {
     let mut test = TestConfig::from_installation_proxy(
         &mut installation,
         bundle,
-        Some("com.leeguoo.iphone-use.selfhost-probe"),
+        Some(cfg.target_app.as_deref().unwrap_or("com.leeguoo.iphone-use.selfhost-probe")),
     )
     .await
     .map_err(|_| "runner_not_installed")?;

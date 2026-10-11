@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import Combine
+import PhoneRuntimeCore
 
 /// The app: the saved devices (one session each), which one is on screen,
 /// sync mode, pairing, and the demo.
@@ -14,7 +15,7 @@ final class AppModel: ObservableObject {
         didSet {
             guard focusedID != oldValue else { return }
             updateAutoWake()
-            DeviceStore.saveFocused(focusedID, to: defaults)
+            if !Self.localRuntimeQAEnabled { DeviceStore.saveFocused(focusedID, to: defaults) }
         }
     }
 
@@ -83,7 +84,15 @@ final class AppModel: ObservableObject {
     @Published var assistantNavigationRequest: UUID?
     let agent: AgentController
     let voiceCall = AssistantVoiceCall()
+    let localPhone = PhoneLocalRuntime(bundle: "com.leeguoo.iphone-use.remote.tunnel")
 
+    private static var localRuntimeQAEnabled: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("--local-runtime-qa")
+        #else
+        false
+        #endif
+    }
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -101,15 +110,15 @@ final class AppModel: ObservableObject {
         for record in devices { makeSession(record) }
         // One device behaves as before the list existed: straight to its
         // screen; with several, the one last on screen comes back.
-        focusedID = DeviceStore.loadFocused(from: defaults, in: devices)
+        focusedID = Self.localRuntimeQAEnabled ? nil : DeviceStore.loadFocused(from: defaults, in: devices)
         updateAutoWake()
         startNetworkMonitor()
-        for session in sessions.values {
+        for session in sessions.values where !Self.localRuntimeQAEnabled || session.record.isThisPhone {
             Task { await session.connect(password: nil) }
         }
         // A task followed before a relaunch (on 本机 the daemon may have
         // launched this app to ask a question).
-        agent.resume()
+        if !Self.localRuntimeQAEnabled { agent.resume() }
         #if DEBUG
         // UI checks on the simulator: `-address <url> -password <pw>`, or
         // `-pair <QR text>` standing in for a scan (the simulator has no camera).

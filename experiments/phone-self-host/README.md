@@ -43,6 +43,33 @@
 - 7 项 Rust 单元测试、Swift 握手/反射/HMAC 检查及签名构建通过。公开状态仅输出固定错误类别，不包含设备错误原文、配对记录或令牌。已有记录验证失败不会自动发起新配对。
 - 尚未完成 Mac 通信断开、后台跨 App、断线恢复、重启恢复或正式助手集成。以上结果来自独立测试 App，不是正式版交付。
 
+## 正式助手接入验收
+
+2026-10-12：本分支将同一启动器接入 `apps/ios`，正式 App bundle 为
+`com.leeguoo.iphone-use.remote`，网络扩展为 `.remote.tunnel`。入口在
+「设置 → 本机执行服务」和助手的「配置手机执行服务」。首次配置导入带设备标识的
+RemotePairing 信任封装，检查密钥对应关系和数据大小，保存到共享 Keychain。
+启动、停止和就绪等待均在手机内执行。iOS 17.4 以下保留原远程连接路径。
+
+- 正式 App build 18 签名、原生 ABI 和共享 Keychain 组核对通过。
+- 新原生库指纹 `07bc875802fc6943dd82f631442d918c86ae186de2ba0903639b5cb50190b4f7`
+  已从手机网络扩展读回，测试计划已启动。[正式启动记录](evidence/iphone14-native-assistant-runtime.json)。
+- 正式 App 真实按钮计数、随机输入值和截图均通过；同时检查本机 daemon 的
+  `drivable` 状态和 App 自身状态，不能只依赖 HTTP 接收成功。
+  [正式控制记录](evidence/iphone14-native-assistant-control.json)。
+- 测试 App 进入桌面后停留 10 秒，服务继续响应并带回 App，后续完整控制验收通过。
+  [后台记录](evidence/iphone14-background-control.json)。此结果仅覆盖 10 秒停留，不代表长时间后台、重启恢复验收。
+- 物理断开验收仍待独立报告确认。自动验收与离线验收现在使用不同文件，避免返回 App
+  时的自动任务覆盖离线结果；首次用户报告通过，但读回的旧共用文件仍为普通验收。
+- 完整语音、手机重启恢复和跨应用长任务仍待验收，不宣称整项完成。
+
+构建正式 App：先构建启动库和手机浏览器会话库，再执行
+`python3 scripts/build-ios-phone-runtime.py`。构建会拒绝源码指纹不匹配的旧静态库，
+核对签名与原生 ABI。重型 Rust 仍使用 `heavy-cargo`，Xcode 限制为 2 个并发任务。
+Debug 参数 `--local-runtime-qa` 只自动连接本机记录，并在本机服务页面验证合成控件；
+不会自动连接历史 Mac/其他手机记录。正式控制与离线报告分别保存到
+`Documents/local-runtime-qa.json` 和 `Documents/local-runtime-offline-qa.json`，不保存截图内容或凭据。
+
 ## 已有代码能复用的部分
 
 - `runner/` 负责看屏、触摸、输入，并能链接 `crates/ios-embed` 在手机内运行完整控制服务。

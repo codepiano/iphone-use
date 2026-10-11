@@ -2,65 +2,7 @@ import Foundation
 import SwiftUI
 import UIKit
 import CryptoKit
-
-struct PhoneRunnerClient {
-    struct Failure: Error {
-        let code: String
-        var httpStatus: Int? = nil
-        var serverError: String? = nil
-        var authReason: String? = nil
-    }
-    func request(_ method: String, _ target: String, body: [String: Any]? = nil) async throws -> [String: Any] {
-        guard let saved = ProtectedStore.read("runner_token"), let token = String(data: saved, encoding: .utf8) else { throw Failure(code: "credential_missing") }
-        let bytes = try body.map { try JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys]) } ?? Data()
-        var request = URLRequest(url: URL(string: "http://127.0.0.1:18100" + target)!)
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.httpMethod = method
-        request.timeoutInterval = 20
-        if method != "GET" { request.httpBody = bytes; request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
-        let nonce = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
-        request.setValue(RunnerSigning.authorization(token: token, method: method, target: target,
-            timestamp: Int64(Date().timeIntervalSince1970), nonce: nonce, body: bytes), forHTTPHeaderField: "Authorization")
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw Failure(code: "runner_request_failed") }
-        if http.statusCode != 200 {
-            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-            let value = object?["value"] as? [String: Any]
-            let reasons = ["bad signature": "bad_signature", "request already seen": "replay",
-                "authorization required": "missing", "malformed authorization": "malformed",
-                "request timestamp too far from the phone's clock": "clock_skew",
-                "this runner was started without IPU_RUNNER_TOKEN; restart it with iphone-use setup": "not_configured"]
-            let reason = (value?["message"] as? String).flatMap { reasons[$0] }
-            throw Failure(code: "runner_request_failed", httpStatus: http.statusCode, serverError: value?["error"] as? String, authReason: reason)
-        }
-        guard data.count <= 8_388_608, let value = (try JSONSerialization.jsonObject(with: data)) as? [String: Any] else { throw Failure(code: "invalid_runner_response") }
-        return value
-    }
-    func ownedSource() async throws -> [String: Any] {
-        let app = try await request("GET", "/apps/active")
-        guard let active = app["value"] as? [String: Any], active["bundleId"] as? String == "com.leeguoo.iphone-use.selfhost-probe" else { throw Failure(code: "validation_app_not_foreground") }
-        let response = try await request("GET", "/source?format=json")
-        if let tree = response["value"] as? [String: Any] { return tree }
-        if let text = response["value"] as? String,
-           let tree = (try JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] { return tree }
-        throw Failure(code: "source_unavailable")
-    }
-    static func node(_ identifier: String, in tree: [String: Any]) -> [String: Any]? {
-        if tree["rawIdentifier"] as? String == identifier || tree["name"] as? String == identifier { return tree }
-        for child in tree["children"] as? [[String: Any]] ?? [] {
-            if let result = node(identifier, in: child) { return result }
-        }
-        return nil
-    }
-    func tap(_ identifier: String) async throws {
-        let tree = try await ownedSource()
-        guard let node = Self.node(identifier, in: tree), let rect = node["rect"] as? [String: Any],
-              let x = rect["x"] as? Double, let y = rect["y"] as? Double,
-              let width = rect["width"] as? Double, let height = rect["height"] as? Double,
-              width > 0, height > 0 else { throw Failure(code: "validation_target_missing") }
-        _ = try await request("POST", "/tap", body: ["x": x + width/2, "y": y + height/2])
-    }
-}
+import Network
 
 @MainActor final class ControlSmoke: ObservableObject {
     @Published var count = 0
@@ -69,21 +11,81 @@ struct PhoneRunnerClient {
     @Published var running = false
     @Published var image: UIImage?
     @Published var reportURL: URL?
-    func run() async {
+    private static func networkPath() async -> NWPath {
+        await withCheckedContinuation { continuation in
+            let monitor = NWPathMonitor()
+            monitor.pathUpdateHandler = { path in
+                monitor.pathUpdateHandler = nil
+                monitor.cancel()
+                continuation.resume(returning: path)
+            }
+            monitor.start(queue: DispatchQueue(label: "selfhost.validation.network"))
+        }
+    }
+    func run(background: Bool = false, detached: Bool = false) async {
         guard !running else { return }
         running = true; count = 0; text = ""; image = nil; reportURL = nil
         let started = Date()
+        var expired = false
+        let backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "selfhost-control-validation") { expired = true }
+        defer { if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask) } }
         let challenge = "selfhost-" + UUID().uuidString.prefix(8).lowercased()
         var report: [String: Any] = ["schema": 1, "executor": "on-device app via signed local runner HTTP",
             "started_at": ISO8601DateFormatter().string(from: started),
             "scope": "real input/source/screenshot in this test app; Mac disconnection requires a separate recorded observation"]
+        report["background_requested"] = background
+        report["physical_detachment_user_attested"] = detached
         defer { running = false }
         do {
+            phase = "等待验收页面就绪"
+            for _ in 0..<30 {
+                if UIApplication.shared.applicationState == .active { break }
+                try await Task.sleep(nanoseconds: 100_000_000)
+            }
+            try await Task.sleep(nanoseconds: 300_000_000)
             phase = "检查独立服务"
             let client = PhoneRunnerClient()
+            if detached {
+                phase = "检查手机网络隔离"
+                let path = await Self.networkPath()
+                report["wifi_path_active"] = path.usesInterfaceType(.wifi)
+                report["ethernet_path_active"] = path.usesInterfaceType(.wiredEthernet)
+                report["cellular_path_active"] = path.usesInterfaceType(.cellular)
+                guard !path.usesInterfaceType(.wifi), !path.usesInterfaceType(.wiredEthernet) else {
+                    throw PhoneRunnerClient.Failure(code: "phone_still_on_external_local_network")
+                }
+            }
             let status = try await client.request("GET", "/status")
             guard let value = status["value"] as? [String: Any], let daemon = value["daemon"] as? [String: Any], daemon["state"] as? String == "serving" else {
                 throw PhoneRunnerClient.Failure(code: "embedded_daemon_not_serving")
+            }
+            if background {
+                phase = "检查后台维持"
+                _ = try await client.ownedSource()
+                _ = try await client.request("POST", "/home", body: [:])
+                for _ in 0..<30 {
+                    if UIApplication.shared.applicationState == .background { break }
+                    try await Task.sleep(nanoseconds: 100_000_000)
+                }
+                guard UIApplication.shared.applicationState == .background else {
+                    throw PhoneRunnerClient.Failure(code: "app_did_not_background")
+                }
+                report["background_observed"] = true
+                try await Task.sleep(nanoseconds: 10_000_000_000)
+                guard !expired else { throw PhoneRunnerClient.Failure(code: "validation_background_budget_expired") }
+                _ = try await client.request("GET", "/status")
+                let active = try await client.request("GET", "/apps/active")
+                guard (active["value"] as? [String: Any])?["bundleId"] as? String == "com.apple.springboard" else {
+                    throw PhoneRunnerClient.Failure(code: "background_screen_changed")
+                }
+                report["background_service_verified"] = true
+                _ = try await client.request("POST", "/launch", body: ["bundle": "com.leeguoo.iphone-use.selfhost-probe"])
+                for _ in 0..<30 {
+                    if UIApplication.shared.applicationState == .active { break }
+                    try await Task.sleep(nanoseconds: 100_000_000)
+                }
+                guard UIApplication.shared.applicationState == .active else { throw PhoneRunnerClient.Failure(code: "app_did_not_return") }
+                report["foreground_return_observed"] = true
             }
             phase = "验证真实点击"
             try await Task.sleep(nanoseconds: 300_000_000)
@@ -161,6 +163,9 @@ struct ControlSmokeView: View {
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                     Text(model.phase)
                     Button("执行独立控制验收") { Task { await model.run() } }.disabled(model.running)
+                    Button("后台与返回验收") { Task { await model.run(background: true) } }.disabled(model.running)
+                    Button("已拔 USB 并关闭 Wi-Fi，开始验收") { Task { await model.run(background: true, detached: true) } }.disabled(model.running)
+                    Text("断开验收前请拔掉这台手机的 USB 并在系统设置中关闭 Wi-Fi，蜂窝可以保留。按钮记录你的物理断开确认；程序同时核对没有 Wi-Fi 或以太网路径。")
                     Text("可以在电脑停止托管会话后运行。本页只操作自己的测试控件，截图显示在本机，报告不包含凭据或图片内容。")
                     if let url = model.reportURL { ShareLink("导出控制验收报告", item: url) }
                 }
@@ -170,7 +175,7 @@ struct ControlSmokeView: View {
                 .task {
                     #if DEBUG
                     if ProcessInfo.processInfo.arguments.contains("--selfhost-control-smoke") {
-                        await model.run()
+                        await model.run(background: ProcessInfo.processInfo.arguments.contains("--selfhost-background-smoke"))
                     }
                     #endif
                 }

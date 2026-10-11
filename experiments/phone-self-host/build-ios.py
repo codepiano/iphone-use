@@ -15,7 +15,7 @@ if (Path(os.environ.get("IPU_DDI_RESTORE", "/Library/Developer/DeveloperDiskImag
     subprocess.run([sys.executable, str(ROOT/"prepare-image.py")], check=True)
 subprocess.run(["xcodegen", "generate", "--spec", "project.yml"], cwd=ROOT, check=True)
 args = ["xcodebuild", "-project", "PhoneSelfHostProbe.xcodeproj", "-scheme", "PhoneSelfHostProbe",
-        "-configuration", "Debug", "-destination", "generic/platform=iOS", "-derivedDataPath", "build"]
+        "-configuration", "Debug", "-jobs", "2", "-destination", "generic/platform=iOS", "-derivedDataPath", "build"]
 if mode == "unsigned":
     args.append("CODE_SIGNING_ALLOWED=NO")
 else:

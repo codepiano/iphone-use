@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "observed_at": "2026-10-11T18:38:16.212462+00:00",
+  "scope": "Native assistant build and signature validation; separate physical acceptance reports are required",
+  "app": {
+    "bundle": "com.leeguoo.iphone-use.remote",
+    "version": "1.0.1",
+    "build": "18",
+    "executable_sha256": "7a46236efe6e7d7376b62484efa41eaa1d5c6f71f37bb86d03e4c980c4423ead",
+    "signature_verified": true
+  },
+  "extension": {
+    "bundle": "com.leeguoo.iphone-use.remote.tunnel",
+    "version": "1.0.1",
+    "build": "18",
+    "executable_sha256": "f70f09109e8d4652190d271aacb871c30a4482f146340dfc3ce13cbc020dc6a0",
+    "signature_verified": true
+  },
+  "native_build_id": "07bc875802fc6943dd82f631442d918c86ae186de2ba0903639b5cb50190b4f7"
+}

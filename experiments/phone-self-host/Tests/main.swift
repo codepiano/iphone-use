@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 func frame(_ object: Any) throws -> Data {
@@ -56,3 +57,15 @@ print("PASS: local packet reflection, checksum preservation, malformed and unrel
 let signed = RunnerSigning.authorization(token: String(repeating: "a", count: 64), method: "post", target: "/tap", timestamp: 1700000000, nonce: String(repeating: "b", count: 32), body: Data(#"{"x":1,"y":2}"#.utf8))
 precondition(signed == "IPU-HMAC-SHA256 ts=1700000000, nonce=\(String(repeating: "b", count: 32)), sig=dfbcd90cc34ecb273bfe9b267a62be05879c4144c58801d56e283d321c1b8dd8")
 print("PASS: runner HMAC matches independent Python known answer")
+
+let importKey = Curve25519.Signing.PrivateKey()
+let importRecord: [String: Any] = ["private_key": importKey.rawRepresentation,
+    "public_key": importKey.publicKey.rawRepresentation, "identifier": UUID().uuidString]
+let validImport = try PropertyListSerialization.data(fromPropertyList: importRecord, format: .binary, options: 0)
+try PairRecordImport.validate(validImport)
+var mismatchedImport = importRecord
+mismatchedImport["public_key"] = Curve25519.Signing.PrivateKey().publicKey.rawRepresentation
+let badImport = try PropertyListSerialization.data(fromPropertyList: mismatchedImport, format: .binary, options: 0)
+do { try PairRecordImport.validate(badImport); fatalError("accepted mismatched imported keys") } catch {}
+do { try PairRecordImport.validate(Data(repeating: 0, count: 65_537)); fatalError("accepted oversized trust") } catch {}
+print("PASS: valid imported trust, mismatched key rejection, bounded import size")

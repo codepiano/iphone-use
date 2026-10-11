@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "observed_at": "2026-10-11T18:14:28Z",
+  "executor": "on-device app reading its own Network Extension",
+  "native": {
+    "build_id": "07bc875802fc6943dd82f631442d918c86ae186de2ba0903639b5cb50190b4f7",
+    "developer_services": true,
+    "error_code": null,
+    "ios": "27.2",
+    "linked": true,
+    "pair_record_available": true,
+    "phase": "running",
+    "protocol_error_main": null,
+    "protocol_error_sub": null,
+    "test_plan_started": true
+  },
+  "scope": "Native assistant own network extension launched the runner; physical Mac disconnection pending"
+}
