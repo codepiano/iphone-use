@@ -2,3 +2,7 @@ build/
 *.xcodeproj/
 *.ipa
 __pycache__/
+.deps/
+launcher/target/
+private/
+Resources/DeveloperImage/

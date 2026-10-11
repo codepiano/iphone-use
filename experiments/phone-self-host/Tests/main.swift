@@ -28,3 +28,29 @@ let json = try JSONSerialization.jsonObject(with: request.dropFirst(11)) as! [St
 precondition(json["originatedBy"] as? String == "host")
 precondition(!String(data: request.dropFirst(11), encoding: .utf8)!.contains("pairSetup"))
 print("PASS: fragmented frames, invalid peers, output redaction, handshake-only request")
+
+// A local IPv4 datagram. Swapping endpoints must preserve header word sum,
+// reject unrelated destinations, and never forward malformed/truncated data.
+var packet = [UInt8](repeating: 0, count: 40)
+packet[0] = 0x45; packet[2] = 0; packet[3] = 40; packet[9] = 6
+packet.replaceSubrange(12..<16, with: LocalPacketReflection.client)
+packet.replaceSubrange(16..<20, with: LocalPacketReflection.device)
+func wordSum(_ bytes: [UInt8]) -> Int {
+    stride(from: 0, to: bytes.count, by: 2).reduce(0) { $0 + Int(bytes[$1]) * 256 + Int(bytes[$1 + 1]) }
+}
+let reflected = [UInt8](LocalPacketReflection.reflect(Data(packet))!)
+precondition(Array(reflected[12..<16]) == LocalPacketReflection.device)
+precondition(Array(reflected[16..<20]) == LocalPacketReflection.client)
+precondition(wordSum(Array(packet[0..<20])) == wordSum(Array(reflected[0..<20])))
+precondition(LocalPacketReflection.reflect(Data(reflected)) == Data(packet))
+precondition(LocalPacketReflection.reflect(Data(packet.prefix(19))) == nil)
+precondition(LocalPacketReflection.reflect(Data(packet.prefix(39))) == nil)
+var unrelated = packet; unrelated[16] = 8
+precondition(LocalPacketReflection.reflect(Data(unrelated)) == nil)
+var invalidHeader = packet; invalidHeader[0] = 0x4f
+precondition(LocalPacketReflection.reflect(Data(invalidHeader)) == nil)
+print("PASS: local packet reflection, checksum preservation, malformed and unrelated packet rejection")
+
+let signed = RunnerSigning.authorization(token: String(repeating: "a", count: 64), method: "post", target: "/tap", timestamp: 1700000000, nonce: String(repeating: "b", count: 32), body: Data(#"{"x":1,"y":2}"#.utf8))
+precondition(signed == "IPU-HMAC-SHA256 ts=1700000000, nonce=\(String(repeating: "b", count: 32)), sig=dfbcd90cc34ecb273bfe9b267a62be05879c4144c58801d56e283d321c1b8dd8")
+print("PASS: runner HMAC matches independent Python known answer")

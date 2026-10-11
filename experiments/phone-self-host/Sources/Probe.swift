@@ -3,18 +3,6 @@ import Network
 import UIKit
 import Darwin
 
-struct Endpoint: Codable {
-    let host: String
-    let port: UInt16
-    let purpose: String
-}
-struct ResultRow: Codable, Identifiable {
-    var id: String { "\(endpoint.host):\(endpoint.port)" }
-    let endpoint: Endpoint
-    let outcome: String
-    let detail: String
-    let elapsedMilliseconds: Int
-}
 struct Report: Codable {
     let schema: Int
     let timestamp: String
@@ -23,87 +11,6 @@ struct Report: Codable {
     let executor: String
     let scope: String
     let results: [ResultRow]
-}
-
-/// Socket and unauthenticated protocol probes. Never pairs, launches a runner, or reads credentials.
-final class TCPAttempt {
-    private let queue = DispatchQueue(label: "ipu-selfhost-probe")
-    private var connection: NWConnection?
-    private var finished = false
-    private var received = Data()
-    private let endpoint: Endpoint
-    private let started = Date()
-    private var continuation: CheckedContinuation<ResultRow, Never>?
-    init(_ endpoint: Endpoint) { self.endpoint = endpoint }
-
-    func run() async -> ResultRow {
-        await withCheckedContinuation { continuation in
-            queue.async {
-                self.continuation = continuation
-                let connection = NWConnection(
-                    host: NWEndpoint.Host(self.endpoint.host),
-                    port: NWEndpoint.Port(rawValue: self.endpoint.port)!, using: .tcp)
-                self.connection = connection
-                connection.stateUpdateHandler = { state in
-                    switch state {
-                    case .ready:
-                        if self.endpoint.port == 49152 { self.handshake(connection) }
-                        else { self.finish("tcp_open", "TCP connected; protocol and authorization not verified") }
-                    case .failed(let error): self.finish("tcp_failed", String(describing: error))
-                    case .waiting(let error):
-                        // Waiting can recover after a permission prompt; allow the deadline.
-                        self.waitingDetail = String(describing: error)
-                        if case .posix(let code) = error, code == .EPERM || code == .EACCES {
-                            self.finish("tcp_denied", String(describing: error))
-                        }
-                    default: break
-                    }
-                }
-                connection.start(queue: self.queue)
-                self.queue.asyncAfter(deadline: .now() + 5) {
-                    self.finish("probe_timeout", self.waitingDetail ?? "No completed probe within 5 seconds")
-                }
-            }
-        }
-    }
-    private func handshake(_ connection: NWConnection) {
-        do {
-            let frame = try RemotePairingHandshake.request()
-            connection.send(content: frame, completion: .contentProcessed { error in
-                if let error { self.finish("handshake_send_failed", String(describing: error)) }
-                else { self.receiveHandshake(connection) }
-            })
-        } catch { finish("handshake_invalid_request", "Could not encode protocol probe") }
-    }
-    private func receiveHandshake(_ connection: NWConnection) {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 65546) { bytes, _, complete, error in
-            guard !self.finished else { return }
-            if let bytes { self.received.append(bytes) }
-            do {
-                if let detail = try RemotePairingHandshake.response(self.received) {
-                    self.finish("remote_pairing_handshake", detail)
-                    return
-                }
-            } catch {
-                self.finish("handshake_unrecognized", "TCP open, but response did not match RemotePairing handshake")
-                return
-            }
-            if let error { self.finish("handshake_receive_failed", String(describing: error)) }
-            else if complete { self.finish("handshake_closed", "Peer closed before a complete RemotePairing handshake") }
-            else { self.receiveHandshake(connection) }
-        }
-    }
-    private var waitingDetail: String?
-    private func finish(_ outcome: String, _ detail: String) {
-        guard !finished else { return }
-        finished = true
-        connection?.stateUpdateHandler = nil
-        connection?.cancel()
-        connection = nil
-        continuation?.resume(returning: ResultRow(endpoint: endpoint, outcome: outcome,
-            detail: detail, elapsedMilliseconds: Int(Date().timeIntervalSince(started) * 1000)))
-        continuation = nil
-    }
 }
 
 func localWiFiAddress() -> String? {
@@ -171,10 +78,30 @@ func localWiFiAddress() -> String? {
 
 @main struct ProbeApp: App {
     @StateObject private var model = ProbeModel()
+    @StateObject private var tunnel = LocalTunnel()
+    @State private var showingSmoke = false
     var body: some Scene {
         WindowGroup {
             NavigationStack {
                 List {
+                    Section("本机开发网络") {
+                        Text(tunnel.state)
+                        Text("启动器：\(tunnel.nativePhase)")
+                        if !tunnel.nativeError.isEmpty { Text(tunnel.nativeError) }
+                        Button("配对本机开发服务") { Task { await tunnel.command("pair") } }
+                        Button("验证本机隧道") { Task { await tunnel.command("probe") } }
+                        Button("启动独立被控服务") { Task { await tunnel.command("launch") } }
+                        Button("独立控制验收页面") { showingSmoke = true }
+                        Button("停止独立被控服务") { Task { await tunnel.command("stop-host") } }
+                        Button("启用本机开发网络") { Task { await tunnel.start() } }
+                        Button("停止本机开发网络") { Task { await tunnel.stop() } }
+                        Text("只设置手机内虚拟地址，不修改互联网默认路由。启用可能切换当前 VPN。")
+                        Text("本机开发网络基于 LocalDevVPN / StosVPN 的地址反射方案，作者为 SideStore Team、Stossy11、Jackson Coxson 与贡献者。").font(.caption)
+                        if !tunnel.error.isEmpty { Text(tunnel.error) }
+                        ForEach(Array(tunnel.rows.enumerated()), id: \.offset) { _, row in
+                            Text("\(row.endpoint.purpose): \(row.outcome) · \(row.detail)").font(.caption)
+                        }
+                    }
                     Section {
                         Text("检测手机访问自身服务的网络路径。端口连通不代表已获得控制权限。")
                         Button("检测本机端口") { Task { await model.run(includeAlternate: false) } }
@@ -203,9 +130,22 @@ func localWiFiAddress() -> String? {
                         if let url = model.reportURL { ShareLink("导出检测报告", item: url) }
                     }
                 }.navigationTitle("Self Host Probe")
+                    .fullScreenCover(isPresented: $showingSmoke) { ControlSmokeView() }
                     .task {
+                        await tunnel.load()
+                        #if DEBUG
+                        for command in ["pair", "probe", "launch"] {
+                            if ProcessInfo.processInfo.arguments.contains("--selfhost-" + command) {
+                                await tunnel.startAndCommand(command)
+                            }
+                        }
+                        #endif
                         if ProcessInfo.processInfo.arguments.contains("--probe-on-launch") {
                             await model.run(includeAlternate: false)
+                        }
+                        while !Task.isCancelled {
+                            await tunnel.refresh()
+                            try? await Task.sleep(nanoseconds: 2_000_000_000)
                         }
                     }
             }
