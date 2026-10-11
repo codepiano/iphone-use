@@ -4,6 +4,10 @@
 
 **当前状态：已实现并构建手机内开发网络、RemotePairing/RSD 启动器、网络扩展保活和开发镜像恢复代码。尚未通过真机独立启动及 Mac 断开验收，目标没有完成。**
 
+2026-10-11 夜间至 10-12 真机续测：iPhone 17 已交接，独立 App 0.2.0 和独立 runner 已安装。原 VPN 未连接、选中 Shadowrocket。用户在手机上完成实验 VPN 授权后，网络扩展通过 `createTCPConnectionThroughTunnel` 收到合法 RemotePairing 握手（wire protocol 26，21 ms）。新建配对返回 `pairing_approval_failed`；新增数字错误码后复测为 I/O 错误（域 1、子码 0），不能据此认定系统拒绝授权。尚未取得配对记录或验证 RSD，正常 Mac runner 没有暂停。详见 [首次真机报告](evidence/ios27-native-vpn-first.json)和[配对诊断报告](evidence/ios27-native-pairing-diagnostic.json)。
+
+新增「导入首次配对记录」入口：只接受 RemotePairing 格式，限制 64 KiB，检查 Ed25519 公私钥一致、UUID 和可选 IRK 长度，保存到设备本地共享 Keychain。普通 lockdown 配对文件不能直接导入。Debug 构建的 `--selfhost-import-pair` 只读取 App Documents 中固定的 `pair-record-import.plist`，成功保存后删除临时文件。导入路径已构建并通过合成格式测试；真实首次配对与导入尚未验收。
+
 2026-10-11 后续构建使用独立 App 和独立 runner，不改变原项目的其他会话。iPhone 17 Pro Max 当前离线；另一个空闲 iPhone 14（iOS 27.2）的外部 Wi-Fi 启动返回 `wifi_automation_refused`，要求 USB 授权。该结果属于原有 Mac 启动路径，不能代替手机内隧道的验收。没有反复重试 Wi-Fi 启动。
 
 ## 真机结果

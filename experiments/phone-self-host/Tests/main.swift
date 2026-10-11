@@ -1,4 +1,20 @@
 import Foundation
+import CryptoKit
+
+let importKey = Curve25519.Signing.PrivateKey()
+var importFixture: [String: Any] = ["private_key": importKey.rawRepresentation,
+    "public_key": importKey.publicKey.rawRepresentation, "identifier": UUID().uuidString]
+func importBytes(_ fixture: [String: Any]) throws -> Data {
+    try PropertyListSerialization.data(fromPropertyList: fixture, format: .xml, options: 0)
+}
+try PairRecordImport.validate(importBytes(importFixture))
+importFixture["public_key"] = Curve25519.Signing.PrivateKey().publicKey.rawRepresentation
+do { try PairRecordImport.validate(importBytes(importFixture)); fatalError("Mismatched pairing keys accepted") }
+catch { }
+do { try PairRecordImport.validate(importBytes(["HostID": "synthetic-lockdown-record"])); fatalError("Legacy lockdown record accepted") }
+catch { }
+do { try PairRecordImport.validate(Data(repeating: 0, count: 65_537)); fatalError("Oversized record accepted") }
+catch { }
 
 func frame(_ object: Any) throws -> Data {
     let body = try JSONSerialization.data(withJSONObject: object)

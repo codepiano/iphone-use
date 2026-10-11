@@ -76,6 +76,8 @@ struct Status {
     phase: String,
     build_id: &'static str,
     error_code: Option<String>,
+    protocol_error_code: Option<i32>,
+    protocol_error_subcode: Option<i32>,
     pair_record_available: bool,
     ios: Option<String>,
     developer_services: bool,
@@ -87,6 +89,8 @@ impl Default for Status {
             phase: "stopped".into(),
             build_id: env!("IPU_HOST_BUILD_ID"),
             error_code: None,
+            protocol_error_code: None,
+            protocol_error_subcode: None,
             pair_record_available: false,
             ios: None,
             developer_services: false,
@@ -187,7 +191,15 @@ async fn tunnel(cfg: &Config) -> Result<(AdapterHandle, RsdHandshake, u16), &'st
         set_phase("awaiting_pairing_approval");
         rpc.pair(&mut record, || async { "000000".to_string() })
             .await
-            .map_err(|_| "pairing_approval_failed")?;
+            .map_err(|error| {
+                // Numeric domains identify the failure without exposing the
+                // peer's error text, device metadata or pairing material.
+                update(|host| {
+                    host.status.protocol_error_code = Some(error.code());
+                    host.status.protocol_error_subcode = Some(error.sub_code());
+                });
+                "pairing_approval_failed"
+            })?;
     }
     let bytes = record.to_bytes();
     update(|host| {

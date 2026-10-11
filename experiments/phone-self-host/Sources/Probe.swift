@@ -2,6 +2,7 @@ import SwiftUI
 import Network
 import UIKit
 import Darwin
+import UniformTypeIdentifiers
 
 struct Report: Codable {
     let schema: Int
@@ -80,6 +81,8 @@ func localWiFiAddress() -> String? {
     @StateObject private var model = ProbeModel()
     @StateObject private var tunnel = LocalTunnel()
     @State private var showingSmoke = false
+    @State private var importingPairRecord = false
+    @State private var importStatus = ""
     var body: some Scene {
         WindowGroup {
             NavigationStack {
@@ -89,6 +92,8 @@ func localWiFiAddress() -> String? {
                         Text("启动器：\(tunnel.nativePhase)")
                         if !tunnel.nativeError.isEmpty { Text(tunnel.nativeError) }
                         Button("配对本机开发服务") { Task { await tunnel.command("pair") } }
+                        Button("导入首次配对记录") { importingPairRecord = true }
+                        if !importStatus.isEmpty { Text(importStatus) }
                         Button("验证本机隧道") { Task { await tunnel.command("probe") } }
                         Button("启动独立被控服务") { Task { await tunnel.command("launch") } }
                         Button("独立控制验收页面") { showingSmoke = true }
@@ -131,9 +136,29 @@ func localWiFiAddress() -> String? {
                     }
                 }.navigationTitle("Self Host Probe")
                     .fullScreenCover(isPresented: $showingSmoke) { ControlSmokeView() }
+                    .fileImporter(isPresented: $importingPairRecord, allowedContentTypes: [.data]) { result in
+                        do {
+                            let url = try result.get()
+                            guard url.startAccessingSecurityScopedResource() else { throw NSError(domain: "PairRecordImport", code: 2) }
+                            defer { url.stopAccessingSecurityScopedResource() }
+                            var data = try PairRecordImport.read(url)
+                            defer { data.resetBytes(in: 0..<data.count) }
+                            storePairRecord(data)
+                        } catch { importStatus = "配对记录导入失败；请检查格式和文件权限" }
+                    }
                     .task {
                         await tunnel.load()
                         #if DEBUG
+                        if ProcessInfo.processInfo.arguments.contains("--selfhost-import-pair") {
+                            let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("pair-record-import.plist")
+                            do {
+                                var data = try PairRecordImport.read(url)
+                                defer { data.resetBytes(in: 0..<data.count) }
+                                try ProtectedStore.write("pair_record", data)
+                                try FileManager.default.removeItem(at: url)
+                                importStatus = "首次配对记录已存入本机 Keychain"
+                            } catch { importStatus = "首次配对记录导入失败" }
+                        }
                         for command in ["pair", "probe", "launch"] {
                             if ProcessInfo.processInfo.arguments.contains("--selfhost-" + command) {
                                 await tunnel.startAndCommand(command)
@@ -150,5 +175,11 @@ func localWiFiAddress() -> String? {
                     }
             }
         }
+    }
+    private func storePairRecord(_ data: Data) {
+        do {
+            try ProtectedStore.write("pair_record", data)
+            importStatus = "首次配对记录已存入本机 Keychain"
+        } catch { importStatus = "Keychain 保存失败" }
     }
 }
