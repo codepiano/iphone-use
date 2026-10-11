@@ -85,10 +85,19 @@ final class AppModel: ObservableObject {
     let agent: AgentController
     let voiceCall = AssistantVoiceCall()
     let localPhone = PhoneLocalRuntime(bundle: "com.leeguoo.iphone-use.remote.tunnel")
+    var thisPhoneSession: DeviceSession? {
+        let local = devices.compactMap { sessions[$0.id] }.filter { $0.record.isThisPhone }
+        return local.sorted { a, b in
+            @MainActor func score(_ s: DeviceSession) -> Int {
+                (s.phase == .connected ? 10 : 0) + (s.status?.drivable == true ? 20 : 0) + (s.record.address.contains(":18787") ? 1 : 0)
+            }
+            return score(a) > score(b)
+        }.first
+    }
 
     private static var localRuntimeQAEnabled: Bool {
         #if DEBUG
-        ProcessInfo.processInfo.arguments.contains("--local-runtime-qa")
+        ProcessInfo.processInfo.arguments.contains("--local-runtime-qa") || ProcessInfo.processInfo.arguments.contains("--voice-runtime-qa")
         #else
         false
         #endif

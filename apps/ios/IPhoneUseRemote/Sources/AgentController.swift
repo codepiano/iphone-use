@@ -110,7 +110,7 @@ final class AgentController: ObservableObject {
         guard let app else { return }
         if let focused = app.focusedID {
             targetID = focused
-        } else if let own = app.devices.first(where: \.isThisPhone) {
+        } else if let own = app.thisPhoneSession {
             targetID = own.id
         } else if targetID == nil || app.session(targetID!) == nil {
             targetID = app.devices.first?.id
