@@ -5,6 +5,9 @@ edition = "2024"
 publish = false
 license = "PolyForm-Shield-1.0.0"
 
+[features]
+usb-provision = ["idevice/usbmuxd"]
+
 [workspace]
 
 [lib]

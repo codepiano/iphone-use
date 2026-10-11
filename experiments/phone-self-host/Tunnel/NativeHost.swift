@@ -2,6 +2,10 @@ import Foundation
 import Darwin
 
 enum NativeHost {
+    private static let credentialLock = NSLock()
+    private static var pendingRunnerToken: String?
+    private static var credentialCheckInFlight = false
+    private static var credentialState = "unchanged"
     private typealias Start = @convention(c) (UnsafePointer<CChar>?) -> Int32
     private typealias Stop = @convention(c) () -> Void
     private typealias Status = @convention(c) () -> UnsafeMutablePointer<CChar>?
@@ -21,6 +25,10 @@ enum NativeHost {
         let data = Data(String(cString: value).utf8)
         var result = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? ["phase": "invalid_status"]
         result["linked"] = true
+        verifyRunnerCredential(phase: result["phase"] as? String ?? "unknown")
+        credentialLock.lock()
+        result["runner_credential_state"] = credentialState
+        credentialLock.unlock()
         // Persist only via the private ABI, never through report/status serialization.
         if result["pair_record_available"] as? Bool == true,
            let copy = symbol("ipu_host_copy_pair_record", as: CopyRecord.self) {
@@ -52,11 +60,74 @@ enum NativeHost {
             guard let encoded = String(data: data, encoding: .utf8) else { return "native_config_invalid" }
             let code = encoded.withCString { start($0) }
             if code == 0 && mode == "launch" {
-                do { try ProtectedStore.write("runner_token", Data(runnerToken.utf8)) }
-                catch { stop(); return "runner_token_save_failed" }
+                credentialLock.lock()
+                pendingRunnerToken = runnerToken
+                credentialCheckInFlight = false
+                credentialState = "pending"
+                credentialLock.unlock()
             }
             return code == 0 ? nil : (code == 1 ? "native_host_already_active" : "native_config_invalid")
         } catch { return "keychain_unavailable" }
     }
-    static func stop() { symbol("ipu_host_stop", as: Stop.self)?() }
+    private static func verifyRunnerCredential(phase: String) {
+        credentialLock.lock()
+        if ["failed", "stopped", "runner_exited"].contains(phase) {
+            pendingRunnerToken = nil
+            credentialCheckInFlight = false
+            credentialState = phase
+        }
+        guard phase == "running", let token = pendingRunnerToken, !credentialCheckInFlight else {
+            credentialLock.unlock(); return
+        }
+        credentialCheckInFlight = true
+        credentialLock.unlock()
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:18100/status")!)
+        request.timeoutInterval = 5
+        request.setValue(RunnerSigning.authorization(token: token, method: "GET", target: "/status",
+            timestamp: Int64(Date().timeIntervalSince1970), nonce: UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased(), body: Data()), forHTTPHeaderField: "Authorization")
+        URLSession.shared.dataTask(with: request) { data, response, _ in
+            credentialLock.lock()
+            defer { credentialLock.unlock() }
+            guard pendingRunnerToken == token else { return }
+            credentialCheckInFlight = false
+            let object = data.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
+            guard (response as? HTTPURLResponse)?.statusCode == 200,
+                  (object?["value"] as? [String: Any])?["ready"] as? Bool == true else {
+                credentialState = "candidate_not_serving"; return
+            }
+            do {
+                try ProtectedStore.write("runner_token", Data(token.utf8))
+                pendingRunnerToken = nil
+                credentialState = "verified"
+            } catch { credentialState = "save_failed" }
+        }.resume()
+    }
+    static func stop() {
+        credentialLock.lock()
+        pendingRunnerToken = nil
+        credentialCheckInFlight = false
+        credentialState = "stopped"
+        credentialLock.unlock()
+        symbol("ipu_host_stop", as: Stop.self)?()
+    }
+    static func stopGracefully(completion: @escaping () -> Void) {
+        credentialLock.lock()
+        pendingRunnerToken = nil
+        credentialCheckInFlight = false
+        credentialState = "stopping"
+        credentialLock.unlock()
+        guard let data = ProtectedStore.read("runner_token"), let token = String(data: data, encoding: .utf8) else {
+            stop(); completion(); return
+        }
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:18100/shutdown")!)
+        request.httpMethod = "POST"
+        request.httpBody = Data()
+        request.timeoutInterval = 3
+        request.setValue(RunnerSigning.authorization(token: token, method: "POST", target: "/shutdown",
+            timestamp: Int64(Date().timeIntervalSince1970), nonce: UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased(), body: Data()), forHTTPHeaderField: "Authorization")
+        URLSession.shared.dataTask(with: request) { _, _, _ in
+            stop()
+            completion()
+        }.resume()
+    }
 }

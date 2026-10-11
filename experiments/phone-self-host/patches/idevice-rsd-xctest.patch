@@ -1,6 +1,6 @@
 --- a/idevice/src/services/dvt/xctest/mod.rs
 +++ b/idevice/src/services/dvt/xctest/mod.rs
-@@ -2069,6 +2069,92 @@
+@@ -2069,6 +2069,95 @@
          Ok(())
      }
  
@@ -52,7 +52,7 @@
 +        .await?;
 +
 +        // Build launch environment from the config
-+        let (launch_args, launch_env, launch_options) = build_launch_env(
++        let (launch_args, launch_env, mut launch_options) = build_launch_env(
 +            ios_major_version,
 +            &session_id,
 +            &cfg.runner_app_path,
@@ -63,6 +63,9 @@
 +            cfg.runner_args.as_deref(),
 +        );
 +
++        // This caller owns the runner bundle. Reusing its old process would
++        // retain the old request token instead of the new launch environment.
++        launch_options.insert("KillExisting".into(), plist::Value::Boolean(true));
 +        let _pid = launch_and_authorize_test_runner(
 +            &mut ctrl_proxy,
 +            &mut process_control,

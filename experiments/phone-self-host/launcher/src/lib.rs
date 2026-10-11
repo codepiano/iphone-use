@@ -505,7 +505,23 @@ mod tests {
     fn public_status_never_serializes_credentials() {
         let status = Status::default();
         let json = serde_json::to_value(status).unwrap();
-        assert_eq!(json.as_object().unwrap().len(), 7);
+        let public_fields = [
+            "phase",
+            "build_id",
+            "error_code",
+            "protocol_error_code",
+            "protocol_error_subcode",
+            "pair_record_available",
+            "ios",
+            "developer_services",
+            "test_plan_started",
+        ];
+        assert!(
+            json.as_object()
+                .unwrap()
+                .keys()
+                .all(|key| public_fields.contains(&key.as_str()))
+        );
         for key in [
             "pair_record_base64",
             "runner_token",

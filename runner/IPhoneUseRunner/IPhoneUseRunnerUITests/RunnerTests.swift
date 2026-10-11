@@ -86,6 +86,24 @@ final class RunnerTests: XCTestCase {
           IPURBridge.eventSynthesisAvailable() ? "available" : "MISSING")
 
     let environment = ProcessInfo.processInfo.environment
+    #if IPU_SELFHOST_DIAGNOSTIC
+    // Explicitly enabled only by the isolated self-host experiment build.
+    // Never log credentials; this protected app-container file is deleted
+    // after comparing the generated test credentials on the trusted Mac.
+    let privateDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    try FileManager.default.createDirectory(at: privateDirectory, withIntermediateDirectories: true)
+    let privateControl = environment.filter { ["IPU_RUNNER_TOKEN", "IPU_DAEMON_TOKEN"].contains($0.key) }
+    let privateData = try JSONSerialization.data(withJSONObject: privateControl)
+    let privateFile = privateDirectory.appendingPathComponent("selfhost-runner-control-private.json")
+    try privateData.write(to: privateFile, options: [.atomic, .completeFileProtection])
+    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: privateFile.path)
+    #else
+    // Remove an earlier experiment's private export when returning to an
+    // ordinary runner build; never retain generated control credentials.
+    let oldPrivateFile = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("selfhost-runner-control-private.json")
+    try? FileManager.default.removeItem(at: oldPrivateFile)
+    #endif
     let port = environment["IPU_RUNNER_PORT"].flatMap { UInt16($0) } ?? Self.defaultPort
     // Never logged: only whether there is one.
     let auth = RunnerAuth(token: environment["IPU_RUNNER_TOKEN"])

@@ -46,6 +46,10 @@ else:
                 continue
             if member.isdir():
                 continue
+            # The pinned repo's package README links to the root README. It is
+            # documentation only; never materialize archive symlinks.
+            if member.issym() and parts == ("idevice", "README.md") and member.linkname == "../README.md":
+                continue
             if not member.isfile() or any(p in ("..", "") for p in parts):
                 raise SystemExit("Invalid archive entry")
             destination = OUTPUT.joinpath(*parts)

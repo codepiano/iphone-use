@@ -149,6 +149,25 @@ func localWiFiAddress() -> String? {
                     .task {
                         await tunnel.load()
                         #if DEBUG
+                        if ProcessInfo.processInfo.arguments.contains("--selfhost-stop") {
+                            await tunnel.command("stop-host")
+                            await tunnel.stop()
+                        }
+                        let controlExport = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("control-token-private.json")
+                        if ProcessInfo.processInfo.arguments.contains("--selfhost-export-control") {
+                            var credentials: [String: String] = [:]
+                            for name in ["runner_token", "daemon_token"] {
+                                if let data = ProtectedStore.read(name), let value = String(data: data, encoding: .utf8) { credentials[name] = value }
+                            }
+                            if credentials.count == 2 {
+                                if let data = try? JSONSerialization.data(withJSONObject: credentials) {
+                                    try? data.write(to: controlExport, options: [.atomic, .completeFileProtection])
+                                }
+                            }
+                        }
+                        if ProcessInfo.processInfo.arguments.contains("--selfhost-delete-control-export") {
+                            try? FileManager.default.removeItem(at: controlExport)
+                        }
                         if ProcessInfo.processInfo.arguments.contains("--selfhost-import-pair") {
                             let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("pair-record-import.plist")
                             do {

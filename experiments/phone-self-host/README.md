@@ -2,17 +2,21 @@
 
 2026-10-11，基于 `8976975`。目标：iPhone 不连接 Mac，仍能被另一台设备看屏和操作。
 
-**当前状态：已实现并构建手机内开发网络、RemotePairing/RSD 启动器、网络扩展保活和开发镜像恢复代码。尚未通过真机独立启动及 Mac 断开验收，目标没有完成。**
+**验收结论：iPhone 17 Pro Max（iOS 27.0）在首次 USB 安装、配对和 VPN 授权后，可在 Wi-Fi 下脱离 Mac 托管，独立点击、输入、读屏和截图。后台维持和完整重启后的恢复均已通过；重启后首次密码解锁仍由人完成。**
 
 2026-10-11 夜间至 10-12 真机续测：iPhone 17 已交接，独立 App 0.2.0 和独立 runner 已安装。原 VPN 未连接、选中 Shadowrocket。用户在手机上完成实验 VPN 授权后，网络扩展通过 `createTCPConnectionThroughTunnel` 收到合法 RemotePairing 握手（wire protocol 26，21 ms）。新建配对返回 `pairing_approval_failed`；新增数字错误码后复测为 I/O 错误（域 1、子码 0），不能据此认定系统拒绝授权。尚未取得配对记录或验证 RSD，正常 Mac runner 没有暂停。详见 [首次真机报告](evidence/ios27-native-vpn-first.json)和[配对诊断报告](evidence/ios27-native-pairing-diagnostic.json)。
 
-新增「导入首次配对记录」入口：只接受 RemotePairing 格式，限制 64 KiB，检查 Ed25519 公私钥一致、UUID 和可选 IRK 长度，保存到设备本地共享 Keychain。普通 lockdown 配对文件不能直接导入。Debug 构建的 `--selfhost-import-pair` 只读取 App Documents 中固定的 `pair-record-import.plist`，成功保存后删除临时文件。导入路径已构建并通过合成格式测试；真实首次配对与导入尚未验收。
+新增「导入首次配对记录」入口：只接受 RemotePairing 格式，限制 64 KiB，检查 Ed25519 公私钥一致、UUID 和可选 IRK 长度，保存到设备本地共享 Keychain。普通 lockdown 配对文件不能直接导入。Debug 构建的 `--selfhost-import-pair` 只读取 App Documents 中固定的 `pair-record-import.plist`，成功保存后删除临时文件。导入路径已构建并通过合成格式测试；真实首次配对与导入结果见下文。
 
-2026-10-11 后续构建使用独立 App 和独立 runner，不改变原项目的其他会话。iPhone 17 Pro Max 当前离线；另一个空闲 iPhone 14（iOS 27.2）的外部 Wi-Fi 启动返回 `wifi_automation_refused`，要求 USB 授权。该结果属于原有 Mac 启动路径，不能代替手机内隧道的验收。没有反复重试 Wi-Fi 启动。
+后续 USB/lockdown 首次配对成功，记录已导入 Keychain。手机内 RSD 验证读取到 iOS 27.0，开发服务可用；暂停正常 Mac supervisor 后，手机内扩展启动了独立 XCTest 会话，`test_plan_started=true`。见 [RSD 报告](evidence/ios27-native-rsd.json)和[启动报告](evidence/ios27-native-launch.json)。首次控制曾被旧 runner 的凭据拒绝；加入 `KillExisting` 和新凭据的实际服务验证后，已通过真实输入、读屏和截图验收，见下方独立控制记录。
 
-## 真机结果
+首次 USB 配对工具仅用于安装配置阶段：在仓库根目录运行 `~/.local/bin/heavy-cargo build --release --manifest-path experiments/phone-self-host/launcher/Cargo.toml --bin ipu-phone-host --features usb-provision`，再执行 `experiments/phone-self-host/launcher/target/release/ipu-phone-host --usb-pair <UDID> --pair-out <私有目录/记录.plist>`。它只选择指定的 USB 设备，使用已信任的 lockdown 服务，不输出密钥，记录以 0600 创建且不覆盖旧文件。Debug 的 `--selfhost-export-control` 可为本机验收导出两个随机测试令牌到受保护文件；验收后用 `--selfhost-delete-control-export` 删除，文件及令牌禁止进入报告或 git。`--selfhost-stop` 停止独立服务和实验 VPN，用于恢复正常环境。
 
-设备为 iPhone 17 Pro Max，iOS 27.0。探测程序是普通开发签名 App，独立 bundle ID `com.leeguoo.iphone-use.selfhost-probe`，不使用 XCTest 权限。实验期间原有 runner、Mac USB 测试会话保持运行；没有做 Mac 断网或 runner 重启。
+2026-10-11 后续构建使用独立 App 和独立 runner，不改变原项目的其他会话。最初准备时 iPhone 17 Pro Max 离线；当时空闲的 iPhone 14（iOS 27.2）外部 Wi-Fi 启动返回 `wifi_automation_refused`，要求 USB 授权。该结果属于原有 Mac 启动路径，不能代替手机内隧道的验收。没有反复重试 Wi-Fi 启动。
+
+## 最初网络探测（历史对照）
+
+设备为 iPhone 17 Pro Max，iOS 27.0。探测程序是普通开发签名 App，独立 bundle ID `com.leeguoo.iphone-use.selfhost-probe`，不使用 XCTest 权限。以下最初网络探测期间原有 runner、Mac USB 测试会话保持运行。后续停止 Mac 托管服务后的独立验收另有记录。
 
 | 连接方式 | 端点 | 结果 | 能说明什么 |
 |---|---|---|---|
@@ -31,7 +35,25 @@
 - [USB 对照](evidence/ios27-usb-handshake.json)
 - [最初仅测 TCP 的报告](evidence/ios27-no-vpn.json)：62078 当时被归为超时，细节已显示 EPERM；后续版本将其明确标为 `tcp_denied`。
 
-这些结果只覆盖本机网络入口和未认证协议握手，没有做配对、控制权限申请或测试会话创建。外部 LocalDevVPN 尚未安装、未测试。后续改为 App 自带本地网络扩展，使用同类地址反射方案；它也尚未通过真机验证。观察到的重置不能用于断言所有 iOS 版本都禁止同机开发连接，也不能单独确定系统拒绝的内部原因。
+这些最初探测只覆盖本机网络入口和未认证协议握手。外部 LocalDevVPN 没有安装或测试；后续改为 App 自带本地网络扩展，已通过独立控制验收。观察到的重置不能用于断言所有 iOS 版本都禁止同机开发连接，也不能单独确定系统拒绝的内部原因。
+
+## 独立控制验收记录
+
+- [USB 连接时控制验收](evidence/ios27-independent-control-usb-attached.json)：确认独立会话实际执行点击、输入、读屏和截图。
+- [拔掉 USB 后控制验收](evidence/ios27-independent-control-usb-detached.json)和[Mac 托管停止观察](evidence/ios27-mac-detachment-observation.json)：usbmux 仅剩 Network 连接，正常 Mac 服务停止，控制仍通过。Mac 在此仅作为 Wi-Fi HTTP 客户端。
+- [后台观察](evidence/ios27-background-observation.json)和[后台后控制验收](evidence/ios27-independent-control-background.json)：Calculator 前台、控制 App 后台 160.9 秒，独立会话持续可用，回到测试 App 后控制通过。
+- 正式 runner 使用稳定嵌入库 `69829e8`（v0.17.18），`/agent/status` 返回 `drivable=true`。[标准批次 ACK](evidence/ios27-standard-agent-batch.json)报告完成 5 步、应用 3 个动作，但最后的验收按钮未实际触发，页面仍显示未验证。刷新 AX 后单独点击按钮，生成新的[Wi-Fi 重连后控制报告](evidence/ios27-wifi-reconnect-control.json)，真实点击、输入、读屏和截图通过。批次 ACK 不能代替动作后置条件。
+
+- [正式 v0.17.18 拔线验收](evidence/ios27-formal-control-usb-detached.json)：真实点击、输入、读屏、截图通过，2.16 秒。
+- [冷启动观察](evidence/ios27-cold-restart-observation.json)、[原生会话状态](evidence/ios27-cold-restart-runtime.json)和[冷启动后控制报告](evidence/ios27-cold-restart-control.json)：USB 拔掉、正常 Mac daemon 停止，完整重启后由用户首次解锁；手机自行恢复至 ready，通过约 2.12 秒的实际控制验收。重启到验收通过之间未通过 Mac 启动 App、安装、挂载开发镜像或启动 XCTest；通过后才复制报告。
+- [停止与重启观察](evidence/ios27-stop-restart-observation.json)：停止后实验 runner 和网络扩展进程退出，随后重新 ready，没有手动杀进程。此项由 Mac 仅启动控制 App 的 Debug 参数触发，手机 App 与扩展实际执行停止和启动；独立冷启动结果另列。
+- [环境还原记录](evidence/ios27-normal-environment-restored.json)：正常 Mac v0.17.19 ready、owner=null，手机嵌入 daemon serving；Shadowrocket 重新选中且两个 VPN 开关均断开，实验凭据导出已删除。
+
+源码检查：Swift 协议与安全配对导入测试通过；原生 Rust 使用 `heavy-cargo test --release --manifest-path experiments/phone-self-host/launcher/Cargo.toml --features usb-provision`，4 项测试通过；App 和正式 runner 的深度签名检查通过。报告 JSON 未包含控制令牌或配对私钥。
+
+第一轮[重启失败记录](evidence/ios27-cold-restart-failed.json)为 `bridge_ack_failed`；用户随后确认手机尚未连接 Wi-Fi。传输错误现已加入退避重试，但此轮不能用来断言单一原因。Wi-Fi 连接和手机 VPN 重连后恢复，第二轮 Wi-Fi 下冷启动通过。
+
+本轮没有覆盖蜂窝切换、公网跨网访问、签名过期或长期待机。首次安装、签名和 USB 配对需要电脑；运行期间由手机自身维持会话。下方待办保留扩展测试范围，不代表上述已通过项目仍未完成。
 
 ## 已有代码能复用的部分
 
@@ -49,7 +71,7 @@
 - `launcher/`：静态 Rust 库，配对、验签、TLS-PSK、RSD、读取真实设备信息、查找独立 runner 并维持 XCTest 会话；状态不包含配对记录或控制令牌。停止时失效旧会话，旧异步任务不能覆盖新会话状态。App 指令、后台恢复和隧道停止使用同一串行队列；用户停止后，即使 Keychain 写入失败，本次扩展生命周期也不会自动重启会话。
 - `patches/idevice-rsd-xctest.patch`：固定版本的两项补丁，增加现成 RSD 隧道的 XCTest 入口和按文件分块上传开发镜像的入口。只修改生成的隔离依赖，不修改全局 cargo 缓存或上游仓库。
 - `Shared/ProtectedStore.swift`：配对记录和控制凭据使用共享 Keychain、`AfterFirstUnlockThisDeviceOnly`。每次独立 runner 启动重新生成请求签名令牌；启动被拒绝不会改动当前会话的令牌。
-- `Tunnel/PhoneTunnelProvider.swift`：原生会话运行在网络扩展内，普通控制 App 切到后台不负责保活；传输中断有限退避，配对或授权错误等待人处理。支持首次解锁后重试 Keychain 读取；这些生命周期行为尚待实测。
+- `Tunnel/PhoneTunnelProvider.swift`：原生会话运行在网络扩展内，普通控制 App 切到后台不负责保活；传输中断使用有上限的退避，配对或授权错误等待人处理。后台维持和 Wi-Fi 下首次解锁后的冷启动恢复已实测。
 - `launcher/src/image.rs`：缺少开发服务时，按硬件选择镜像、申请 Apple 个性化签名、64 KiB 分块上传、挂载后刷新 RSD。开发镜像来自用户本机的 Xcode 安装，进入私有构建资源，不进 git 或公开发行资产。
 - `Sources/ControlSmoke.swift`：在手机上实际发送签名 HTTP 请求，观察自己的按钮计数、输入内容、无障碍树和真实截图。验证结果保存为 JSON，图片不写入报告。该程序不是模拟 runner，必须有真实独立 runner 才能通过。
 
@@ -100,7 +122,7 @@ python3 experiments/phone-self-host/mac-control.py --udid <UDID>
 
 支持 `--probe-on-launch` 自动进行无认证网络探测。Debug 构建可用 `--selfhost-pair` / `--selfhost-probe` / `--selfhost-launch` 执行指定操作；没有公开 URL scheme 自动启动控制。
 
-只有用户明确点选配对或启动按钮时才申请配对/自动化会话。无认证探测仍不读凭据、不启动 runner。测试覆盖拆包、无效帧、错误方向、报告脱敏、局部包反射、错误包拒绝、独立 Python HMAC 答案、配置凭据检查和镜像路径隔离。最初网络探测版本已真机运行，新增独立启动版本目前仅完成构建，尚未部署验收。
+只有用户明确点选配对或启动按钮时才申请配对/自动化会话。无认证探测仍不读凭据、不启动 runner。测试覆盖拆包、无效帧、错误方向、报告脱敏、局部包反射、错误包拒绝、独立 Python HMAC 答案、配置凭据检查和镜像路径隔离。最新真机进展见本文开头；通过项目和未验收项目须分别报告。
 
 运行状态与控制验收报告分别为 App 的 `Documents/self-host-runtime.json` 和 `Documents/self-host-control-smoke.json`。`phase=running` 不能替代输入和截图验收，也不能替代 Mac 断开观察。
 

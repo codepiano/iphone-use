@@ -13,6 +13,10 @@ final class PhoneTunnelProvider: NEPacketTunnelProvider {
     private var failures = 0
     private var retryAfter = Date.distantPast
     private var sessionRequested: Bool?
+    private var stoppingHost = false
+    private var packetCount = 0
+    private var reflectedPacketCount = 0
+    private var hostStopCompletions: [() -> Void] = []
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "10.7.0.1")
@@ -38,7 +42,9 @@ final class PhoneTunnelProvider: NEPacketTunnelProvider {
             var reflected: [Data] = []
             var families: [NSNumber] = []
             for (packet, family) in zip(packets, protocols) {
+                self.stateQueue.sync { self.packetCount += 1 }
                 guard family.int32Value == AF_INET, let changed = LocalPacketReflection.reflect(packet) else { continue }
+                self.stateQueue.sync { self.reflectedPacketCount += 1 }
                 reflected.append(changed)
                 families.append(family)
             }
@@ -50,9 +56,10 @@ final class PhoneTunnelProvider: NEPacketTunnelProvider {
         stateQueue.async {
             self.running = false
             self.monitor?.cancel(); self.monitor = nil
-            NativeHost.stop()
-            self.bridge?.stop(); self.bridge = nil
-            completionHandler()
+            self.stopHost {
+                self.bridge?.stop(); self.bridge = nil
+                completionHandler()
+            }
         }
     }
     private func runProbes() {
@@ -62,6 +69,22 @@ final class PhoneTunnelProvider: NEPacketTunnelProvider {
                 collected.append(await TCPAttempt(Endpoint(host: host, port: 49152, purpose: "extension direct RemotePairing")).run())
             }
             collected.append(await TunnelTCPAttempt(provider: self).run())
+            collected.append(await TunnelTCPAttempt(provider: self, port: 8080).run())
+            var interfaces: UnsafeMutablePointer<ifaddrs>?
+            if getifaddrs(&interfaces) == 0, let first = interfaces {
+                defer { freeifaddrs(interfaces) }
+                var cursor: UnsafeMutablePointer<ifaddrs>? = first
+                while let current = cursor {
+                    defer { cursor = current.pointee.ifa_next }
+                    guard String(cString: current.pointee.ifa_name) == "en0",
+                          let address = current.pointee.ifa_addr,
+                          address.pointee.sa_family == UInt8(AF_INET) else { continue }
+                    var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                    if getnameinfo(address, socklen_t(address.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 {
+                        collected.append(await TCPAttempt(Endpoint(host: String(cString: host), port: 49152, purpose: "extension direct own Wi-Fi RemotePairing")).run())
+                    }
+                }
+            }
             self.stateQueue.sync { if self.running { self.results = collected } }
         }
     }
@@ -99,7 +122,7 @@ final class PhoneTunnelProvider: NEPacketTunnelProvider {
                   ["stopped", "runner_exited", "failed"].contains(phase), Date() >= self.retryAfter else { return }
             let error = status["error_code"] as? String
             // Pairing and authorization failures need a person; retry transport loss only.
-            if let error, !["bridge_connect_failed", "device_connect_failed", "tunnel_timeout",
+            if let error, !["bridge_connect_failed", "bridge_write_failed", "bridge_ack_failed", "device_connect_failed", "tunnel_timeout",
                 "tunnel_listener_failed", "tunnel_handshake_failed", "rsd_connect_failed",
                 "rsd_handshake_failed", "xctest_failed"].contains(error) { return }
             self.failures += 1
@@ -117,6 +140,10 @@ final class PhoneTunnelProvider: NEPacketTunnelProvider {
     private func respondToMessage(_ messageData: Data, completionHandler: ((Data?) -> Void)?) {
         let command = String(data: messageData, encoding: .utf8)
         if ["pair", "probe", "launch"].contains(command ?? "") {
+            guard !stoppingHost else {
+                completionHandler?(try? JSONSerialization.data(withJSONObject: ["error_code": "independent_stop_in_progress"]))
+                return
+            }
             if command == "launch" {
                 do {
                     try ProtectedStore.write("session_enabled", Data([1]))
@@ -131,16 +158,34 @@ final class PhoneTunnelProvider: NEPacketTunnelProvider {
             sessionRequested = false
             do { try ProtectedStore.write("session_enabled", Data([0])) }
             catch { hostError = "keychain_unavailable" }
-            NativeHost.stop()
+            stopHost {
+                self.respondToMessage(Data("status".utf8), completionHandler: completionHandler)
+            }
+            return
         }
         else if command != "status" { completionHandler?(nil); return }
         let (rows, error) = (results, hostError)
         var report: [String: Any] = ["native": NativeHost.status()]
+        report["packet_count"] = packetCount
+        report["reflected_packet_count"] = reflectedPacketCount
         if let data = try? JSONEncoder().encode(rows), let value = try? JSONSerialization.jsonObject(with: data) {
             report["probes"] = value
         }
         if let error { report["error_code"] = error }
         completionHandler?(try? JSONSerialization.data(withJSONObject: report))
+    }
+    private func stopHost(completion: @escaping () -> Void) {
+        hostStopCompletions.append(completion)
+        guard !stoppingHost else { return }
+        stoppingHost = true
+        NativeHost.stopGracefully {
+            self.stateQueue.async {
+                self.stoppingHost = false
+                let callbacks = self.hostStopCompletions
+                self.hostStopCompletions.removeAll()
+                callbacks.forEach { $0() }
+            }
+        }
     }
 }
 
@@ -155,13 +200,16 @@ final class TunnelTCPAttempt {
     private var sent = false
     private var bytes = Data()
     private let started = Date()
-    private let endpoint = Endpoint(host: "10.7.0.1", port: 49152, purpose: "extension through-tunnel RemotePairing")
-    init(provider: NEPacketTunnelProvider) { self.provider = provider }
+    private let endpoint: Endpoint
+    init(provider: NEPacketTunnelProvider, port: UInt16 = 49152) {
+        self.provider = provider
+        self.endpoint = Endpoint(host: "10.7.0.1", port: port, purpose: "extension through-tunnel RemotePairing")
+    }
     func run() async -> ResultRow {
         await withCheckedContinuation { continuation in
             queue.async {
                 self.continuation = continuation
-                let endpoint = NWHostEndpoint(hostname: "10.7.0.1", port: "49152")
+                let endpoint = NWHostEndpoint(hostname: "10.7.0.1", port: String(self.endpoint.port))
                 let connection = self.provider.createTCPConnectionThroughTunnel(to: endpoint, enableTLS: false, tlsParameters: nil, delegate: nil)
                 self.connection = connection
                 self.observation = connection.observe(\.state, options: [.new, .initial]) { conn, _ in

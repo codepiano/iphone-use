@@ -7,7 +7,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parents[1]
-lib = REPO/"target/aarch64-apple-ios/release/libipu_embed.a"
+lib = Path(os.environ.get("IPU_EMBED_LIB", str(REPO/"target/aarch64-apple-ios/release/libipu_embed.a"))).resolve()
 if not lib.exists():
     raise SystemExit("Build scripts/build-ios-embed.sh first")
 profile = Path(os.environ.get("WDA_PLIST", str(Path.home()/"Library/LaunchAgents/com.leeguoo.iphone-use.wda.plist")))
@@ -23,6 +23,8 @@ if all(values):
     for flag, value in zip(["-authenticationKeyPath", "-authenticationKeyID", "-authenticationKeyIssuerID"], values):
         args.extend([flag, value])
 args.append("build-for-testing")
+if os.environ.get("IPU_SELFHOST_DIAGNOSTIC") == "1":
+    args.append("SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) DEBUG IPU_SELFHOST_DIAGNOSTIC")
 logs = ROOT/"build/logs"; logs.mkdir(parents=True, exist_ok=True)
 log = logs/"runner-build.log"
 with os.fdopen(os.open(log, os.O_WRONLY|os.O_CREAT|os.O_TRUNC, 0o600), "w") as output:

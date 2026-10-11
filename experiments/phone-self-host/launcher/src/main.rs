@@ -5,6 +5,15 @@ use std::{
 };
 fn main() {
     let args: Vec<_> = std::env::args().collect();
+    if args.len() == 5 && args[1] == "--usb-pair" && args[3] == "--pair-out" {
+        #[cfg(feature = "usb-provision")]
+        provision_usb(&args[2], Path::new(&args[4]));
+        #[cfg(not(feature = "usb-provision"))]
+        {
+            eprintln!("Build with --features usb-provision for initial USB pairing");
+            std::process::exit(2);
+        }
+    }
     if args.len() < 3 || args[1] != "--config" {
         eprintln!("usage: ipu-phone-host --config PRIVATE_JSON [--pair-out PRIVATE_PLIST]");
         std::process::exit(2);
@@ -74,4 +83,62 @@ fn main() {
         }
         std::thread::sleep(Duration::from_millis(250));
     }
+}
+
+#[cfg(feature = "usb-provision")]
+fn provision_usb(udid: &str, output: &Path) -> ! {
+    use idevice::{
+        IdeviceError, IdeviceService,
+        remote_pairing::{RemotePairingLockdownService, RpPairingFile},
+        usbmuxd::{Connection, UsbmuxdAddr, UsbmuxdConnection},
+    };
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let result = runtime.block_on(async {
+        tokio::time::timeout(std::time::Duration::from_secs(120), async {
+            let mut mux = UsbmuxdConnection::default().await?;
+            let device = mux
+                .get_devices()
+                .await?
+                .into_iter()
+                .find(|d| d.udid == udid && d.connection_type == Connection::Usb)
+                .ok_or(IdeviceError::DeviceNotFound)?;
+            let provider = device.to_provider(UsbmuxdAddr::default(), "PhoneUseSelfHost");
+            println!("{{\"phase\":\"connecting_usb_pairing_service\"}}");
+            let service = RemotePairingLockdownService::connect(&provider).await?;
+            let mut rpc = service.into_client("PhoneUseSelfHost")?;
+            let mut record = RpPairingFile::generate("PhoneUseSelfHost");
+            println!("{{\"phase\":\"awaiting_usb_pairing\"}}");
+            rpc.connect(&mut record, || async { "000000".to_string() })
+                .await?;
+            Ok::<_, IdeviceError>(record.to_bytes())
+        })
+        .await
+    });
+    match result {
+        Ok(Ok(bytes)) => {
+            use std::{io::Write, os::unix::fs::OpenOptionsExt};
+            let bytes = zeroize::Zeroizing::new(bytes);
+            let saved = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(output)
+                .and_then(|mut f| f.write_all(&bytes));
+            if saved.is_err() {
+                eprintln!("Private pairing record write failed");
+                std::process::exit(1);
+            }
+            println!("{{\"phase\":\"usb_paired\",\"pair_record_available\":true}}");
+            std::process::exit(0);
+        }
+        Ok(Err(error)) => {
+            println!(
+                "{{\"phase\":\"failed\",\"protocol_error_code\":{},\"protocol_error_subcode\":{}}}",
+                error.code(),
+                error.sub_code()
+            );
+        }
+        Err(_) => println!("{{\"phase\":\"failed\",\"error_code\":\"usb_pairing_timeout\"}}"),
+    }
+    std::process::exit(1);
 }
