@@ -1,0 +1,19 @@
+name: PhoneSelfHostProbe
+options:
+  deploymentTarget:
+    iOS: "17.4"
+settings:
+  base:
+    DEVELOPMENT_TEAM: 6ZPXG4KVVS
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+targets:
+  PhoneSelfHostProbe:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.leeguoo.iphone-use.selfhost-probe
+        INFOPLIST_FILE: Info.plist
+        TARGETED_DEVICE_FAMILY: "1,2"
