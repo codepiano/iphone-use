@@ -37,6 +37,9 @@ import Network
         throw RuntimeFailure.timeout
     }
     #if DEBUG
+    public func activateValidationApp() async throws {
+        _ = try await PhoneRunnerClient().request("POST", "/launch", body: ["bundle": Bundle.main.bundleIdentifier ?? ""])
+    }
     public func validationTransportSnapshot() async -> [String: Bool] {
         await withCheckedContinuation { continuation in
             let monitor = NWPathMonitor()

@@ -53,7 +53,9 @@ struct LocalPhoneSetupView: View {
                 #if DEBUG
                 if ProcessInfo.processInfo.arguments.contains("--local-runtime-qa"), !Self.automaticValidationStarted {
                     Self.automaticValidationStarted = true
-                    await validate()
+                    if ProcessInfo.processInfo.arguments.contains("--wait-offline-qa") {
+                        Task { await waitForOfflineValidation() }
+                    } else { await validate() }
                 }
                 #endif
             }
@@ -65,7 +67,31 @@ struct LocalPhoneSetupView: View {
             }
     }
     #if DEBUG
-    private func validate(detached: Bool = false) async {
+    private func waitForOfflineValidation() async {
+        await start()
+        var expired = false
+        let background = UIApplication.shared.beginBackgroundTask(withName: "offline-validation") { expired = true }
+        defer { if background != .invalid { UIApplication.shared.endBackgroundTask(background) } }
+        let deadline = ProcessInfo.processInfo.systemUptime + 150
+        message = "自动验收已准备好：拔掉 USB，在系统设置中关闭 Wi-Fi即可。"
+        var observedWiFi = false
+        while !expired && ProcessInfo.processInfo.systemUptime < deadline {
+            let path = await runtime.validationTransportSnapshot()
+            if path["wifi_path_active"] == true { observedWiFi = true }
+            if observedWiFi, path["wifi_path_active"] == false, path["ethernet_path_active"] == false {
+                do {
+                    try await runtime.activateValidationApp()
+                    try await Task.sleep(nanoseconds: 500_000_000)
+                    qaCount = 0; qaText = ""
+                    await validate(detached: true, userAttested: false)
+                } catch { message = "自动返回验收页面失败，请重新连接手机。" }
+                return
+            }
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
+        message = "等待断开超时，请恢复连接后重新准备。"
+    }
+    private func validate(detached: Bool = false, userAttested: Bool = true) async {
         guard !busy else { return }
         await start()
         busy = true
@@ -91,7 +117,7 @@ struct LocalPhoneSetupView: View {
             guard var report = try JSONSerialization.jsonObject(with: result) as? [String: Any],
                   qaCount == 1, report["expected_input"] as? String == qaText else { throw PhoneLocalRuntime.RuntimeFailure.controlValidationFailed }
             report.removeValue(forKey: "expected_input")
-            report["physical_detachment_user_attested"] = detached
+            report["physical_detachment_user_attested"] = detached && userAttested
             for (key, value) in transport { report[key] = value }
             report["ui_count_observed"] = true; report["ui_input_observed"] = true
             let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
@@ -101,7 +127,7 @@ struct LocalPhoneSetupView: View {
         } catch {
             let local = app.sessions.values.first(where: { $0.record.isThisPhone && $0.record.address.contains(":18787") })
             let failure = error as NSError
-            let data = try? JSONSerialization.data(withJSONObject: ["schema": 1, "ok": false, "observed_at": ISO8601DateFormatter().string(from: Date()), "error_code": "native_app_validation_failed", "physical_detachment_user_attested": detached, "transport": transport, "failure_stage": validationStage, "native_phase": runtime.phase, "local_connected": local?.phase == .connected, "local_drivable": local?.status?.drivable == true, "device_state": local?.status?.deviceState ?? "unavailable", "setup_blocked_on": local?.status?.setupBlockedOn ?? "", "failure_domain": failure.domain, "failure_number": failure.code])
+            let data = try? JSONSerialization.data(withJSONObject: ["schema": 1, "ok": false, "observed_at": ISO8601DateFormatter().string(from: Date()), "error_code": "native_app_validation_failed", "physical_detachment_user_attested": detached && userAttested, "transport": transport, "failure_stage": validationStage, "native_phase": runtime.phase, "local_connected": local?.phase == .connected, "local_drivable": local?.status?.drivable == true, "device_state": local?.status?.deviceState ?? "unavailable", "setup_blocked_on": local?.status?.setupBlockedOn ?? "", "failure_domain": failure.domain, "failure_number": failure.code])
             let file = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(detached ? "local-runtime-offline-qa.json" : "local-runtime-qa.json")
             try? data?.write(to: file, options: [.atomic, .completeFileProtection])
             message = "本机控制验收失败"
