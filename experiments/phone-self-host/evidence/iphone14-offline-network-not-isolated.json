@@ -1,0 +1,20 @@
+{
+  "local_connected": true,
+  "physical_detachment_user_attested": true,
+  "failure_number": 5,
+  "local_drivable": true,
+  "schema": 1,
+  "failure_stage": "verify_network_isolation",
+  "native_phase": "running",
+  "error_code": "native_app_validation_failed",
+  "transport": {
+    "wifi_path_active": true,
+    "cellular_path_active": false,
+    "ethernet_path_active": false
+  },
+  "device_state": "ready",
+  "setup_blocked_on": "",
+  "failure_domain": "PhoneRuntimeCore.PhoneLocalRuntime.RuntimeFailure",
+  "ok": false,
+  "observed_at": "2026-10-11T18:49:05Z"
+}

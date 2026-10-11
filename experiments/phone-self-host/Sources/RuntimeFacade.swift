@@ -40,16 +40,23 @@ import Network
     public func activateValidationApp() async throws {
         _ = try await PhoneRunnerClient().request("POST", "/launch", body: ["bundle": Bundle.main.bundleIdentifier ?? ""])
     }
-    public func validationTransportSnapshot() async -> [String: Bool] {
+    private func measuredPath(_ interface: NWInterface.InterfaceType?) async -> (Bool, Bool, Bool, Bool) {
         await withCheckedContinuation { continuation in
-            let monitor = NWPathMonitor()
+            let monitor = interface.map { NWPathMonitor(requiredInterfaceType: $0) } ?? NWPathMonitor()
             monitor.pathUpdateHandler = { path in
                 monitor.pathUpdateHandler = nil
                 monitor.cancel()
-                continuation.resume(returning: ["wifi_path_active": path.usesInterfaceType(.wifi), "ethernet_path_active": path.usesInterfaceType(.wiredEthernet), "cellular_path_active": path.usesInterfaceType(.cellular)])
+                continuation.resume(returning: (path.status == .satisfied, path.usesInterfaceType(.wifi), path.usesInterfaceType(.wiredEthernet), path.usesInterfaceType(.cellular)))
             }
             monitor.start(queue: DispatchQueue(label: "local.runtime.validation.transport"))
         }
+    }
+    public func validationTransportSnapshot() async -> [String: Bool] {
+        let general = await measuredPath(nil)
+        let wifi = await measuredPath(.wifi)
+        let ethernet = await measuredPath(.wiredEthernet)
+        let cellular = await measuredPath(.cellular)
+        return ["wifi_path_active": wifi.0 && wifi.1, "ethernet_path_active": ethernet.0 && ethernet.2, "cellular_path_active": cellular.0 && cellular.3, "default_path_wifi": general.1]
     }
     public func validateControls() async throws -> Data {
         guard phase == "running" else { throw RuntimeFailure.controlValidationFailed }

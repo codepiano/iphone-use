@@ -67,8 +67,17 @@ struct LocalPhoneSetupView: View {
             }
     }
     #if DEBUG
+    private func writeOfflineWaitState(_ stage: String, transport: [String: Bool] = [:]) {
+        let report: [String: Any] = ["schema": 1, "stage": stage, "observed_at": ISO8601DateFormatter().string(from: Date()), "transport": transport, "native_phase": runtime.phase]
+        if let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]) {
+            let file = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("offline-wait-state.json")
+            try? data.write(to: file, options: [.atomic, .completeFileProtection])
+        }
+    }
     private func waitForOfflineValidation() async {
+        writeOfflineWaitState("starting")
         await start()
+        writeOfflineWaitState("armed")
         var expired = false
         let background = UIApplication.shared.beginBackgroundTask(withName: "offline-validation") { expired = true }
         defer { if background != .invalid { UIApplication.shared.endBackgroundTask(background) } }
@@ -77,8 +86,10 @@ struct LocalPhoneSetupView: View {
         var observedWiFi = false
         while !expired && ProcessInfo.processInfo.systemUptime < deadline {
             let path = await runtime.validationTransportSnapshot()
+            writeOfflineWaitState("waiting", transport: path)
             if path["wifi_path_active"] == true { observedWiFi = true }
             if observedWiFi, path["wifi_path_active"] == false, path["ethernet_path_active"] == false {
+                writeOfflineWaitState("network_isolated", transport: path)
                 do {
                     try await runtime.activateValidationApp()
                     try await Task.sleep(nanoseconds: 500_000_000)
@@ -89,6 +100,7 @@ struct LocalPhoneSetupView: View {
             }
             try? await Task.sleep(nanoseconds: 500_000_000)
         }
+        writeOfflineWaitState(expired ? "background_expired" : "timeout")
         message = "等待断开超时，请恢复连接后重新准备。"
     }
     private func validate(detached: Bool = false, userAttested: Bool = true) async {
