@@ -132,8 +132,52 @@ func localWiFiAddress() -> String? {
                 }.navigationTitle("Self Host Probe")
                     .fullScreenCover(isPresented: $showingSmoke) { ControlSmokeView() }
                     .task {
+                        #if DEBUG
+                        if ProcessInfo.processInfo.arguments.contains("--selfhost-import-remote-trust") {
+                            let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                            let file = documents.appendingPathComponent("private-remote-onboarding.plist")
+                            do {
+                                let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max
+                                guard size > 0 && size < 131072 else { throw CocoaError(.fileReadCorruptFile) }
+                                let bytes = try Data(contentsOf: file)
+                                guard let object = try PropertyListSerialization.propertyList(from: bytes, format: nil) as? [String: Any],
+                                      let record = object["pair_record"] as? Data,
+                                      let identity = object["device_id"] as? String, (16...64).contains(identity.count),
+                                      let parsed = try PropertyListSerialization.propertyList(from: record, format: nil) as? [String: Any],
+                                      (parsed["private_key"] as? Data)?.count == 32, (parsed["public_key"] as? Data)?.count == 32,
+                                      parsed["identifier"] is String else { throw CocoaError(.fileReadCorruptFile) }
+                                try ProtectedStore.write("remote_onboarding", bytes)
+                                try FileManager.default.removeItem(at: file)
+                            } catch { model.error = "首次远程开发配置导入失败" }
+                        }
+                        if ProcessInfo.processInfo.arguments.contains("--selfhost-import-trust") {
+                            let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                            let file = documents.appendingPathComponent("private-device-onboarding.plist")
+                            do {
+                                let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max
+                                guard size > 0 && size < 131072 else { throw CocoaError(.fileReadCorruptFile) }
+                                let bytes = try Data(contentsOf: file)
+                                guard let object = try PropertyListSerialization.propertyList(from: bytes, format: nil) as? [String: Any],
+                                      let record = object["pair_record"] as? Data,
+                                      let identity = object["device_id"] as? String, (16...64).contains(identity.count),
+                                      let parsed = try PropertyListSerialization.propertyList(from: record, format: nil) as? [String: Any],
+                                      parsed["HostPrivateKey"] != nil, parsed["RootCertificate"] != nil else { throw CocoaError(.fileReadCorruptFile) }
+                                try ProtectedStore.write("lockdown_onboarding", bytes)
+                                try FileManager.default.removeItem(at: file)
+                            } catch { model.error = "首次开发配置导入失败" }
+                        }
+                        #endif
                         await tunnel.load()
                         #if DEBUG
+                        if ProcessInfo.processInfo.arguments.contains("--selfhost-restart-probe") {
+                            await tunnel.restartAndCommand("probe")
+                        }
+                        if ProcessInfo.processInfo.arguments.contains("--selfhost-restart-launch") {
+                            await tunnel.restartAndCommand("launch")
+                        }
+                        if ProcessInfo.processInfo.arguments.contains("--selfhost-control-smoke") {
+                            showingSmoke = true
+                        }
                         for command in ["pair", "probe", "launch"] {
                             if ProcessInfo.processInfo.arguments.contains("--selfhost-" + command) {
                                 await tunnel.startAndCommand(command)

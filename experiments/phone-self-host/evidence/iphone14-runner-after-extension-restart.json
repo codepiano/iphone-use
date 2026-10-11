@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "observed_at": "2026-10-11T15:24:40Z",
+  "native": {
+    "build_id": "2d20f739a85ea2cc0baca3deaecc0ad9585f508ea87b6aa0873724b1068c5eba",
+    "developer_services": true,
+    "error_code": null,
+    "ios": "27.2",
+    "linked": true,
+    "pair_record_available": true,
+    "phase": "running",
+    "protocol_error_main": null,
+    "protocol_error_sub": null,
+    "test_plan_started": true
+  },
+  "scope": "On-phone extension and runner restart; Mac guouli supervisor paused; physical Mac communication disconnection pending"
+}

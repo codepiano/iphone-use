@@ -40,6 +40,12 @@ enum RemotePairingHandshake {
               let details = handshake["_0"] as? [String: Any]
         else { throw Failure.unexpectedResponse }
         let version = (details["wireProtocolVersion"] as? NSNumber)?.stringValue ?? "unspecified"
-        return "RemotePairing handshake received; wire protocol \(version); pairing and authorization not attempted"
+        let options = details["deviceOptions"] as? [String: Any] ?? [:]
+        let allowed = ["allowsPairSetup", "allowsPinlessPairing", "allowsIncomingTunnelConnections", "allowsUpgradeOfLockdownPairings"]
+        let flags = allowed.compactMap { key -> String? in
+            guard let value = options[key] as? Bool else { return nil }
+            return "\(key)=\(value)"
+        }.joined(separator: ", ")
+        return "RemotePairing handshake received; wire protocol \(version); \(flags); pairing and authorization not attempted"
     }
 }

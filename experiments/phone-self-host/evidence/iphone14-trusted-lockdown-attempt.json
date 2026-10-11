@@ -1,0 +1,58 @@
+{
+  "executor": "on-device app reading its own Network Extension",
+  "native": {
+    "build_id": "5269657573b6ee6e47156f1f9f6bd9729d40ddb435708ee66e4c4b3914d4e5c9",
+    "developer_services": false,
+    "error_code": "trusted_heartbeat_connect_failed",
+    "ios": null,
+    "linked": true,
+    "pair_record_available": false,
+    "phase": "failed",
+    "protocol_error_main": 1,
+    "protocol_error_sub": 0,
+    "test_plan_started": false
+  },
+  "observed_at": "2026-10-11T14:26:16Z",
+  "probes": [
+    {
+      "detail": "POSIXErrorCode(rawValue: 54): Connection reset by peer",
+      "elapsedMilliseconds": 11,
+      "endpoint": {
+        "host": "127.0.0.1",
+        "port": 49152,
+        "purpose": "extension direct RemotePairing"
+      },
+      "outcome": "handshake_receive_failed"
+    },
+    {
+      "detail": "No completed probe within 5 seconds",
+      "elapsedMilliseconds": 5314,
+      "endpoint": {
+        "host": "10.7.0.1",
+        "port": 49152,
+        "purpose": "extension direct RemotePairing"
+      },
+      "outcome": "probe_timeout"
+    },
+    {
+      "detail": "TCP connected; authorization not attempted",
+      "elapsedMilliseconds": 6,
+      "endpoint": {
+        "host": "10.7.0.1",
+        "port": 62078,
+        "purpose": "extension through-tunnel lockdown"
+      },
+      "outcome": "tcp_open"
+    },
+    {
+      "detail": "RemotePairing handshake received; wire protocol 26; allowsPairSetup=false, allowsPinlessPairing=false, allowsIncomingTunnelConnections=true; pairing and authorization not attempted",
+      "elapsedMilliseconds": 23,
+      "endpoint": {
+        "host": "10.7.0.1",
+        "port": 49152,
+        "purpose": "extension through-tunnel RemotePairing"
+      },
+      "outcome": "remote_pairing_handshake"
+    }
+  ]
+}

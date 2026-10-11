@@ -53,6 +53,16 @@ import NetworkExtension
         }
         nativeError = "本机开发网络尚未就绪"
     }
+    #if DEBUG
+    func restartAndCommand(_ command: String) async {
+        await stop()
+        for _ in 0..<40 {
+            if manager?.connection.status == .disconnected || manager?.connection.status == .invalid { break }
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        }
+        await startAndCommand(command)
+    }
+    #endif
     func command(_ command: String) async {
         await message(command)
     }

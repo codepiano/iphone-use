@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build the iOS app without printing signing credentials or raw command lines."""
 import os
+import hashlib
 from pathlib import Path
 import plistlib
 import subprocess
@@ -32,6 +33,14 @@ else:
 lib = ROOT/"launcher/target/aarch64-apple-ios/release/libipu_phone_host.a"
 linked = lib.exists()
 if linked:
+    # A failed Rust rebuild must not silently link a previous successful archive.
+    digest = hashlib.sha256()
+    for relative in ["src/lib.rs", "src/main.rs", "src/image.rs", "Cargo.toml", "Cargo.lock",
+                     "../patches/idevice-rsd-xctest.patch",
+                     "../.deps/idevice/idevice/src/services/dvt/xctest/mod.rs"]:
+        digest.update((ROOT/"launcher"/relative).read_bytes())
+    if digest.hexdigest().encode("ascii") not in lib.read_bytes():
+        raise SystemExit("Native host archive does not match current source; rebuild launcher first")
     roots = " ".join("-u _"+name for name in ["ipu_host_start", "ipu_host_stop", "ipu_host_status", "ipu_host_string_free", "ipu_host_copy_pair_record"])
     args.append(f'IPU_HOST_LDFLAGS=-force_load "{lib}" -framework Security {roots}')
     print("Native phone host linked", flush=True)

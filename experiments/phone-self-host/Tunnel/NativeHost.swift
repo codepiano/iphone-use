@@ -40,7 +40,9 @@ enum NativeHost {
     static func start(mode: String, bridgePort: UInt16, bridgeToken: String) -> String? {
         guard let start = symbol("ipu_host_start", as: Start.self) else { return "native_host_not_linked" }
         do {
-            let runnerToken = mode == "launch" ? try ProtectedStore.freshToken() : try ProtectedStore.token("runner_token")
+            // Keep the shared credential stable across extension restarts and rejected launches.
+            // A surviving runner must remain reachable by the app.
+            let runnerToken = try ProtectedStore.token("runner_token")
             var config: [String: Any] = ["mode": mode, "device_host": "10.7.0.1", "bridge_port": bridgePort,
                 "bridge_token": bridgeToken, "runner_bundle": "com.leeguoo.iphone-use.selfhost-runner.xctrunner",
                 "runner_token": runnerToken,
@@ -48,6 +50,18 @@ enum NativeHost {
                 "daemon_token": try ProtectedStore.token("daemon_token"),
                 "daemon_password": try ProtectedStore.token("daemon_password")]
             if let record = ProtectedStore.read("pair_record") { config["pair_record_base64"] = record.base64EncodedString() }
+            if let bytes = ProtectedStore.read("lockdown_onboarding"),
+               let onboarding = try PropertyListSerialization.propertyList(from: bytes, format: nil) as? [String: Any],
+               let record = onboarding["pair_record"] as? Data, let identity = onboarding["device_id"] as? String {
+                config["lockdown_pair_record_base64"] = record.base64EncodedString()
+                config["expected_udid"] = identity
+            }
+            if let bytes = ProtectedStore.read("remote_onboarding"),
+               let onboarding = try PropertyListSerialization.propertyList(from: bytes, format: nil) as? [String: Any],
+               let record = onboarding["pair_record"] as? Data, let identity = onboarding["device_id"] as? String {
+                config["pair_record_base64"] = record.base64EncodedString()
+                config["expected_udid"] = identity
+            }
             let data = try JSONSerialization.data(withJSONObject: config)
             guard let encoded = String(data: data, encoding: .utf8) else { return "native_config_invalid" }
             let code = encoded.withCString { start($0) }

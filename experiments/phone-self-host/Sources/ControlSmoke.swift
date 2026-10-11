@@ -4,11 +4,17 @@ import UIKit
 import CryptoKit
 
 struct PhoneRunnerClient {
-    struct Failure: Error { let code: String }
+    struct Failure: Error {
+        let code: String
+        var httpStatus: Int? = nil
+        var serverError: String? = nil
+        var authReason: String? = nil
+    }
     func request(_ method: String, _ target: String, body: [String: Any]? = nil) async throws -> [String: Any] {
         guard let saved = ProtectedStore.read("runner_token"), let token = String(data: saved, encoding: .utf8) else { throw Failure(code: "credential_missing") }
         let bytes = try body.map { try JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys]) } ?? Data()
         var request = URLRequest(url: URL(string: "http://127.0.0.1:18100" + target)!)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         request.httpMethod = method
         request.timeoutInterval = 20
         if method != "GET" { request.httpBody = bytes; request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
@@ -16,7 +22,17 @@ struct PhoneRunnerClient {
         request.setValue(RunnerSigning.authorization(token: token, method: method, target: target,
             timestamp: Int64(Date().timeIntervalSince1970), nonce: nonce, body: bytes), forHTTPHeaderField: "Authorization")
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { throw Failure(code: "runner_request_failed") }
+        guard let http = response as? HTTPURLResponse else { throw Failure(code: "runner_request_failed") }
+        if http.statusCode != 200 {
+            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let value = object?["value"] as? [String: Any]
+            let reasons = ["bad signature": "bad_signature", "request already seen": "replay",
+                "authorization required": "missing", "malformed authorization": "malformed",
+                "request timestamp too far from the phone's clock": "clock_skew",
+                "this runner was started without IPU_RUNNER_TOKEN; restart it with iphone-use setup": "not_configured"]
+            let reason = (value?["message"] as? String).flatMap { reasons[$0] }
+            throw Failure(code: "runner_request_failed", httpStatus: http.statusCode, serverError: value?["error"] as? String, authReason: reason)
+        }
         guard data.count <= 8_388_608, let value = (try JSONSerialization.jsonObject(with: data)) as? [String: Any] else { throw Failure(code: "invalid_runner_response") }
         return value
     }
@@ -78,8 +94,10 @@ struct PhoneRunnerClient {
             }
             guard count == 1 else { throw PhoneRunnerClient.Failure(code: "tap_not_observed") }
             report["tap_observed"] = true
-            phase = "验证真实输入"
+            phase = "聚焦输入框"
             try await client.tap("selfhost-smoke-text")
+            phase = "验证真实输入"
+            try await Task.sleep(nanoseconds: 250_000_000)
             _ = try await client.request("POST", "/type", body: ["text": challenge])
             for _ in 0..<20 {
                 if text == challenge { break }
@@ -105,6 +123,17 @@ struct PhoneRunnerClient {
         } catch {
             report["ok"] = false
             report["error_code"] = (error as? PhoneRunnerClient.Failure)?.code ?? "validation_request_failed"
+            report["failed_stage"] = phase
+            if let failure = error as? PhoneRunnerClient.Failure {
+                report["http_status"] = failure.httpStatus
+                report["server_error"] = failure.serverError
+                report["auth_reason"] = failure.authReason
+            } else {
+                let failure = error as NSError
+                report["failure_domain"] = failure.domain
+                report["failure_number"] = failure.code
+            }
+            report["observed_typed_length"] = text.count
             phase = report["error_code"] as? String ?? "验证失败"
         }
         report["finished_at"] = ISO8601DateFormatter().string(from: Date())
@@ -138,6 +167,13 @@ struct ControlSmokeView: View {
                 if let image = model.image { Image(uiImage: image).resizable().scaledToFit() }
             }.navigationTitle("独立控制验收")
                 .toolbar { Button("返回") { dismiss() } }
+                .task {
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("--selfhost-control-smoke") {
+                        await model.run()
+                    }
+                    #endif
+                }
         }
     }
 }

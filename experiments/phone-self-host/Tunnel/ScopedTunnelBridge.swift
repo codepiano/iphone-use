@@ -102,7 +102,14 @@ private final class TunnelPipe {
                                 if error != nil { self.close(); return }
                                 self.readClient(); self.readTarget()
                             })
-                        } else if connection.state == .disconnected || connection.state == .cancelled { self.close() }
+                        } else if connection.state == .disconnected || connection.state == .cancelled {
+                            if !self.connected { self.close() }
+                            else {
+                                // A final reply may already be queued for readTarget.
+                                // Draining it must precede closing the local stream.
+                                self.queue.asyncAfter(deadline: .now() + 3) { self.close() }
+                            }
+                        }
                     }
                 }
                 self.queue.asyncAfter(deadline: .now() + 8) { if !self.connected { self.close() } }
@@ -126,7 +133,7 @@ private final class TunnelPipe {
         target?.readMinimumLength(1, maximumLength: 32_768) { data, error in
             self.queue.async {
                 guard !self.finished else { return }
-                guard error == nil, let data, !data.isEmpty else { self.close(); return }
+                guard let data, !data.isEmpty else { self.close(); return }
                 self.client.send(content: data, completion: .contentProcessed { error in
                     if error != nil { self.close() }
                     else { self.readTarget() }

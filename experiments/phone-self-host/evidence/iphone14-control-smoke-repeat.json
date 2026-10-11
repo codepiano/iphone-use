@@ -1,0 +1,15 @@
+{
+  "elapsed_seconds": 2.2838140726089478,
+  "executor": "on-device app via signed local runner HTTP",
+  "finished_at": "2026-10-11T15:23:11Z",
+  "ok": true,
+  "schema": 1,
+  "scope": "real input/source/screenshot in this test app; Mac disconnection requires a separate recorded observation",
+  "screenshot_height": 512,
+  "screenshot_sha256": "653ebe068ba7baa34b4c1a5a5794070f6cba09e0febb4d0f82ac69b4c640e1c7",
+  "screenshot_width": 236,
+  "source_verified": true,
+  "started_at": "2026-10-11T15:23:09Z",
+  "tap_observed": true,
+  "typing_observed": true
+}

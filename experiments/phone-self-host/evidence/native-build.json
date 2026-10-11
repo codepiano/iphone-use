@@ -1,19 +1,19 @@
 {
   "schema": 1,
-  "observed_at": "2026-10-11T05:53:08.266672+00:00",
-  "scope": "local compiled artifacts and signature checks only; no independent phone-control acceptance",
+  "observed_at": "2026-10-11T15:24:26.120196+00:00",
+  "scope": "Build14 local executable/signature validation and on-device extension restart/control acceptance; physical Mac communication disconnection pending",
   "app": {
     "bundle": "com.leeguoo.iphone-use.selfhost-probe",
     "version": "0.2.0",
-    "build": "2",
-    "executable_sha256": "1f954465da1db0b47d9a5b6788a32eb1dcf086e724e377b88a4c858c823bc904",
+    "build": "14",
+    "executable_sha256": "3af110b151177ccebed785d98a3fc7bd7e76fde5aeac8cc5d7fe95f271553506",
     "signature_verified": true
   },
   "extension": {
     "bundle": "com.leeguoo.iphone-use.selfhost-probe.tunnel",
     "version": "0.2.0",
-    "build": "2",
-    "executable_sha256": "508b42633d5c14e917b806a26c8ab3faea7b262491a16f98c1078cc5a4a2ae32",
+    "build": "14",
+    "executable_sha256": "0cc4ae499095a9bcb2e4da08174bbd61f312bd0f875f5037eb7e9e97251da492",
     "signature_verified": true
   },
   "runner": {

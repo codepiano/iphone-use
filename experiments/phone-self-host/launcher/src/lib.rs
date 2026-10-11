@@ -30,7 +30,7 @@ use tokio::{
 };
 use zeroize::{Zeroize, Zeroizing};
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct Config {
     mode: String,
     device_host: String,
@@ -42,6 +42,10 @@ struct Config {
     bridge_token: Option<String>,
     #[serde(default)]
     pair_record_base64: Option<String>,
+    #[serde(default)]
+    lockdown_pair_record_base64: Option<String>,
+    #[serde(default)]
+    expected_udid: Option<String>,
     #[serde(default)]
     runner_bundle: Option<String>,
     #[serde(default)]
@@ -61,6 +65,7 @@ impl Drop for Config {
         for field in [
             &mut self.bridge_token,
             &mut self.pair_record_base64,
+            &mut self.lockdown_pair_record_base64,
             &mut self.runner_token,
             &mut self.daemon_token,
             &mut self.daemon_password,
@@ -76,6 +81,8 @@ struct Status {
     phase: String,
     build_id: &'static str,
     error_code: Option<String>,
+    protocol_error_main: Option<i32>,
+    protocol_error_sub: Option<i32>,
     pair_record_available: bool,
     ios: Option<String>,
     developer_services: bool,
@@ -87,6 +94,8 @@ impl Default for Status {
             phase: "stopped".into(),
             build_id: env!("IPU_HOST_BUILD_ID"),
             error_code: None,
+            protocol_error_main: None,
+            protocol_error_sub: None,
             pair_record_available: false,
             ios: None,
             developer_services: false,
@@ -164,7 +173,179 @@ async fn connect(cfg: &Config, port: u16) -> Result<TcpStream, &'static str> {
     Ok(socket)
 }
 
-async fn tunnel(cfg: &Config) -> Result<(AdapterHandle, RsdHandshake, u16), &'static str> {
+fn protocol_failure(error: &IdeviceError, stage: &'static str) -> &'static str {
+    update(|host| {
+        host.status.protocol_error_main = Some(error.code());
+        host.status.protocol_error_sub = Some(error.sub_code());
+    });
+    stage
+}
+
+fn pairing_error(error: &IdeviceError) -> &'static str {
+    use idevice::remote_pairing::errors::RemotePairingError;
+    match error {
+        IdeviceError::RemotePairing(RemotePairingError::PairingRejected(context)) => {
+            let reason = context.to_lowercase();
+            if reason.contains("cancel") || reason.contains("user denied") {
+                "pairing_user_denied"
+            } else if reason.contains("not supported") || reason.contains("unsupported") {
+                "pairing_transport_not_supported"
+            } else {
+                "pairing_rejected"
+            }
+        }
+        IdeviceError::RemotePairing(RemotePairingError::SrpAuthFailed) => "pairing_code_rejected",
+        IdeviceError::RemotePairing(RemotePairingError::PairVerifyFailed) => {
+            "pairing_signature_rejected"
+        }
+        IdeviceError::UnexpectedResponse(_) => "pairing_response_unrecognized",
+        IdeviceError::CanceledByUser => "pairing_user_denied",
+        _ => "pairing_approval_failed",
+    }
+}
+
+async fn authenticate_record<R: idevice::remote_pairing::RpPairingSocketProvider>(
+    rpc: &mut RemotePairingClient<R>,
+    record: &mut RpPairingFile,
+    first_pair: bool,
+) -> Result<(), &'static str> {
+    if first_pair {
+        // A new key has no trusted record on the device: do not pair-verify it
+        // first. The device may close an unknown host's verification socket.
+        set_phase("awaiting_pairing_approval");
+        rpc.pair(record, || async { "000000".to_string() })
+            .await
+            .map_err(|error| {
+                update(|host| {
+                    host.status.protocol_error_main = Some(error.code());
+                    host.status.protocol_error_sub = Some(error.sub_code());
+                });
+                pairing_error(&error)
+            })?;
+    } else {
+        // Rejected existing keys never silently become a new pairing.
+        rpc.validate_pairing(record)
+            .await
+            .map_err(|_| "pairing_invalid")?;
+    }
+    Ok(())
+}
+
+struct LegacyProvider {
+    config: Config,
+    record: idevice::pairing_file::PairingFile,
+}
+impl std::fmt::Debug for LegacyProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("OnPhoneTrustedProvider")
+    }
+}
+impl idevice::provider::IdeviceProvider for LegacyProvider {
+    fn connect(
+        &self,
+        port: u16,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<idevice::Idevice, IdeviceError>> + Send>,
+    > {
+        let cfg = self.config.clone();
+        Box::pin(async move {
+            let stream = connect(&cfg, port)
+                .await
+                .map_err(|_| IdeviceError::NoEstablishedConnection)?;
+            Ok(idevice::Idevice::new(Box::new(stream), "PhoneUseSelfHost"))
+        })
+    }
+    fn label(&self) -> &str {
+        "PhoneUseSelfHost"
+    }
+    fn get_pairing_file(
+        &self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<idevice::pairing_file::PairingFile, IdeviceError>,
+                > + Send,
+        >,
+    > {
+        let record = self.record.clone();
+        Box::pin(async move { Ok(record) })
+    }
+}
+struct HeartbeatGuard(JoinHandle<()>);
+impl Drop for HeartbeatGuard {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+async fn trusted_tunnel(
+    cfg: &Config,
+) -> Result<(AdapterHandle, RsdHandshake, u16, Option<HeartbeatGuard>), &'static str> {
+    use idevice::IdeviceService;
+    use idevice::services::{core_device_proxy::CoreDeviceProxy, heartbeat::HeartbeatClient};
+    if cfg.expected_udid.as_ref().is_none_or(|s| s.len() < 16) {
+        return Err("expected_device_identity_required");
+    }
+    let bytes = Zeroizing::new(
+        B64.decode(cfg.lockdown_pair_record_base64.as_ref().unwrap())
+            .map_err(|_| "invalid_lockdown_record")?,
+    );
+    let record = idevice::pairing_file::PairingFile::from_bytes(&bytes)
+        .map_err(|_| "invalid_lockdown_record")?;
+    let provider = LegacyProvider {
+        config: cfg.clone(),
+        record,
+    };
+    set_phase("trusted_lockdown_connecting");
+    let mut heartbeat = HeartbeatClient::connect(&provider)
+        .await
+        .map_err(|error| protocol_failure(&error, "trusted_heartbeat_connect_failed"))?;
+    let interval = heartbeat
+        .get_marco(15)
+        .await
+        .map_err(|error| protocol_failure(&error, "trusted_heartbeat_receive_failed"))?;
+    heartbeat
+        .send_polo()
+        .await
+        .map_err(|error| protocol_failure(&error, "trusted_heartbeat_send_failed"))?;
+    let guard = HeartbeatGuard(tokio::spawn(async move {
+        let mut interval = interval;
+        loop {
+            match heartbeat.get_marco(interval + 15).await {
+                Ok(next) => {
+                    interval = next;
+                    if heartbeat.send_polo().await.is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    }));
+    let proxy = CoreDeviceProxy::connect(&provider)
+        .await
+        .map_err(|_| "trusted_core_device_proxy_failed")?;
+    let rsd_port = proxy.tunnel_info().server_rsd_port;
+    let mut handle = proxy
+        .create_software_tunnel()
+        .map_err(|_| "trusted_tunnel_failed")?
+        .to_async_handle();
+    let stream = handle
+        .connect(rsd_port)
+        .await
+        .map_err(|_| "rsd_connect_failed")?;
+    let handshake = RsdHandshake::new(stream)
+        .await
+        .map_err(|_| "rsd_handshake_failed")?;
+    Ok((handle, handshake, rsd_port, Some(guard)))
+}
+
+async fn tunnel(
+    cfg: &Config,
+) -> Result<(AdapterHandle, RsdHandshake, u16, Option<HeartbeatGuard>), &'static str> {
+    if cfg.lockdown_pair_record_base64.is_some() && cfg.pair_record_base64.is_none() {
+        return trusted_tunnel(cfg).await;
+    }
+    let first_pair = cfg.pair_record_base64.is_none();
     let mut record = if let Some(encoded) = &cfg.pair_record_base64 {
         let bytes = Zeroizing::new(B64.decode(encoded).map_err(|_| "invalid_pair_record")?);
         RpPairingFile::from_bytes(&bytes).map_err(|_| "invalid_pair_record")?
@@ -176,19 +357,23 @@ async fn tunnel(cfg: &Config) -> Result<(AdapterHandle, RsdHandshake, u16), &'st
     set_phase("connecting");
     let socket = connect(cfg, cfg.device_port).await?;
     let mut rpc = RemotePairingClient::new(RpPairingSocket::new(socket), "PhoneUseSelfHost");
-    rpc.attempt_pair_verify()
+    let capabilities = rpc
+        .attempt_pair_verify()
         .await
         .map_err(|_| "pairing_handshake_failed")?;
-    set_phase("verifying_pairing");
-    if rpc.validate_pairing(&mut record).await.is_err() {
-        if cfg.mode != "pair" {
-            return Err("pairing_invalid");
-        }
-        set_phase("awaiting_pairing_approval");
-        rpc.pair(&mut record, || async { "000000".to_string() })
-            .await
-            .map_err(|_| "pairing_approval_failed")?;
+    if first_pair
+        && capabilities
+            .as_dictionary()
+            .and_then(|d| d.get("deviceOptions"))
+            .and_then(|d| d.as_dictionary())
+            .and_then(|d| d.get("allowsPairSetup"))
+            .and_then(|v| v.as_boolean())
+            == Some(false)
+    {
+        return Err("pair_setup_not_supported_requires_existing_trust");
     }
+    set_phase("verifying_pairing");
+    authenticate_record(&mut rpc, &mut record, first_pair).await?;
     let bytes = record.to_bytes();
     update(|host| {
         host.record = Some(Zeroizing::new(bytes));
@@ -225,7 +410,7 @@ async fn tunnel(cfg: &Config) -> Result<(AdapterHandle, RsdHandshake, u16), &'st
     let handshake = RsdHandshake::new(stream)
         .await
         .map_err(|_| "rsd_handshake_failed")?;
-    Ok((handle, handshake, rsd_port))
+    Ok((handle, handshake, rsd_port, None))
 }
 struct Events;
 impl XCUITestListener for Events {
@@ -249,7 +434,7 @@ impl XCUITestListener for Events {
     }
 }
 async fn session(cfg: Config) -> Result<(), &'static str> {
-    let (mut adapter, mut handshake, rsd_port) =
+    let (mut adapter, mut handshake, rsd_port, _heartbeat) =
         tokio::time::timeout(Duration::from_secs(120), tunnel(&cfg))
             .await
             .map_err(|_| "tunnel_timeout")??;
@@ -257,6 +442,15 @@ async fn session(cfg: Config) -> Result<(), &'static str> {
     let mut lockdown = LockdownClient::connect_rsd(&mut adapter, &mut handshake)
         .await
         .map_err(|_| "device_info_connect_failed")?;
+    if let Some(expected) = cfg.expected_udid.as_ref() {
+        let actual = lockdown
+            .get_value(Some("UniqueDeviceID"), None)
+            .await
+            .map_err(|_| "device_identity_required")?;
+        if actual.as_string() != Some(expected.as_str()) {
+            return Err("device_identity_mismatch");
+        }
+    }
     let version = lockdown
         .get_value(Some("ProductVersion"), None)
         .await
@@ -339,9 +533,13 @@ async fn session(cfg: Config) -> Result<(), &'static str> {
         .runner_bundle
         .as_deref()
         .ok_or("runner_bundle_required")?;
-    let mut test = TestConfig::from_installation_proxy(&mut installation, bundle, None)
-        .await
-        .map_err(|_| "runner_not_installed")?;
+    let mut test = TestConfig::from_installation_proxy(
+        &mut installation,
+        bundle,
+        Some("com.leeguoo.iphone-use.selfhost-probe"),
+    )
+    .await
+    .map_err(|_| "runner_not_installed")?;
     drop(installation);
     drop(lockdown);
     let mut env = plist::Dictionary::new();
@@ -368,9 +566,17 @@ async fn session(cfg: Config) -> Result<(), &'static str> {
     );
     test.runner_env = Some(env);
     set_phase("starting_runner");
-    XCUITestService::run_rsd(adapter, handshake, major, test, &mut Events, None)
-        .await
-        .map_err(|_| "xctest_failed")?;
+    let mut listener = Events;
+    tokio::select! {
+        result=XCUITestService::run_rsd(adapter, handshake, major, test, &mut listener, None) => {
+            result.map_err(|error| protocol_failure(&error,"xctest_failed"))?;
+        }
+        _=async {
+            tokio::time::sleep(Duration::from_secs(90)).await;
+            let started=host().lock().map(|h|h.status.test_plan_started).unwrap_or(false);
+            if started { std::future::pending::<()>().await; }
+        } => return Err("runner_startup_timed_out"),
+    }
     set_phase("runner_exited");
     Ok(())
 }
@@ -493,9 +699,11 @@ mod tests {
     fn public_status_never_serializes_credentials() {
         let status = Status::default();
         let json = serde_json::to_value(status).unwrap();
-        assert_eq!(json.as_object().unwrap().len(), 7);
+        assert_eq!(json.as_object().unwrap().len(), 9);
         for key in [
             "pair_record_base64",
+            "lockdown_pair_record_base64",
+            "expected_udid",
             "runner_token",
             "daemon_token",
             "daemon_password",
@@ -516,5 +724,98 @@ mod tests {
         assert!(!valid_token(Some("password")));
         assert!(!valid_token(Some(&"z".repeat(64))));
         assert!(valid_token(Some(&"a".repeat(64))));
+    }
+    #[test]
+    fn pairing_diagnostics_report_categories_without_device_error_contents() {
+        use idevice::remote_pairing::errors::RemotePairingError;
+        let secret = "synthetic-private-key-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let error = IdeviceError::RemotePairing(RemotePairingError::PairingRejected(secret.into()));
+        assert_eq!(pairing_error(&error), "pairing_rejected");
+        let error = IdeviceError::RemotePairing(RemotePairingError::PairingRejected(
+            "User denied pairing".into(),
+        ));
+        assert_eq!(pairing_error(&error), "pairing_user_denied");
+        assert_eq!(
+            pairing_error(&IdeviceError::RemotePairing(
+                RemotePairingError::SrpAuthFailed
+            )),
+            "pairing_code_rejected"
+        );
+    }
+    #[derive(Debug)]
+    struct ConsentRejectedSocket(std::sync::Arc<Mutex<Vec<serde_json::Value>>>);
+    impl idevice::remote_pairing::RpPairingSocketProvider for ConsentRejectedSocket {
+        fn send_plain(
+            &mut self,
+            value: impl serde::Serialize,
+            _: usize,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<(), IdeviceError>> + Send + '_>,
+        > {
+            self.0
+                .lock()
+                .unwrap()
+                .push(serde_json::to_value(value).unwrap());
+            Box::pin(async { Ok(()) })
+        }
+        fn send_encrypted(
+            &mut self,
+            _: Vec<u8>,
+            _: usize,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<(), IdeviceError>> + Send + '_>,
+        > {
+            Box::pin(async { Err(IdeviceError::CanceledByUser) })
+        }
+        fn recv_plain<'a>(
+            &'a mut self,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<plist::Value, IdeviceError>> + Send + 'a>,
+        > {
+            Box::pin(async {
+                Ok(plist::from_value(&plist::to_value(&serde_json::json!({
+                "event":{"_0":{"pairingRejectedWithError":{"wrappedError":{"userInfo":{"NSLocalizedDescription":"User denied synthetic request"}}}}}
+            })).unwrap()).unwrap())
+            })
+        }
+        fn serialize_bytes(bytes: &[u8]) -> plist::Value {
+            plist::Value::String(B64.encode(bytes))
+        }
+        fn deserialize_bytes(value: plist::Value) -> Option<Vec<u8>> {
+            value.as_string().and_then(|s| B64.decode(s).ok())
+        }
+    }
+    #[tokio::test]
+    async fn initial_pairing_requests_consent_before_any_unknown_key_verification() {
+        for first in [true, false] {
+            let sent = std::sync::Arc::new(Mutex::new(Vec::new()));
+            let mut rpc =
+                RemotePairingClient::new(ConsentRejectedSocket(sent.clone()), "synthetic-host");
+            let mut record = RpPairingFile::generate("synthetic-host");
+            assert!(
+                authenticate_record(&mut rpc, &mut record, first)
+                    .await
+                    .is_err()
+            );
+            let messages = serde_json::to_string(&*sent.lock().unwrap()).unwrap();
+            if first {
+                assert!(messages.contains("setupManualPairing"));
+                assert!(!messages.contains("verifyManualPairing"));
+            } else {
+                assert!(messages.contains("verifyManualPairing"));
+                assert!(!messages.contains("setupManualPairing"));
+            }
+        }
+    }
+    #[tokio::test]
+    async fn imported_trust_requires_a_device_identity_before_any_network_request() {
+        let cfg: Config = serde_json::from_value(serde_json::json!({
+            "mode":"probe","device_host":"10.7.0.1","lockdown_pair_record_base64":"c3ludGhldGlj"
+        }))
+        .unwrap();
+        assert!(matches!(
+            trusted_tunnel(&cfg).await,
+            Err("expected_device_identity_required")
+        ));
     }
 }

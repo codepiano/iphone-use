@@ -61,6 +61,7 @@ final class PhoneTunnelProvider: NEPacketTunnelProvider {
             for host in ["127.0.0.1", "10.7.0.1"] {
                 collected.append(await TCPAttempt(Endpoint(host: host, port: 49152, purpose: "extension direct RemotePairing")).run())
             }
+            collected.append(await TunnelTCPAttempt(provider: self, port: 62078).run())
             collected.append(await TunnelTCPAttempt(provider: self).run())
             self.stateQueue.sync { if self.running { self.results = collected } }
         }
@@ -95,7 +96,7 @@ final class PhoneTunnelProvider: NEPacketTunnelProvider {
             if phase == "running" { self.failures = 0; return }
             let requested = self.sessionRequested ?? (ProtectedStore.read("session_enabled") == Data([1]))
             guard requested,
-                  ProtectedStore.read("pair_record") != nil,
+                  (ProtectedStore.read("pair_record") != nil || ProtectedStore.read("lockdown_onboarding") != nil || ProtectedStore.read("remote_onboarding") != nil),
                   ["stopped", "runner_exited", "failed"].contains(phase), Date() >= self.retryAfter else { return }
             let error = status["error_code"] as? String
             // Pairing and authorization failures need a person; retry transport loss only.
@@ -155,13 +156,16 @@ final class TunnelTCPAttempt {
     private var sent = false
     private var bytes = Data()
     private let started = Date()
-    private let endpoint = Endpoint(host: "10.7.0.1", port: 49152, purpose: "extension through-tunnel RemotePairing")
-    init(provider: NEPacketTunnelProvider) { self.provider = provider }
+    private let endpoint: Endpoint
+    init(provider: NEPacketTunnelProvider, port: UInt16 = 49152) {
+        self.provider = provider
+        self.endpoint = Endpoint(host: "10.7.0.1", port: port, purpose: port == 49152 ? "extension through-tunnel RemotePairing" : "extension through-tunnel lockdown")
+    }
     func run() async -> ResultRow {
         await withCheckedContinuation { continuation in
             queue.async {
                 self.continuation = continuation
-                let endpoint = NWHostEndpoint(hostname: "10.7.0.1", port: "49152")
+                let endpoint = NWHostEndpoint(hostname: self.endpoint.host, port: String(self.endpoint.port))
                 let connection = self.provider.createTCPConnectionThroughTunnel(to: endpoint, enableTLS: false, tlsParameters: nil, delegate: nil)
                 self.connection = connection
                 self.observation = connection.observe(\.state, options: [.new, .initial]) { conn, _ in
@@ -169,6 +173,7 @@ final class TunnelTCPAttempt {
                         guard !self.finished else { return }
                         switch conn.state {
                         case .connected:
+                            if self.endpoint.port != 49152 { self.finish("tcp_open", "TCP connected; authorization not attempted"); return }
                             guard !self.sent else { return }
                             self.sent = true
                             do {

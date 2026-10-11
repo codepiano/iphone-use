@@ -7,6 +7,7 @@ func frame(_ object: Any) throws -> Data {
 let fixture: [String: Any] = [
     "originatedBy": "device", "sequenceNumber": 0,
     "message": ["plain": ["_0": ["response": ["_1": ["handshake": ["_0": [
+        "deviceOptions": ["allowsPairSetup": false, "allowsPinlessPairing": true, "private_key": "synthetic-secret"],
         "wireProtocolVersion": 19, "private_key": "synthetic-secret", "deviceIdentifier": "synthetic-id"
     ]]]]]]]
 ]
@@ -17,6 +18,7 @@ for split in 0..<response.count {
 }
 let summary = try RemotePairingHandshake.response(response)!
 precondition(summary.contains("protocol 19"))
+precondition(summary.contains("allowsPairSetup=false") && summary.contains("allowsPinlessPairing=true"))
 precondition(!summary.contains("synthetic-secret") && !summary.contains("synthetic-id"))
 for invalid in [Data("NotPairing".utf8) + Data([0, 0]),
                 Data("RPPairing".utf8) + Data([0, 0]), try frame(["originatedBy": "host"])] {

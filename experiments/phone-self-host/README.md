@@ -2,7 +2,7 @@
 
 2026-10-11，基于 `8976975`。目标：iPhone 不连接 Mac，仍能被另一台设备看屏和操作。
 
-**当前状态：已实现并构建手机内开发网络、RemotePairing/RSD 启动器、网络扩展保活和开发镜像恢复代码。尚未通过真机独立启动及 Mac 断开验收，目标没有完成。**
+**当前状态：已实现并构建手机内开发网络、RemotePairing/RSD 启动器、网络扩展保活和开发镜像恢复代码。iPhone 14 已通过手机内启动、点击、输入、读屏与截图验收；Mac 物理断开、恢复与正式助手集成尚未通过，目标没有完成。**
 
 2026-10-11 后续构建使用独立 App 和独立 runner，不改变原项目的其他会话。iPhone 17 Pro Max 当前离线；另一个空闲 iPhone 14（iOS 27.2）的外部 Wi-Fi 启动返回 `wifi_automation_refused`，要求 USB 授权。该结果属于原有 Mac 启动路径，不能代替手机内隧道的验收。没有反复重试 Wi-Fi 启动。
 
@@ -27,7 +27,21 @@
 - [USB 对照](evidence/ios27-usb-handshake.json)
 - [最初仅测 TCP 的报告](evidence/ios27-no-vpn.json)：62078 当时被归为超时，细节已显示 EPERM；后续版本将其明确标为 `tcp_denied`。
 
-这些结果只覆盖本机网络入口和未认证协议握手，没有做配对、控制权限申请或测试会话创建。外部 LocalDevVPN 尚未安装、未测试。后续改为 App 自带本地网络扩展，使用同类地址反射方案；它也尚未通过真机验证。观察到的重置不能用于断言所有 iOS 版本都禁止同机开发连接，也不能单独确定系统拒绝的内部原因。
+这些结果只覆盖本机网络入口和未认证协议握手，没有做配对、控制权限申请或测试会话创建。iPhone 14 后续已安装并启用外部 LocalDevVPN，但普通 App 到虚拟网关的请求返回 `Network is down`。之后部署 App 自带本地网络扩展，显式通过隧道连接的无认证 RemotePairing 握手通过；该阶段尚未完成认证，后续 iPhone 14 结果见下节。观察到的重置不能用于断言所有 iOS 版本都禁止同机开发连接，也不能单独确定系统拒绝的内部原因。
+
+## iPhone 14 当前验收
+
+2026-10-11：已暂停 guouli 的 Mac runner supervisor，并确认其 PID 校验后的 runner/relay 进程停止。部署并核对 `41288c1` 的 App、网络扩展和独立 runner：实际二进制 SHA256 与 `native-build.json` 一致，签名校验通过。
+
+- 外部 LocalDevVPN 扩展启动成功；普通探测 App 访问 `10.7.0.1:62078/49152` 返回网络未就绪。[观测报告](evidence/iphone14-localdevvpn-network.json)。
+- App 自带网络扩展启动后，普通扩展 socket 尚未通过；`createTCPConnectionThroughTunnel` 路径收到合法 RemotePairing 响应，协议版本 26，用时 37 ms。[握手报告](evidence/iphone14-own-tunnel-handshake.json)。
+- 首次真实配对返回 `pairing_approval_failed`，没有取得配对记录，也未启动测试计划。[初次配对报告](evidence/iphone14-initial-pairing.json)。不把握手成功计为认证或控制验收通过。
+- 设备明确返回 `allowsPairSetup=false`；首次配置使用既有 USB 信任建立 RemotePairing 记录，定向导入手机共享 Keychain 后删除 App 临时文件。首次配置仍使用 Mac，日常启动路径在手机内执行。[能力报告](evidence/iphone14-pair-setup-capabilities.json)、[认证后 RSD](evidence/iphone14-remote-trust-rsd.json)。
+- 修正 XCTest 配置的目标 App/module，增加启动超时。手机网络扩展启动独立 runner，`test_plan_started=true`，嵌入 daemon 可用。[启动报告](evidence/iphone14-runner-started.json)。
+- 验收客户端禁用 HTTP 缓存后连续两次通过真实点击、随机合成文字输入、无障碍树结果校验、真实截图，分别耗时 2.75 / 2.28 秒。[首次通过](evidence/iphone14-control-smoke.json)、[重复通过](evidence/iphone14-control-smoke-repeat.json)。先前出现 401，尚未单独证明它的根因。
+- 稳定共享控制凭据跨扩展重启保留；build 14 重启手机内网络扩展及 runner 后，控制验收再次通过，用时 2.41 秒。[重启状态](evidence/iphone14-runner-after-extension-restart.json)、[重启后控制](evidence/iphone14-control-after-extension-restart.json)。
+- 7 项 Rust 单元测试、Swift 握手/反射/HMAC 检查及签名构建通过。公开状态仅输出固定错误类别，不包含设备错误原文、配对记录或令牌。已有记录验证失败不会自动发起新配对。
+- 尚未完成 Mac 通信断开、后台跨 App、断线恢复、重启恢复或正式助手集成。以上结果来自独立测试 App，不是正式版交付。
 
 ## 已有代码能复用的部分
 
@@ -96,7 +110,7 @@ python3 experiments/phone-self-host/mac-control.py --udid <UDID>
 
 支持 `--probe-on-launch` 自动进行无认证网络探测。Debug 构建可用 `--selfhost-pair` / `--selfhost-probe` / `--selfhost-launch` 执行指定操作；没有公开 URL scheme 自动启动控制。
 
-只有用户明确点选配对或启动按钮时才申请配对/自动化会话。无认证探测仍不读凭据、不启动 runner。测试覆盖拆包、无效帧、错误方向、报告脱敏、局部包反射、错误包拒绝、独立 Python HMAC 答案、配置凭据检查和镜像路径隔离。最初网络探测版本已真机运行，新增独立启动版本目前仅完成构建，尚未部署验收。
+只有用户明确点选配对或启动按钮时才申请配对/自动化会话。无认证探测仍不读凭据、不启动 runner。测试覆盖拆包、无效帧、错误方向、报告脱敏、局部包反射、错误包拒绝、独立 Python HMAC 答案、配置凭据检查和镜像路径隔离。最初网络探测版本已真机运行，新增独立启动版本已在 iPhone 14 部署并通过上述限定范围的真机验收。
 
 运行状态与控制验收报告分别为 App 的 `Documents/self-host-runtime.json` 和 `Documents/self-host-control-smoke.json`。`phase=running` 不能替代输入和截图验收，也不能替代 Mac 断开观察。
 
@@ -104,6 +118,6 @@ python3 experiments/phone-self-host/mac-control.py --udid <UDID>
 
 - [idevice](https://github.com/leeguooooo/idevice/tree/41c388baef0dd55c0ce4924789abbfde889d9b87)：MIT，探测报文依据其公开协议实现独立编写。保留其许可见 `THIRD-PARTY-NOTICES.txt`。
 - [StikDebug](https://github.com/StikDebug/StikDebug/tree/775fba15f3fbadc18f7f1444dc6ffb1566adaa4c)：已有同机开发服务连接方案；它的 README 要求配对记录和 LocalDevVPN。这里只用于调研，没有复制其 AGPL 代码。
-- [LocalDevVPN](https://github.com/jkcoxson/LocalDevVPN/tree/af3fd697803ada4ac2b8d518358f5ab0a534844c)：可测试的虚拟网络工具，引用其本地地址反射方案，版权与自定义许可证见 `THIRD-PARTY-NOTICES.txt`；未安装外部工具。
+- [LocalDevVPN](https://github.com/jkcoxson/LocalDevVPN/tree/af3fd697803ada4ac2b8d518358f5ab0a534844c)：可测试的虚拟网络工具，引用其本地地址反射方案，版权与自定义许可证见 `THIRD-PARTY-NOTICES.txt`；曾单独安装第三方原版工具作对照，当前验收使用 App 自带扩展。
 - [Apple 后台执行说明](https://developer.apple.com/documentation/uikit/extending-your-app-s-background-execution-time)：普通后台任务提供有限执行时间。
 - [Apple Network Extension 用途说明](https://developer.apple.com/documentation/technotes/tn3120-expected-use-cases-for-network-extension-packet-tunnel-providers)：自有 Network Extension 方案还需验证，不能把网络扩展当成任意后台服务。
