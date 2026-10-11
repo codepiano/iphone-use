@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "device": "iPhone 14 guouli",
+  "observation": "User replied done to the request to disconnect this phone USB, switch Wi-Fi off for 30 seconds, then restore connection",
+  "usb_detachment_confirmed_by_user": true,
+  "usb_state_measured_by_app": false,
+  "app_report": "iphone14-native-offline-control.json",
+  "scope": "Existing session ran with external network paths unavailable; device reboot and full voice acceptance remain pending"
+}

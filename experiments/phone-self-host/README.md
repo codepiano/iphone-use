@@ -59,8 +59,10 @@ RemotePairing 信任封装，检查密钥对应关系和数据大小，保存到
   [正式控制记录](evidence/iphone14-native-assistant-control.json)。
 - 测试 App 进入桌面后停留 10 秒，服务继续响应并带回 App，后续完整控制验收通过。
   [后台记录](evidence/iphone14-background-control.json)。此结果仅覆盖 10 秒停留，不代表长时间后台、重启恢复验收。
-- 物理断开验收仍待独立报告确认。自动验收与离线验收现在使用不同文件，避免返回 App
-  时的自动任务覆盖离线结果；首次用户报告通过，但读回的旧共用文件仍为普通验收。新增自动等待 Wi-Fi 关闭后带回 App 的验收模式，用户不必寻找控件；该模式单独标记网络测量与用户的 USB 确认。
+- 物理断开后的正式控制验收通过：手机记录 Wi-Fi、以太网、蜂窝路径均未启用，真实按钮计数、输入内容与截图通过。[手机原始报告](evidence/iphone14-native-offline-control.json)、[等待过程](evidence/iphone14-native-offline-wait.json)。
+  USB 状态不由 App 测量，用户对拔线操作的确认另存为[外部观测](evidence/iphone14-native-offline-external-observation.json)，不改写原始报告。
+  本轮证明已启动会话在断网时可操作；手机重启后的独立恢复与完整语音仍待验收。
+  自动验收与离线验收使用不同文件，每个进程只启动一次自动任务，避免返回 App 时覆盖离线结果。
 - 完整语音、手机重启恢复和跨应用长任务仍待验收，不宣称整项完成。
 
 构建正式 App：先构建启动库和手机浏览器会话库，再执行

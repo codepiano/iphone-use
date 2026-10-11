@@ -1,0 +1,12 @@
+{
+  "native_phase": "running",
+  "observed_at": "2026-10-11T19:07:01Z",
+  "schema": 1,
+  "stage": "network_isolated",
+  "transport": {
+    "cellular_path_active": false,
+    "default_path_wifi": false,
+    "ethernet_path_active": false,
+    "wifi_path_active": false
+  }
+}

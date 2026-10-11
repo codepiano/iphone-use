@@ -1,0 +1,18 @@
+{
+  "cellular_path_active": false,
+  "default_path_wifi": false,
+  "ethernet_path_active": false,
+  "executor": "native assistant via on-phone runner",
+  "observed_at": "2026-10-11T19:07:04Z",
+  "ok": true,
+  "physical_detachment_user_attested": false,
+  "schema": 1,
+  "screenshot_height": 512,
+  "screenshot_sha256": "b358427038d2adb960c82d9acde5b432151af58a1c81e9fd8cb606739be22629",
+  "screenshot_width": 236,
+  "tap_verified": true,
+  "typing_verified": true,
+  "ui_count_observed": true,
+  "ui_input_observed": true,
+  "wifi_path_active": false
+}
