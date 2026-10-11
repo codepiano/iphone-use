@@ -2,26 +2,26 @@
   "schema": 1,
   "date": "2026-10-11",
   "rust_tests": {
-    "passed": 7,
+    "passed": 10,
     "failed": 0,
-    "log": "/tmp/iphone-self-launch-tests-final.log"
+    "log": "/tmp/iphone-self-launch-autosetup-final-tests.log"
   },
   "signed_ios_build": {
     "passed": true,
     "target": "aarch64-apple-ios",
-    "log": "/tmp/iphone-self-launch-app-final.log"
+    "log": "/tmp/iphone-self-launch-autosetup-final-signed.log"
   },
   "dependency_preparation_reproducible": true,
-  "installed_on": "iPhone 14, iOS 27.2",
+  "installed_on": "iPhone 14, iOS 27.2; previous automatic-setup build installed; final build 2 package ready",
   "artifact": {
-    "path": "/tmp/PhoneSelfLaunchQA-20261011.ipa",
-    "sha256": "9f4aeb560abe2eb8ac7f2864685972927705da1dcb407e181082ffaee0b287a1"
+    "path": "/tmp/PhoneSelfLaunchQA-autosetup-20261011.ipa",
+    "sha256": "56814c5f3664661a8e6d50de9a8c1a40c48add7ecba5321cb73c25695aa1a807"
   },
   "source_sha256": {
-    "src/lib.rs": "adef81ff4c5f74552f4e36e472ace6b792b2531efb764ab5ac2a7f75244b8020",
-    "Sources/LaunchApp.swift": "82c182eddfc235e2b9f050cbdc354a5e2741bebbf6347468a5ce99383ebe0ecf",
-    "Sources/LaunchBridge.h": "7ff573c88ed30fa67c7d8256e8fa2cd7ced820901b30ca20eaf7177a84c21d30",
-    "Info.plist": "34d968a63066536635a40f38015f4581187afa2a964bf0d968a66b8d9e926728",
+    "src/lib.rs": "45e3d7e13ccca0b7fb2f6285b93f50140fd8c76ea9aa8a8c5eacf4727014c3ac",
+    "Sources/LaunchApp.swift": "933c7a84f19e6abb80553fae3760a980e6de6f73e6cc14379e29e12691de17da",
+    "Sources/LaunchBridge.h": "7deb344cbdf0585624161d9c34459a88ca4b8d07faa1d59d6e4937497bd94328",
+    "Info.plist": "4d81c074ec272fa7554bf462f0d15d43038ba84ee617f06eab93d2d840583f70",
     "Cargo.toml": "d38f6cd9c08b2dde114fe9b024938907746f3a817eb1ec654f19185b276d1b92",
     "Cargo.lock": "159348b1f9e121fc0f5d6d92d6398ff48202158f011130ae181bf9bb7ae84b5c",
     "idevice-rsd-launch.patch": "79622b0154285bda87668bdb67a897a250d26cbd1b9b7c800f424a4a65d9bec2"
@@ -30,5 +30,5 @@
   "physical_xctest_start_from_phone_passed": false,
   "mac_detachment_passed": false,
   "background_lifecycle_passed": false,
-  "pending": "Enable LocalDevVPN on the iPhone 14 and verify a valid local RemotePairing handshake before authenticated launch."
+  "pending": "Independent Network Extension transport succeeded in the phone-self-host experiment; real pairing and background-controlled operation are not yet accepted."
 }

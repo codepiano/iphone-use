@@ -52,7 +52,9 @@ final class TCPAttempt {
                     case .failed(let error): self.finish("tcp_failed", String(describing: error))
                     case .waiting(let error):
                         // Waiting can recover after a permission prompt; allow the deadline.
-                        self.waitingDetail = String(describing: error)
+                        let path = connection.currentPath
+                        let reason = path.map { String(describing: $0.unsatisfiedReason) } ?? "unknown"
+                        self.waitingDetail = String(describing: error) + "; path=" + String(describing: path?.status) + "; reason=" + reason
                         if case .posix(let code) = error, code == .EPERM || code == .EACCES {
                             self.finish("tcp_denied", String(describing: error))
                         }
@@ -206,6 +208,8 @@ func localWiFiAddress() -> String? {
                     .task {
                         if ProcessInfo.processInfo.arguments.contains("--probe-on-launch") {
                             await model.run(includeAlternate: false)
+                        } else if ProcessInfo.processInfo.arguments.contains("--probe-alternate-on-launch") {
+                            await model.run(includeAlternate: true)
                         }
                     }
             }

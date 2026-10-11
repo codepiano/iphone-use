@@ -20,7 +20,9 @@
 
 1. 在测试手机上安装独立 App `com.leeguoo.iphone-use.self-launch`，以及链接了手机内 daemon 的 runner。构建和首次安装目前仍通过 Xcode 完成。
 2. 在手机上安装并启用 [LocalDevVPN](https://github.com/jkcoxson/LocalDevVPN)。这会占用手机的 VPN 连接，测试前应处理原有 VPN 的恢复。
-3. 在 App 内分别导入启动配置与 RemotePairing 记录。`config.example.json` 全为合成占位符，不能直接启动。runner 路径必须对应本机实际安装，更新安装后需要重新核对。旧式 lockdown 配对记录不能替代 RemotePairing 记录。也可点「首次在手机上配对并启动」，本人允许系统配对提示并输入配对码；记录在核对本机 RSD 身份后直接转入钥匙串。已有记录验证失败时不会自动换成新配对。
+3. 首次打开 App 时，在手机上生成两个随机控制令牌和本机配置，无需导入 Mac 文件。点「首次在手机上配对并启动」，本人允许系统配对提示并输入配对码；只有这条明确的首次配对流程可以从已认证本机隧道绑定设备身份。启动器通过 RSD 安装服务读取 runner 路径，身份、配置和配对记录合为一个本机 Keychain 项；等写入确认后才启动 runner。已有记录验证失败时不会自动换成新配对。
+
+仍保留手工导入以兼容早期测试配置。`config.example.json` 是合成占位符；旧式 lockdown 记录不能代替 RemotePairing 记录。已导入配置若指定 daemon 监听地址，也仅允许 `127.0.0.1`。
 4. 点「在手机上启动」。启动器会核对 RSD 返回的 `UniqueDeviceID` 和 `OSVersion`，再启动 `RunnerTests/testServe`。它不会自动进行新配对，也不会代替用户接受系统权限提示。
 5. `test_plan_started` 只表示 XCTest 已开始。点「连接本机助手」会使用 runner HMAC 鉴权请求手机内 daemon 的一次性配对码，然后打开 `iphoneuse://pair`。只有真实接口成功，才会跳转。
 
@@ -34,7 +36,7 @@
 
 ## 软件验证
 
-2026-10-11：7 项 Rust 测试通过，覆盖本机地址限制、启动配置鉴权、错误输入、设备身份和系统版本、停止后的会话排他、配对码的一次性提交以及密钥记录的一次性传递。iOS ARM64 静态库和开发签名 App 构建通过；从干净目录重新生成依赖并应用补丁后，源码与已测试版本一致。
+2026-10-11 自动配置更新：10 项 Rust 测试通过，覆盖本机地址限制、启动配置鉴权、错误输入、设备身份和系统版本、停止后的会话排他、配对码的一次性提交、密钥记录的一次性传递、首次配对不可跳过、Keychain 写入确认和拒绝 LAN 监听。Swift iOS 类型检查通过。iOS ARM64 静态库和开发签名 App 构建通过；从干净目录重新生成依赖并应用补丁后，源码与已测试版本一致。
 
 这些结果只验证实现和构建，不包含真实 RemotePairing 认证、XCTest 启动、后台保活或断开 Mac 的验收。
 
@@ -44,7 +46,7 @@
 
 后续物理设备测试只使用 iPhone 14。2026-10-11 读取到这台手机为 iOS 27.2，Developer Mode 已启用；现有 Mac Wi-Fi 启动路径报告 `wifi_automation_refused`。这些状态不证明手机内隧道能或不能启动 runner。
 
-已在 iPhone 14 安装并运行独立探测 App。本机未启用 VPN 时，62078 返回 `EPERM`，49152 的 RemotePairing 握手被重置，8100/8787 超时。报告见 [iPhone 14 无 VPN 探测](evidence/iphone14-no-vpn.json)，已去除手机局域网地址。LocalDevVPN 尚待用户安装并在手机确认 VPN 权限；本机开发签名配置没有 Network Extension / Personal VPN 能力，无法直接签名安装其 VPN 扩展。
+已在 iPhone 14 安装并运行独立探测 App。本机未启用 VPN 时，62078 返回 `EPERM`，49152 的 RemotePairing 握手被重置，8100/8787 超时。报告见 [iPhone 14 无 VPN 探测](evidence/iphone14-no-vpn.json)，已去除手机局域网地址。LocalDevVPN 现已使用 App Store Connect 凭据完成开发签名并安装、打开在 iPhone 14；此前缺少 Network Extension / Personal VPN profile 的问题已解决。最新进程检查仅看到主 App，没有 VPN 扩展运行；仍需在手机完成首次 VPN 配置系统确认。
 
 需记录并通过：
 

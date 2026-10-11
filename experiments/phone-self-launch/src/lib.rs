@@ -6,6 +6,7 @@ use idevice::{
     },
     services::{
         dvt::xctest::{listener::XCUITestListener, TestConfig, XCUITestService},
+        installation_proxy::InstallationProxyClient,
         rsd::RsdHandshake,
     },
 };
@@ -18,15 +19,19 @@ use std::{
 };
 use tokio::{net::TcpStream, sync::oneshot};
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Configuration {
     pub schema: u8,
     pub endpoint: IpAddr,
+    #[serde(default)]
     pub expected_udid: String,
     pub runner_bundle_id: String,
+    #[serde(default)]
     pub runner_app_path: String,
+    #[serde(default)]
     pub runner_app_container: String,
+    #[serde(default)]
     pub runner_bundle_executable: String,
     pub runner_environment: BTreeMap<String, String>,
 }
@@ -41,16 +46,22 @@ impl Configuration {
         {
             return Err("nonlocal_endpoint");
         }
-        if self.expected_udid.len() < 16 || self.expected_udid.len() > 64 {
+        if !self.expected_udid.is_empty()
+            && (self.expected_udid.len() < 16 || self.expected_udid.len() > 64)
+        {
             return Err("invalid_identity");
         }
         if !self.runner_bundle_id.starts_with("com.leeguoo.iphone-use.")
             || !self.runner_bundle_id.ends_with(".xctrunner")
-            || !self.runner_bundle_executable.ends_with("-Runner")
+            || (!self.runner_bundle_executable.is_empty()
+                && !self.runner_bundle_executable.ends_with("-Runner"))
         {
             return Err("invalid_runner");
         }
         for path in [&self.runner_app_path, &self.runner_app_container] {
+            if path.is_empty() {
+                continue;
+            }
             if !path.starts_with("/private/var/") && !path.starts_with("/var/") {
                 return Err("invalid_runner_path");
             }
@@ -74,6 +85,13 @@ impl Configuration {
             {
                 return Err("invalid_environment");
             }
+        }
+        if self
+            .runner_environment
+            .get("IPU_DAEMON_HOST")
+            .is_some_and(|v| v != "127.0.0.1")
+        {
+            return Err("nonlocal_daemon_bind");
         }
         for key in ["IPU_RUNNER_TOKEN", "IPU_DAEMON_TOKEN"] {
             if self
@@ -120,6 +138,7 @@ struct Session {
     stop: Option<oneshot::Sender<()>>,
     pin: Option<oneshot::Sender<String>>,
     private_record: Option<Vec<u8>>,
+    setup_saved: Option<oneshot::Sender<bool>>,
 }
 static SESSION: OnceLock<Mutex<Session>> = OnceLock::new();
 fn session() -> &'static Mutex<Session> {
@@ -133,6 +152,7 @@ fn session() -> &'static Mutex<Session> {
             stop: None,
             pin: None,
             private_record: None,
+            setup_saved: None,
         })
     })
 }
@@ -170,7 +190,47 @@ fn validate_device(handshake: &RsdHandshake, expected_udid: &str) -> Result<u8, 
     Ok(major)
 }
 
-async fn bootstrap(config: Configuration, pair_bytes: Option<Vec<u8>>) -> Result<(), &'static str> {
+async fn resolve_runner(
+    handle: &mut idevice::tcp::handle::AdapterHandle,
+    handshake: &RsdHandshake,
+    config: &Configuration,
+) -> Result<TestConfig, &'static str> {
+    if let Some(service) = handshake
+        .services
+        .get("com.apple.mobile.installation_proxy.shim.remote")
+    {
+        let stream = handle
+            .connect(service.port)
+            .await
+            .map_err(|_| "runner_metadata_connect_failed")?;
+        let mut device = idevice::Idevice::new(Box::new(stream), "iphone-use-on-device");
+        device
+            .rsd_checkin()
+            .await
+            .map_err(|_| "runner_metadata_checkin_failed")?;
+        let mut proxy = InstallationProxyClient::new(device);
+        let mut result =
+            TestConfig::from_installation_proxy(&mut proxy, &config.runner_bundle_id, None)
+                .await
+                .map_err(|_| "runner_not_installed")?;
+        result.runner_env = config.test_config().runner_env;
+        result.tests_to_run = Some(vec!["RunnerTests/testServe".into()]);
+        return Ok(result);
+    }
+    // Explicit legacy setup remains usable; never guess an app's filesystem path.
+    if config.runner_app_path.is_empty()
+        || config.runner_app_container.is_empty()
+        || config.runner_bundle_executable.is_empty()
+    {
+        return Err("runner_metadata_service_unavailable");
+    }
+    Ok(config.test_config())
+}
+
+async fn bootstrap(
+    mut config: Configuration,
+    pair_bytes: Option<Vec<u8>>,
+) -> Result<(), &'static str> {
     let first_pair = pair_bytes.is_none();
     let mut pair = match pair_bytes {
         Some(bytes) => {
@@ -247,11 +307,36 @@ async fn bootstrap(config: Configuration, pair_bytes: Option<Vec<u8>>) -> Result
     let handshake = RsdHandshake::new(stream)
         .await
         .map_err(|_| "rsd_handshake_failed")?;
+    if first_pair && config.expected_udid.is_empty() {
+        // Only initial human-approved pairing may bind identity from this local tunnel.
+        config.expected_udid = handshake
+            .properties
+            .get("UniqueDeviceID")
+            .and_then(|v| v.as_string())
+            .filter(|v| (16..=64).contains(&v.len()))
+            .ok_or("missing_device_identity")?
+            .to_owned();
+    }
     let major = validate_device(&handshake, &config.expected_udid)?;
     if first_pair {
-        session().lock().unwrap().private_record = Some(pair.to_bytes());
+        let bytes = serde_json::to_vec(
+            &serde_json::json!({"configuration":&config,"pairing_record":pair.to_bytes()}),
+        )
+        .map_err(|_| "setup_encoding_failed")?;
+        let (saved, confirmation) = oneshot::channel();
+        {
+            let mut state = session().lock().unwrap();
+            state.private_record = Some(bytes);
+            state.setup_saved = Some(saved);
+            state.status.phase = "awaiting_setup_storage";
+        }
+        if !confirmation.await.unwrap_or(false) {
+            return Err("setup_not_saved");
+        }
     }
-    let test_config = config.test_config();
+    // Preserve the authenticated record even if app discovery or XCTest startup fails.
+    set_phase("reading_runner_metadata");
+    let test_config = resolve_runner(&mut handle, &handshake, &config).await?;
     set_phase("starting_test_session");
     let result =
         XCUITestService::run_from_rsd(test_config, &mut Listener, None, major, handle, handshake)
@@ -287,7 +372,7 @@ pub unsafe extern "C" fn ipu_self_launch_start(
             Ok(v) => v,
             Err(_) => return -1,
         };
-    if config.validate().is_err() {
+    if config.validate().is_err() || config.expected_udid.is_empty() {
         return -1;
     }
     let pair_bytes = std::slice::from_raw_parts(pair, pair_len).to_vec();
@@ -325,6 +410,7 @@ fn schedule(config: Configuration, pair_bytes: Option<Vec<u8>>) -> i32 {
     let (stop, stopped) = oneshot::channel();
     state.active = true;
     state.pin = None;
+    state.setup_saved = None;
     if let Some(mut old) = state.private_record.take() {
         old.fill(0);
     }
@@ -362,6 +448,7 @@ fn schedule(config: Configuration, pair_bytes: Option<Vec<u8>>) -> i32 {
             let mut state = session().lock().unwrap();
             state.active = false;
             state.pin = None;
+            state.setup_saved = None;
             state.stop = None;
             state.status = match result {
                 Ok(()) => Status {
@@ -442,6 +529,25 @@ pub unsafe extern "C" fn ipu_self_launch_take_record(output: *mut u8, capacity: 
         record.fill(0);
     }
     required
+}
+
+/// Acknowledge atomic on-phone Keychain storage before any runner is started.
+#[no_mangle]
+pub extern "C" fn ipu_self_launch_setup_saved(success: bool) -> i32 {
+    let mut state = session().lock().unwrap();
+    if !state.active || state.status.phase != "awaiting_setup_storage" {
+        return -1;
+    }
+    match state.setup_saved.take() {
+        Some(tx) => {
+            if tx.send(success).is_ok() {
+                0
+            } else {
+                -1
+            }
+        }
+        None => -1,
+    }
 }
 
 /// NUL-terminated, redacted status. Returns required buffer length including NUL.
@@ -610,5 +716,50 @@ mod tests {
                 0
             );
         }
+    }
+    #[test]
+    fn phone_generated_configuration_needs_no_mac_paths_but_cannot_skip_first_pairing() {
+        let _serial = TEST_LIFECYCLE.lock().unwrap();
+        let bytes = serde_json::to_vec(&serde_json::json!({
+            "schema":1,"endpoint":"10.7.0.1", "runner_bundle_id":"com.leeguoo.iphone-use.runner.xctrunner",
+            "runner_environment":{"IPU_RUNNER_TOKEN":"a".repeat(64),"IPU_DAEMON_TOKEN":"b".repeat(64)}
+        })).unwrap();
+        let config: Configuration = serde_json::from_slice(&bytes).unwrap();
+        assert!(config.validate().is_ok());
+        assert!(config.expected_udid.is_empty());
+        let pair = RpPairingFile::generate("synthetic-pair").to_bytes();
+        unsafe {
+            assert_eq!(
+                ipu_self_launch_start(bytes.as_ptr(), bytes.len(), pair.as_ptr(), pair.len()),
+                -1
+            );
+        }
+    }
+    #[test]
+    fn keychain_storage_must_be_acknowledged_once_and_failures_are_observable() {
+        let _serial = TEST_LIFECYCLE.lock().unwrap();
+        assert_eq!(ipu_self_launch_setup_saved(true), -1);
+        let (tx, mut rx) = oneshot::channel();
+        {
+            let mut s = session().lock().unwrap();
+            s.active = true;
+            s.status.phase = "awaiting_setup_storage";
+            s.setup_saved = Some(tx);
+        }
+        assert_eq!(ipu_self_launch_setup_saved(false), 0);
+        assert_eq!(rx.try_recv(), Ok(false));
+        assert_eq!(ipu_self_launch_setup_saved(true), -1);
+        {
+            let mut s = session().lock().unwrap();
+            s.active = false;
+            s.status.phase = "stopped";
+        }
+    }
+    #[test]
+    fn daemon_cannot_be_exposed_on_the_lan_by_imported_configuration() {
+        let mut c = config();
+        c.runner_environment
+            .insert("IPU_DAEMON_HOST".into(), "0.0.0.0".into());
+        assert_eq!(c.validate(), Err("nonlocal_daemon_bind"));
     }
 }

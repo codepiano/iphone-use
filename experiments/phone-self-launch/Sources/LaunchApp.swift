@@ -12,8 +12,17 @@ enum PrivateSetup {
             kSecAttrService as String: service, kSecAttrAccount as String: name,
             kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
         var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess else { return nil }
-        return result as? Data
+        if SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess { return result as? Data }
+        guard ["configuration", "remote-pairing"].contains(name),
+              let saved = read("device-setup"),
+              let object = try? JSONSerialization.jsonObject(with: saved) as? [String: Any] else { return nil }
+        if name == "configuration", let config = object["configuration"] as? [String: Any] {
+            return try? JSONSerialization.data(withJSONObject: config, options: [.sortedKeys])
+        }
+        if name == "remote-pairing", let values = object["pairing_record"] as? [NSNumber] {
+            return Data(values.map(\.uint8Value))
+        }
+        return nil
     }
     static func write(_ data: Data, name: String) throws {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
@@ -29,6 +38,33 @@ enum PrivateSetup {
     static func removeAll() {
         SecItemDelete([kSecClass as String: kSecClassGenericPassword,
                        kSecAttrService as String: service] as CFDictionary)
+    }
+    static func saveDeviceSetup(_ bytes: Data) throws {
+        guard let object = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+              object["configuration"] is [String: Any], object["pairing_record"] is [NSNumber] else { throw Failure.storage }
+        // Both configuration and pairing key are one atomic Keychain item.
+        try write(bytes, name: "device-setup")
+        for name in ["configuration", "remote-pairing"] {
+            let code = SecItemDelete([kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service, kSecAttrAccount as String: name] as CFDictionary)
+            guard code == errSecSuccess || code == errSecItemNotFound else { throw Failure.storage }
+        }
+    }
+    static func createPhoneConfiguration() throws {
+        guard read("configuration") == nil else { return }
+        func token() throws -> String {
+            var bytes = [UInt8](repeating: 0, count: 32)
+            let result = bytes.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, $0.count, $0.baseAddress!) }
+            guard result == errSecSuccess else { throw Failure.storage }
+            return bytes.map { String(format: "%02x", $0) }.joined()
+        }
+        guard let team = Bundle.main.object(forInfoDictionaryKey: "IPUDevelopmentTeam") as? String,
+              team.count == 10, team.utf8.allSatisfy({ (65...90).contains($0) || (48...57).contains($0) }) else { throw Failure.storage }
+        let configuration: [String: Any] = ["schema": 1, "endpoint": "10.7.0.1",
+            "expected_udid": "", "runner_bundle_id": "com.leeguoo.iphone-use.wda.\(team.lowercased()).xctrunner",
+            "runner_environment": ["IPU_RUNNER_TOKEN": try token(), "IPU_DAEMON_TOKEN": try token(),
+                "IPU_DAEMON_HOST": "127.0.0.1", "IPU_DAEMON_PORT": "8787", "USE_PORT": "8100", "MJPEG_SERVER_PORT": "9100"]]
+        try write(JSONSerialization.data(withJSONObject: configuration, options: [.sortedKeys]), name: "configuration")
     }
     enum Failure: Error { case storage }
 }
@@ -47,8 +83,14 @@ enum PrivateSetup {
         var secret = [UInt8](repeating: 0, count: 65536)
         let length = secret.withUnsafeMutableBufferPointer { ipu_self_launch_take_record($0.baseAddress, $0.count) }
         if length > 0 && length <= secret.count {
-            do { try PrivateSetup.write(Data(secret.prefix(length)), name: "remote-pairing") }
-            catch { errorCode = "new_record_storage_failed"; ipu_self_launch_stop() }
+            do {
+                try PrivateSetup.saveDeviceSetup(Data(secret.prefix(length)))
+                _ = ipu_self_launch_setup_saved(true)
+            } catch {
+                errorCode = "new_record_storage_failed"
+                _ = ipu_self_launch_setup_saved(false)
+                ipu_self_launch_stop()
+            }
         }
         _ = secret.withUnsafeMutableBytes { $0.initializeMemory(as: UInt8.self, repeating: 0) }
         var buffer = [UInt8](repeating: 0, count: 1024)
@@ -153,7 +195,7 @@ enum PrivateSetup {
                         Text("先启用 LocalDevVPN，再在这里启动。此程序只连接手机自己的开发服务。")
                         Text("验证期间请保持此页面在前台。后台保活和断开 Mac 后的完整操作尚未验收。")
                             .font(.footnote).foregroundStyle(.secondary)
-                        LabeledContent("启动配置", value: model.setupReady ? "已保存" : "待导入")
+                        LabeledContent("启动配置", value: model.setupReady ? "已在手机生成" : "待准备")
                         LabeledContent("RemotePairing 记录", value: model.recordReady ? "已保存" : "待导入")
                         Button("导入启动配置") { model.importKind = "configuration"; model.importing = true }
                             .disabled(model.active)
@@ -185,6 +227,8 @@ enum PrivateSetup {
                         if case .success(let url) = result { model.importFile(url) }
                     }
                     .task {
+                        do { try PrivateSetup.createPhoneConfiguration() }
+                        catch { model.errorCode = "phone_configuration_failed" }
                         while !Task.isCancelled {
                             model.refresh()
                             try? await Task.sleep(for: .seconds(1))

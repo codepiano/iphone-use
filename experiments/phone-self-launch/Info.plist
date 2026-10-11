@@ -7,7 +7,8 @@
 <key>CFBundleName</key><string>$(PRODUCT_NAME)</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.1.0</string>
-<key>CFBundleVersion</key><string>1</string>
+<key>CFBundleVersion</key><string>2</string>
+<key>IPUDevelopmentTeam</key><string>$(DEVELOPMENT_TEAM)</string>
 <key>UILaunchScreen</key><dict/>
 <key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>
 <key>NSLocalNetworkUsageDescription</key><string>通过本地 VPN 连接这台手机的开发服务，启动本机控制会话。</string>
