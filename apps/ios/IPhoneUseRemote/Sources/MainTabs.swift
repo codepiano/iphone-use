@@ -16,10 +16,10 @@ struct MainTabsView: View {
 
     var body: some View {
         TabView(selection: $selection) {
-            LocalAssistantView(app: app, agent: app.agent)
-                .tabItem { Label(navigationString("本机助手"), systemImage: "iphone") }
+            UnifiedAssistantView(app: app, workspace: workspace, openBrowser: { selection = .browser }, openAssistant: { selection = .assistant })
+                .tabItem { Label("助手", systemImage: "sparkles") }
                 .tag(AppTab.assistant)
-            BrowserWorkspaceView(settings: app.agent, workspace: workspace)
+            PhoneSiteBrowserWorkspaceView(workspace: workspace, settings: app.agent)
                 .tabItem { Label("浏览器", systemImage: "globe") }
                 .tag(AppTab.browser)
             devices
@@ -36,6 +36,7 @@ struct MainTabsView: View {
         .sheet(isPresented: $voiceCall.showing) { AssistantVoiceCallView(call: voiceCall, agent: app.agent) }
         .tint(Theme.accent)
         .onDisappear { workspace.agent.pause() }
+        .appOnChange(of: app.assistantNavigationRequest) { _, request in if request != nil { selection = .assistant } }
         .appOnChange(of: app.focusedID) { _, id in if id != nil, app.focused?.record.isThisPhone != true { selection = .remote } }
         .onAppear {
             #if DEBUG

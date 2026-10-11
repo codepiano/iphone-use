@@ -13,12 +13,13 @@ __pycache__/
 .env
 .env.*
 /tmp/
-.hermes/
 *.log
 *.pid
 env.txt
 url.txt
 
 # build/dev artifacts
+/target-browser-session/
+/apps/ios/SessionLibraries/
 /iPhoneUse.app/
 assets/icon-1024-old.png
