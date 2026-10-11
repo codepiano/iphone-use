@@ -42,7 +42,7 @@
 
 - `Shared/LocalPacketReflection.swift`：只反射 `10.7.1.1 ↔ 10.7.0.1` 的 IPv4 包；默认路由排除在隧道外。网络扩展来自本项目的独立 bundle，引用方案保留 LocalDevVPN/StosVPN 的版权和署名。
 - `Tunnel/ScopedTunnelBridge.swift`：本机随机端口、随机鉴权令牌，仅允许连接手机自己的虚拟地址；原生 Rust 通过该桥使用 `createTCPConnectionThroughTunnel`，不会依赖网络扩展普通 socket 的默认路由行为。
-- `launcher/`：静态 Rust 库，配对、验签、TLS-PSK、RSD、读取真实设备信息、查找独立 runner 并维持 XCTest 会话；状态不包含配对记录或控制令牌。停止时失效旧会话，旧异步任务不能覆盖新会话状态。
+- `launcher/`：静态 Rust 库，配对、验签、TLS-PSK、RSD、读取真实设备信息、查找独立 runner 并维持 XCTest 会话；状态不包含配对记录或控制令牌。停止时失效旧会话，旧异步任务不能覆盖新会话状态。App 指令、后台恢复和隧道停止使用同一串行队列；用户停止后，即使 Keychain 写入失败，本次扩展生命周期也不会自动重启会话。
 - `patches/idevice-rsd-xctest.patch`：固定版本的两项补丁，增加现成 RSD 隧道的 XCTest 入口和按文件分块上传开发镜像的入口。只修改生成的隔离依赖，不修改全局 cargo 缓存或上游仓库。
 - `Shared/ProtectedStore.swift`：配对记录和控制凭据使用共享 Keychain、`AfterFirstUnlockThisDeviceOnly`。每次独立 runner 启动重新生成请求签名令牌；启动被拒绝不会改动当前会话的令牌。
 - `Tunnel/PhoneTunnelProvider.swift`：原生会话运行在网络扩展内，普通控制 App 切到后台不负责保活；传输中断有限退避，配对或授权错误等待人处理。支持首次解锁后重试 Keychain 读取；这些生命周期行为尚待实测。

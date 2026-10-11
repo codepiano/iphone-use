@@ -12,6 +12,7 @@ final class PhoneTunnelProvider: NEPacketTunnelProvider {
     private var monitor: DispatchSourceTimer?
     private var failures = 0
     private var retryAfter = Date.distantPast
+    private var sessionRequested: Bool?
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "10.7.0.1")
@@ -46,11 +47,13 @@ final class PhoneTunnelProvider: NEPacketTunnelProvider {
         }
     }
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
-        monitor?.cancel(); monitor = nil
-        NativeHost.stop()
-        bridge?.stop(); bridge = nil
-        stateQueue.sync { running = false }
-        completionHandler()
+        stateQueue.async {
+            self.running = false
+            self.monitor?.cancel(); self.monitor = nil
+            NativeHost.stop()
+            self.bridge?.stop(); self.bridge = nil
+            completionHandler()
+        }
     }
     private func runProbes() {
         Task {
@@ -90,7 +93,8 @@ final class PhoneTunnelProvider: NEPacketTunnelProvider {
             let status = NativeHost.status()
             let phase = status["phase"] as? String ?? "unknown"
             if phase == "running" { self.failures = 0; return }
-            guard ProtectedStore.read("session_enabled") == Data([1]),
+            let requested = self.sessionRequested ?? (ProtectedStore.read("session_enabled") == Data([1]))
+            guard requested,
                   ProtectedStore.read("pair_record") != nil,
                   ["stopped", "runner_exited", "failed"].contains(phase), Date() >= self.retryAfter else { return }
             let error = status["error_code"] as? String
@@ -106,23 +110,31 @@ final class PhoneTunnelProvider: NEPacketTunnelProvider {
         timer.resume()
     }
     override func handleAppMessage(_ messageData: Data, completionHandler: ((Data?) -> Void)? = nil) {
+        stateQueue.async { self.respondToMessage(messageData, completionHandler: completionHandler) }
+    }
+    // Commands, recovery ticks and tunnel shutdown share one executor. A stop
+    // cannot interleave with a newly accepted launch's Keychain token write.
+    private func respondToMessage(_ messageData: Data, completionHandler: ((Data?) -> Void)?) {
         let command = String(data: messageData, encoding: .utf8)
         if ["pair", "probe", "launch"].contains(command ?? "") {
             if command == "launch" {
-                do { try ProtectedStore.write("session_enabled", Data([1])) }
-                catch { stateQueue.sync { hostError = "keychain_unavailable" }; completionHandler?(nil); return }
+                do {
+                    try ProtectedStore.write("session_enabled", Data([1]))
+                    sessionRequested = true
+                } catch { hostError = "keychain_unavailable"; completionHandler?(nil); return }
             }
             if let bridge, let port = bridge.port {
                 let error = NativeHost.start(mode: command!, bridgePort: port, bridgeToken: bridge.token)
-                stateQueue.sync { hostError = error }
-            } else { stateQueue.sync { hostError = "bridge_not_ready" } }
+                hostError = error
+            } else { hostError = "bridge_not_ready" }
         } else if command == "stop-host" {
+            sessionRequested = false
             do { try ProtectedStore.write("session_enabled", Data([0])) }
-            catch { stateQueue.sync { hostError = "keychain_unavailable" } }
+            catch { hostError = "keychain_unavailable" }
             NativeHost.stop()
         }
         else if command != "status" { completionHandler?(nil); return }
-        let (rows, error) = stateQueue.sync { (results, hostError) }
+        let (rows, error) = (results, hostError)
         var report: [String: Any] = ["native": NativeHost.status()]
         if let data = try? JSONEncoder().encode(rows), let value = try? JSONSerialization.jsonObject(with: data) {
             report["probes"] = value
