@@ -16,8 +16,6 @@ rmcp = { version = "1.7.0", features = ["server", "macros", "transport-io", "sch
 schemars = "0.8"
 base64 = "0.22"
 sha2 = "0.10"
-sha1 = "0.10"
-adler2 = "2"
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
 roxmltree = "0.20"
 fs2 = "0.4"

@@ -88,6 +88,11 @@ impl Failure {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Action {
+    WaitFor {
+        expect: Expected,
+        #[serde(default = "wait_default")]
+        timeout_ms: u64,
+    },
     Tap {
         x: Option<f64>,
         y: Option<f64>,
@@ -129,6 +134,39 @@ pub enum Action {
 fn default_duration() -> u64 {
     500
 }
+fn wait_default() -> u64 {
+    5000
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Expected {
+    pub app: Option<String>,
+    pub label: Option<String>,
+    pub identifier: Option<String>,
+    pub value: Option<String>,
+}
+impl Expected {
+    fn matches(&self, screen: &Screen) -> bool {
+        if self.app.as_ref().is_some_and(|app| app != &screen.app) {
+            return false;
+        }
+        if self.label.is_none() && self.identifier.is_none() && self.value.is_none() {
+            return true;
+        }
+        screen.elements.iter().any(|row| {
+            row.visible
+                && self.label.as_ref().is_none_or(|label| label == &row.label)
+                && self
+                    .identifier
+                    .as_ref()
+                    .is_none_or(|id| row.identifier.as_ref() == Some(id))
+                && self
+                    .value
+                    .as_ref()
+                    .is_none_or(|value| row.value.as_ref() == Some(value))
+        })
+    }
+}
 fn point(x: f64, y: f64) -> bool {
     [x, y]
         .iter()
@@ -137,6 +175,26 @@ fn point(x: f64, y: f64) -> bool {
 impl Action {
     pub fn validate(&self) -> Result<(), Failure> {
         let valid = match self {
+            Self::WaitFor { expect, timeout_ms } => {
+                [
+                    expect.app.as_ref(),
+                    expect.label.as_ref(),
+                    expect.identifier.as_ref(),
+                    expect.value.as_ref(),
+                ]
+                .iter()
+                .any(Option::is_some)
+                    && [
+                        expect.app.as_ref(),
+                        expect.label.as_ref(),
+                        expect.identifier.as_ref(),
+                        expect.value.as_ref(),
+                    ]
+                    .iter()
+                    .flatten()
+                    .all(|s| !s.is_empty() && s.len() <= 4096)
+                    && (1..=30_000).contains(timeout_ms)
+            }
             Self::Tap {
                 x,
                 y,
@@ -199,6 +257,7 @@ impl Action {
 /// are in backend screen units, not host display units.
 #[derive(Debug, Clone)]
 pub enum Dispatch {
+    NativeType { text: String, clear: bool },
     Tap(f64, f64),
     Longpress(f64, f64, u64),
     Swipe(f64, f64, f64, f64, u64),
@@ -208,6 +267,9 @@ pub enum Dispatch {
     LaunchApp(String),
 }
 pub trait DeviceBackend: Send {
+    fn native_typing(&self) -> bool {
+        false
+    }
     fn platform(&self) -> &'static str;
     fn supports_append(&self) -> bool {
         true
@@ -325,6 +387,9 @@ impl<B: DeviceBackend> Controller<B> {
         let px = |x: f64| (x * screen.width).min(screen.width - 1.0);
         let py = |y: f64| (y * screen.height).min(screen.height - 1.0);
         Ok(match action {
+            Action::WaitFor { .. } => {
+                return Err(Failure::not_sent("invalid_dispatch", "Wait is read-only"))
+            }
             Action::Tap {
                 x,
                 y,
@@ -503,6 +568,7 @@ impl<B: DeviceBackend> Controller<B> {
             }
         }
         let mut completed = 0;
+        let mut applied = 0;
         for (index, action) in batch.steps.iter().enumerate() {
             let result = async {
                 use std::sync::atomic::Ordering;
@@ -512,12 +578,56 @@ impl<B: DeviceBackend> Controller<B> {
                         "Daemon is stopping; no further action was sent",
                     ));
                 }
+                if let Action::WaitFor { expect, timeout_ms } = action {
+                    let deadline = Instant::now() + Duration::from_millis(*timeout_ms);
+                    loop {
+                        if self.stopping.load(Ordering::Acquire) {
+                            return Err(Failure::not_sent(
+                                "control_stopping",
+                                "Daemon is stopping",
+                            ));
+                        }
+                        let remaining = deadline.saturating_duration_since(Instant::now());
+                        match tokio::time::timeout(remaining, self.backend.read()).await {
+                            Ok(Ok(screen)) if expect.matches(&screen) => {
+                                self.remember(screen)?;
+                                return Ok(());
+                            }
+                            Ok(Err(error))
+                                if !matches!(
+                                    error.error.as_str(),
+                                    "screen_unavailable" | "screen_changed_during_read"
+                                ) =>
+                            {
+                                return Err(error)
+                            }
+                            _ => {}
+                        }
+                        if Instant::now() >= deadline {
+                            return Err(Failure::not_sent(
+                                "condition_timeout",
+                                "Expected app or element was not observed within the budget",
+                            ));
+                        }
+                        tokio::time::sleep(
+                            Duration::from_millis(75)
+                                .min(deadline.saturating_duration_since(Instant::now())),
+                        )
+                        .await;
+                    }
+                }
                 // Navigation has no screen-relative target. A transient tree
                 // during Back/Home must not prevent the next navigation step.
                 let action = match action {
                     Action::Back => Dispatch::Back,
                     Action::Home => Dispatch::Home,
                     Action::LaunchApp { app } => Dispatch::LaunchApp(app.clone()),
+                    Action::Type { text, clear } if self.backend.native_typing() => {
+                        Dispatch::NativeType {
+                            text: text.clone(),
+                            clear: *clear,
+                        }
+                    }
                     _ => {
                         let screen = self.backend.read().await?;
                         screen.snapshot()?;
@@ -537,15 +647,18 @@ impl<B: DeviceBackend> Controller<B> {
                 let mut result = error.json();
                 result["completed"] = json!(completed);
                 result["failed_step"] = json!(index);
+                result["applied_actions"] = json!(applied);
                 // Even a refused later step cannot make replaying the batch safe.
-                result["retry_safe"] = json!(completed == 0 && error.retry_safe);
+                result["retry_safe"] = json!(applied == 0 && error.retry_safe);
                 result["elapsed_ms"] = json!(started.elapsed().as_millis() as u64);
                 return result;
             }
             completed += 1;
+            if !matches!(action, Action::WaitFor { .. }) {
+                applied += 1;
+            }
         }
-        let mut result =
-            json!({"ok":true,"outcome":"applied","retry_safe":false,"completed":completed});
+        let mut result = json!({"ok":true,"outcome":if applied>0 {"applied"} else {"not_sent"},"retry_safe":applied==0,"completed":completed,"applied_actions":applied});
         if batch.observe {
             let expected_app = batch.steps.last().and_then(|step| match step {
                 Action::LaunchApp { app } => Some(app.as_str()),

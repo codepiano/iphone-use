@@ -386,3 +386,75 @@ async fn appending_is_refused_before_mutation_when_native_hint_is_ambiguous() {
         .any(|r| r["method"] == "setText"));
     task.abort();
 }
+
+#[tokio::test]
+async fn disconnect_is_authenticated_owner_checked_and_stops_new_mutations() {
+    let state = Arc::new(Mutex::new(RpcState::default()));
+    let (endpoint, runner_task) = runner(state.clone()).await;
+    let backend = AndroidBackend::from_endpoint("fixture".into(), endpoint).unwrap();
+    let session = Arc::new(tokio::sync::Mutex::new(Session::new(backend)));
+    let stopping = session.lock().await.control.stopping.clone();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let api = router(ApiState::new(session, "fixture-token".into()));
+    let server = tokio::spawn(async move { axum::serve(listener, api).await.unwrap() });
+    let client = reqwest::Client::new();
+    assert_eq!(
+        client
+            .post(format!("{url}/agent/disconnect"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    client
+        .get(format!("{url}/agent/elements"))
+        .bearer_auth("fixture-token")
+        .header("X-Phone-Owner", "agent-a")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        client
+            .post(format!("{url}/agent/disconnect"))
+            .bearer_auth("fixture-token")
+            .header("X-Phone-Owner", "agent-b")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        409
+    );
+    assert!(!stopping.load(std::sync::atomic::Ordering::Acquire));
+    assert!(client
+        .post(format!("{url}/agent/disconnect"))
+        .bearer_auth("fixture-token")
+        .header("X-Phone-Owner", "agent-a")
+        .send()
+        .await
+        .unwrap()
+        .status()
+        .is_success());
+    assert!(stopping.load(std::sync::atomic::Ordering::Acquire));
+    let response: Value = client
+        .post(format!("{url}/agent/input"))
+        .bearer_auth("fixture-token")
+        .header("X-Phone-Owner", "agent-a")
+        .json(&json!({"type":"home"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(response["error"], "control_stopping");
+    assert!(!state
+        .lock()
+        .unwrap()
+        .calls
+        .iter()
+        .any(|r| r["method"] == "pressKey"));
+    server.abort();
+    runner_task.abort();
+}

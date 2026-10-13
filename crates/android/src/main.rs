@@ -38,6 +38,17 @@ enum Commands {
         #[arg(long)]
         runner_jar: Option<PathBuf>,
     },
+    /// Start a background daemon for the sole attached phone or an explicit serial.
+    Connect {
+        #[arg(long)]
+        serial: Option<String>,
+        #[arg(long, default_value_t = 44322)]
+        port: u16,
+    },
+    /// Inspect ADB authorization and attached devices without touching the screen.
+    Doctor,
+    /// Stop this daemon and release its own runner and ADB forward.
+    Disconnect,
     Status,
     Capabilities,
     Elements {
@@ -97,6 +108,36 @@ fn connection(url: Option<String>) -> anyhow::Result<Connection> {
         _ => anyhow::bail!("Start android-use serve, or specify --url and ANDROID_USE_TOKEN"),
     }
 }
+async fn attached() -> anyhow::Result<Vec<Value>> {
+    let mut command = tokio::process::Command::new("adb");
+    if cfg!(target_os = "macos") && std::env::var_os("ADB_LIBUSB").is_none() {
+        command.env("ADB_LIBUSB", "1");
+    }
+    let output = command
+        .args(["devices", "-l"])
+        .output()
+        .await
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "ADB is missing; install Android platform-tools and rerun android-use doctor"
+            )
+        })?;
+    if !output.status.success() {
+        anyhow::bail!("ADB device discovery failed");
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let serial = fields.next()?;
+            let state = fields.next()?;
+            if serial == "List" || !matches!(state, "device" | "unauthorized" | "offline") {
+                return None;
+            }
+            Some(json!({"serial":serial,"state":state}))
+        })
+        .collect())
+}
 fn print_result(value: Value) -> anyhow::Result<()> {
     println!("{}", serde_json::to_string(&value)?);
     if value.get("ok") == Some(&json!(false)) {
@@ -108,6 +149,105 @@ fn print_result(value: Value) -> anyhow::Result<()> {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
+        Commands::Doctor => {
+            let devices = attached().await?;
+            println!(
+                "{}",
+                json!({"ok":true,"devices":devices,"hint":"Enable USB debugging and authorize this computer on the phone"})
+            );
+        }
+        Commands::Connect { serial, port } => {
+            let devices = attached().await?;
+            let authorized: Vec<_> = devices.iter().filter(|d| d["state"] == "device").collect();
+            let serial = match serial {
+                Some(serial) if authorized.iter().any(|d| d["serial"] == serial) => serial,
+                Some(_) => anyhow::bail!(
+                    "Selected device is not attached and authorized; run android-use doctor"
+                ),
+                None if authorized.len() == 1 => authorized[0]["serial"].as_str().unwrap().into(),
+                _ => anyhow::bail!(
+                    "Select one authorized device using --serial; run android-use doctor"
+                ),
+            };
+            if let Ok(saved) = connection(None) {
+                let client = DaemonClient::new(saved.url.clone(), saved.token, cli.owner.clone())?;
+                let status = tokio::time::timeout(
+                    std::time::Duration::from_millis(750),
+                    client.request("/agent/status", None),
+                )
+                .await
+                .unwrap_or(json!({"drivable":false}));
+                if status["drivable"] == true {
+                    if status["device"] != serial {
+                        anyhow::bail!("Existing daemon serves another device");
+                    }
+                    print_result(status)?;
+                    return Ok(());
+                }
+                let response = client.request("/agent/disconnect", Some(json!({}))).await;
+                if response["error"] == "device_busy" {
+                    anyhow::bail!("Another session owns the existing daemon");
+                }
+                if response["ok"] == true {
+                    let lock_path = backend::data_dir()?
+                        .join("locks")
+                        .join(format!("{:x}.lock", Sha256::digest(serial.as_bytes())));
+                    let lock = OpenOptions::new().read(true).write(true).open(lock_path)?;
+                    let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+                    while fs2::FileExt::try_lock_exclusive(&lock).is_err() {
+                        if std::time::Instant::now() >= until {
+                            anyhow::bail!("Existing daemon has not released its device yet");
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    }
+                    fs2::FileExt::unlock(&lock)?;
+                }
+            }
+            let dir = backend::data_dir()?;
+            std::fs::create_dir_all(&dir)?;
+            let mut options = OpenOptions::new();
+            options.create(true).append(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            let log = options.open(dir.join("daemon.log"))?;
+            let mut child = tokio::process::Command::new(std::env::current_exe()?)
+                .args(["serve", "--serial", &serial, "--port", &port.to_string()])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(log)
+                .spawn()?;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(45);
+            loop {
+                if child.try_wait()?.is_some() {
+                    anyhow::bail!(
+                        "Daemon startup failed; inspect private ~/.android-use/daemon.log"
+                    );
+                }
+                if let Ok(saved) = connection(None) {
+                    if let Ok(client) = DaemonClient::new(saved.url, saved.token, cli.owner.clone())
+                    {
+                        let status = tokio::time::timeout(
+                            std::time::Duration::from_millis(750),
+                            client.request("/agent/status", None),
+                        )
+                        .await
+                        .unwrap_or(json!({"drivable":false}));
+                        if status["drivable"] == true && status["device"] == serial {
+                            print_result(status)?;
+                            break;
+                        }
+                    }
+                }
+                if std::time::Instant::now() >= deadline {
+                    child.kill().await?;
+                    anyhow::bail!("Daemon startup timed out");
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            }
+        }
         Commands::Setup => {
             let path = backend::setup_runner().await?;
             println!(
@@ -161,7 +301,10 @@ async fn main() -> anyhow::Result<()> {
             let api = http::router(ApiState::new(session.clone(), token));
             let served = axum::serve(listener, api)
                 .with_graceful_shutdown(async move {
-                    let _ = tokio::signal::ctrl_c().await;
+                    tokio::select! {
+                        _ = tokio::signal::ctrl_c() => {},
+                        _ = async { while !stopping.load(std::sync::atomic::Ordering::Acquire) { tokio::time::sleep(std::time::Duration::from_millis(50)).await; } } => {},
+                    }
                     stopping.store(true, std::sync::atomic::Ordering::Release);
                 })
                 .await;
@@ -177,6 +320,9 @@ async fn main() -> anyhow::Result<()> {
             };
             let client = DaemonClient::new(connection.url, connection.token, owner)?;
             match command {
+                Commands::Disconnect => {
+                    print_result(client.request("/agent/disconnect", Some(json!({}))).await)?
+                }
                 Commands::Status => print_result(client.request("/agent/status", None).await)?,
                 Commands::Capabilities => {
                     print_result(client.request("/agent/capabilities", None).await)?
@@ -218,7 +364,10 @@ async fn main() -> anyhow::Result<()> {
                     let _ = client.request("/agent/release", Some(json!({}))).await;
                     waited?;
                 }
-                Commands::Setup | Commands::Serve { .. } => unreachable!(),
+                Commands::Setup
+                | Commands::Serve { .. }
+                | Commands::Doctor
+                | Commands::Connect { .. } => unreachable!(),
             }
         }
     }

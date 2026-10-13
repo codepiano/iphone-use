@@ -13,7 +13,7 @@ use tokio::process::{Child, Command};
 pub const RUNNER_URL: &str =
     "https://github.com/openatx/android-uiautomator-server-jar/releases/download/0.4.0/u2.jar";
 pub const RUNNER_SHA256: &str = "0b74e83c55f443539a9f76f5ce023a51466b764b1100e4097a897053fdfc0eb6";
-const REMOTE_JAR: &str = "/data/local/tmp/android-use-u2-0.4.0-loopback.jar";
+const REMOTE_JAR: &str = "/data/local/tmp/android-use-u2-0.4.0-adapter.jar";
 
 async fn loopback_runner(source: &Path) -> Result<PathBuf, Failure> {
     let invalid = || {
@@ -27,12 +27,12 @@ async fn loopback_runner(source: &Path) -> Result<PathBuf, Failure> {
         return Err(invalid());
     }
     let original = tokio::fs::read(source).await.map_err(|_| invalid())?;
-    let bytes = crate::runner::harden(&original)?;
+    let bytes = crate::runner::assemble(&original)?;
     let directory = data_dir().map_err(|_| invalid())?.join("runner");
     tokio::fs::create_dir_all(&directory)
         .await
         .map_err(|_| invalid())?;
-    let path = directory.join("u2-0.4.0-loopback.jar");
+    let path = directory.join("u2-0.4.0-adapter.jar");
     if tokio::fs::read(&path)
         .await
         .is_ok_and(|existing| existing == bytes)
@@ -130,6 +130,8 @@ pub struct AndroidBackend {
     client: Client,
     runner: Option<Child>,
     forward: Option<String>,
+    adapter_token: Option<String>,
+    remote_token: Option<String>,
 }
 impl AndroidBackend {
     /// Used for externally managed runners and protocol fixtures. No ADB
@@ -148,6 +150,8 @@ impl AndroidBackend {
             client,
             runner: None,
             forward: None,
+            adapter_token: None,
+            remote_token: None,
         })
     }
     pub async fn connect(serial: String, jar: &Path) -> Result<Self, Failure> {
@@ -185,10 +189,72 @@ impl AndroidBackend {
             backend.close().await;
             return Err(Failure::not_sent("runner_port_in_use", "Another runner owns device port 19008; release that session before starting android-use"));
         }
+        let mut random = [0u8; 32];
+        getrandom::fill(&mut random).map_err(|_| {
+            Failure::not_sent(
+                "random_unavailable",
+                "Unable to create runner authorization",
+            )
+        })?;
+        use base64::Engine as _;
+        let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(random);
+        let local_token = data_dir()
+            .map_err(|_| Failure::not_sent("runner_file_failed", "Data directory unavailable"))?
+            .join(format!("runner/auth-{}.tmp", std::process::id()));
+        {
+            use std::io::Write;
+            let mut options = std::fs::OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            let mut file = options.open(&local_token).map_err(|_| {
+                Failure::not_sent(
+                    "runner_file_failed",
+                    "Unable to create private authorization file",
+                )
+            })?;
+            file.write_all(token.as_bytes()).map_err(|_| {
+                Failure::not_sent("runner_file_failed", "Unable to write runner authorization")
+            })?;
+        }
+        let remote_token = format!("/data/local/tmp/android-use-auth-{}.txt", &token[..12]);
+        let pushed = adb(
+            &backend.serial,
+            &[
+                "push",
+                local_token.to_str().expect("data path"),
+                &remote_token,
+            ],
+            false,
+        )
+        .await;
+        let _ = tokio::fs::remove_file(local_token).await;
+        backend.remote_token = Some(remote_token.clone());
+        if let Err(error) = pushed {
+            backend.close().await;
+            return Err(error);
+        }
+        if let Err(error) = adb(
+            &backend.serial,
+            &["shell", "chmod", "600", &remote_token],
+            false,
+        )
+        .await
+        {
+            backend.close().await;
+            return Err(error);
+        }
+        backend.adapter_token = Some(token);
+        let shell = format!("CLASSPATH=/data/local/tmp/android-use-u2-0.4.0-adapter.jar app_process / com.androiduse.Runner 19008 {remote_token}");
         let mut command = adb_command();
-        command.args(["-s",&backend.serial,"shell",
-            "CLASSPATH=/data/local/tmp/android-use-u2-0.4.0-loopback.jar app_process / com.wetest.uia2.Main -p 19008"])
-            .stdout(Stdio::null()).stderr(Stdio::null()).kill_on_drop(true);
+        command
+            .args(["-s", &backend.serial, "shell", &shell])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true);
         backend.runner = match command.spawn() {
             Ok(runner) => Some(runner),
             Err(_) => {
@@ -240,9 +306,13 @@ impl AndroidBackend {
                 )
             }
         };
-        let response = self
-            .client
-            .post(format!("{}/jsonrpc/0", self.rpc_url))
+        let request = self.client.post(format!("{}/jsonrpc/0", self.rpc_url));
+        let request = if let Some(token) = &self.adapter_token {
+            request.bearer_auth(token)
+        } else {
+            request
+        };
+        let response = request
             .header("Accept-Encoding", "")
             .header("Content-Type", "application/json")
             .body(ascii_json(
@@ -260,6 +330,12 @@ impl AndroidBackend {
                     failure("rpc_transport_failed")
                 }
             })?;
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(Failure::not_sent(
+                "runner_unauthorized",
+                "Runner authorization expired; reconnect the device session",
+            ));
+        }
         if !response.status().is_success() {
             return Err(failure("rpc_http_error"));
         }
@@ -281,6 +357,14 @@ impl AndroidBackend {
             || body.get("jsonrpc") != Some(&json!("2.0"))
             || body.get("error").is_some()
         {
+            if body.pointer("/error/data/dispatched") == Some(&json!(false)) {
+                return Err(Failure::not_sent(
+                    body.pointer("/error/message")
+                        .and_then(Value::as_str)
+                        .unwrap_or("runner_refused"),
+                    "Runner refused before dispatch; inspect the focused field or device state",
+                ));
+            }
             return Err(failure("rpc_error"));
         }
         body.get("result")
@@ -303,12 +387,18 @@ impl AndroidBackend {
             let _ = runner.kill().await;
             let _ = runner.wait().await;
         }
+        if let Some(token_file) = self.remote_token.take() {
+            let _ = adb(&self.serial, &["shell", "rm", &token_file], false).await;
+        }
         if let Some(forward) = self.forward.take() {
             let _ = adb(&self.serial, &["forward", "--remove", &forward], false).await;
         }
     }
 }
 impl DeviceBackend for AndroidBackend {
+    fn native_typing(&self) -> bool {
+        self.adapter_token.is_some()
+    }
     fn supports_append(&self) -> bool {
         false
     }
@@ -317,6 +407,15 @@ impl DeviceBackend for AndroidBackend {
     }
     fn read(&mut self) -> BackendFuture<'_, Screen> {
         Box::pin(async move {
+            if self.adapter_token.is_some() {
+                let value = self.rpc("screen", json!([]), false).await?;
+                let mut screen: Screen = serde_json::from_value(value).map_err(|_| {
+                    Failure::not_sent("invalid_screen", "Runner returned invalid screen data")
+                })?;
+                screen.device = self.serial.clone();
+                screen.snapshot()?;
+                return Ok(screen);
+            }
             let before = self.rpc("deviceInfo", json!([]), false).await?;
             let xml = self
                 .rpc("dumpWindowHierarchy", json!([false, 50]), false)
@@ -372,6 +471,16 @@ impl DeviceBackend for AndroidBackend {
         Box::pin(async move {
             let n = |v: f64| v.round() as i64;
             match action {
+                Dispatch::NativeType { text, clear } => {
+                    let result = self.rpc("typeText", json!([text, clear]), true).await?;
+                    if result["applied"] != json!(true) {
+                        return Err(Failure::unknown("text_not_applied", "Input result was not acknowledged; inspect the field before continuing"));
+                    }
+                    if result["verified"] != json!(true) && result["redacted"] != json!(true) {
+                        return Err(Failure::unknown("text_not_verified", "Input was applied but its value could not be verified; do not replay it"));
+                    }
+                    Ok(())
+                }
                 Dispatch::Tap(x, y) => self.acknowledged("click", json!([n(x), n(y)])).await,
                 Dispatch::Longpress(x, y, ms) => {
                     self.acknowledged("click", json!([n(x), n(y), ms])).await

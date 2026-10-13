@@ -99,9 +99,9 @@ fn failure(error: Failure) -> axum::response::Response {
 }
 pub fn capabilities() -> Value {
     json!({"ok":true,"platform":"android","version":env!("CARGO_PKG_VERSION"),
-        "actions":["tap","longpress","swipe","scroll","type","back","home","launch_app"],
-        "elements":true,"non_bmp_tree_text":"preserved_in_focused_native_field_only","screenshot":true,"batch":true,"delta":true,"snapshot_bound_tap":true,
-        "input":{"coordinates":"normalized_0_to_1","text":"native_focused_field","append":false,"requires_clear_true":true,"max_characters":20000,"password_fields":false,"webview_fields":false},
+        "actions":["tap","longpress","swipe","scroll","type","back","home","launch_app","wait_for"],
+        "elements":true,"non_bmp_tree_text":"preserved","screenshot":true,"batch":true,"delta":true,"snapshot_bound_tap":true,
+        "input":{"coordinates":"normalized_0_to_1","text":"native_focused_field","append":true,"requires_clear_true":false,"insertion":"current_selection","max_characters":20000,"password_fields":"replace_only_redacted","webview_fields":"editable_accessibility_fields"},
         "max_batch_steps":32,"lease_seconds":30,"automatic_action_retry":false,
         "remote_video":false,"on_phone_daemon":false})
 }
@@ -114,6 +114,7 @@ pub fn router<B: DeviceBackend + 'static>(state: ApiState<B>) -> Router {
         .route("/agent/actions", post(actions::<B>))
         .route("/agent/input", post(input::<B>))
         .route("/agent/release", post(release::<B>))
+        .route("/agent/disconnect", post(disconnect::<B>))
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
         .with_state(state)
 }
@@ -240,4 +241,23 @@ async fn release<B: DeviceBackend>(
     session.owner = None;
     session.control.clear_history();
     Json(json!({"ok":true,"released":true})).into_response()
+}
+
+async fn disconnect<B: DeviceBackend>(
+    State(state): State<ApiState<B>>,
+    headers: HeaderMap,
+) -> axum::response::Response {
+    let owner = match state.caller(&headers) {
+        Ok(owner) => owner,
+        Err(e) => return failure(e),
+    };
+    let mut session = state.session.lock().await;
+    if let Err(e) = session.acquire(&owner) {
+        return failure(e);
+    }
+    session
+        .control
+        .stopping
+        .store(true, std::sync::atomic::Ordering::Release);
+    Json(json!({"ok":true,"disconnected":true})).into_response()
 }

@@ -23,3 +23,5 @@ url.txt
 /apps/ios/SessionLibraries/
 /iPhoneUse.app/
 assets/icon-1024-old.png
+
+/crates/android/runner/build/

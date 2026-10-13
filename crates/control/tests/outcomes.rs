@@ -25,6 +25,7 @@ fn screen() -> Screen {
     }
 }
 struct Mock {
+    native_typing: bool,
     reads: usize,
     screens: VecDeque<Result<Screen, Failure>>,
     actions: Vec<Dispatch>,
@@ -35,6 +36,7 @@ struct Mock {
 impl Mock {
     fn new() -> Self {
         Self {
+            native_typing: false,
             reads: 0,
             screens: VecDeque::new(),
             actions: vec![],
@@ -45,6 +47,9 @@ impl Mock {
     }
 }
 impl DeviceBackend for Mock {
+    fn native_typing(&self) -> bool {
+        self.native_typing
+    }
     fn platform(&self) -> &'static str {
         "fixture"
     }
@@ -320,4 +325,60 @@ async fn status_polling_does_not_replace_the_owners_last_observation_baseline() 
         .await;
     assert_eq!(result["observation"]["baseline"], old["snapshot"]);
     assert_ne!(result["observation"]["snapshot"], old["snapshot"]);
+}
+
+#[tokio::test]
+async fn native_input_is_dispatched_once_without_stale_host_text() {
+    let mut backend = Mock::new();
+    backend.native_typing = true;
+    let mut control = Controller::new(backend);
+    let result = control
+        .execute(batch(
+            json!([{"type":"type","text":"日本語 🦊","clear":false}]),
+        ))
+        .await;
+    assert_eq!(result["ok"], true);
+    assert_eq!(control.backend.reads, 0);
+    assert_eq!(control.backend.actions.len(), 1);
+    assert!(
+        matches!(&control.backend.actions[0], Dispatch::NativeType{text,clear:false} if text == "日本語 🦊")
+    );
+}
+#[tokio::test]
+async fn wait_only_is_read_only_and_does_not_inflate_applied_actions() {
+    let mut backend = Mock::new();
+    let mut wrong = screen();
+    wrong.app = "old.app".into();
+    backend.screens.push_back(Ok(wrong));
+    let mut control = Controller::new(backend);
+    let result = control.execute(batch(json!([{"type":"wait_for","expect":{"app":"fixture.app","identifier":"field","value":"旧内容"},"timeout_ms":300}]))).await;
+    assert_eq!(result["ok"], true);
+    assert_eq!(result["outcome"], "not_sent");
+    assert_eq!(result["completed"], 1);
+    assert_eq!(result["applied_actions"], 0);
+    assert_eq!(control.backend.reads, 2);
+    assert!(control.backend.actions.is_empty());
+}
+#[tokio::test]
+async fn wait_timeout_after_mutation_stops_batch_without_allowing_replay() {
+    let mut control = Controller::new(Mock::new());
+    let result = control.execute(batch(json!([{"type":"home"},{"type":"wait_for","expect":{"label":"Missing"},"timeout_ms":10},{"type":"back"}]))).await;
+    assert_eq!(result["error"], "condition_timeout");
+    assert_eq!(result["retry_safe"], false);
+    assert_eq!(result["completed"], 1);
+    assert_eq!(result["applied_actions"], 1);
+    assert_eq!(control.backend.actions.len(), 1);
+}
+#[tokio::test]
+async fn empty_wait_or_invalid_timeout_refuses_entire_batch() {
+    for wait in [
+        json!({"type":"wait_for","expect":{}}),
+        json!({"type":"wait_for","expect":{"app":"fixture.app"},"timeout_ms":0}),
+    ] {
+        let mut control = Controller::new(Mock::new());
+        let result = control.execute(batch(json!([{"type":"home"},wait]))).await;
+        assert_eq!(result["outcome"], "not_sent");
+        assert_eq!(control.backend.reads, 0);
+        assert!(control.backend.actions.is_empty());
+    }
 }

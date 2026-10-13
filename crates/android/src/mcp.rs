@@ -116,7 +116,7 @@ pub struct ElementsParams {
 pub struct ActionsParams {
     /// 1..32 actions. Types: tap (x,y OR element,snapshot OR label),
     /// longpress (x,y,duration_ms), swipe (x1,y1,x2,y2,duration_ms),
-    /// scroll (x,y,dx,dy), type (text,clear), back, home, launch_app (app).
+    /// scroll (x,y,dx,dy), type (text,clear), back, home, launch_app (app), wait_for (expect: app/label/identifier/value, timeout_ms).
     pub steps: Vec<Value>,
     pub observe: Option<bool>,
     pub settle_ms: Option<u64>,
@@ -134,12 +134,50 @@ pub struct TypeParams {
     pub clear: Option<bool>,
 }
 
+fn compact(value: &Value) -> String {
+    let mut summary = value.clone();
+    let rows = summary.as_object_mut().and_then(|o| o.remove("elements"));
+    let observation = summary
+        .as_object_mut()
+        .and_then(|o| o.remove("observation"));
+    let mut output = summary.to_string();
+    if let Some(rows) = rows.and_then(|v| v.as_array().cloned()) {
+        for row in rows {
+            output.push_str(&format!(
+                "\n[{}] {} {}",
+                row["index"],
+                row["kind"].as_str().unwrap_or(""),
+                serde_json::to_string(&row["label"]).unwrap()
+            ));
+            for key in ["identifier", "value"] {
+                if let Some(v) = row.get(key) {
+                    output.push_str(&format!(" {key}={v}"));
+                }
+            }
+            if row["focused"] == true {
+                output.push_str(" focused");
+            }
+            if row["enabled"] == false {
+                output.push_str(" disabled");
+            }
+            if row["visible"] == false {
+                output.push_str(" hidden");
+            }
+        }
+    }
+    if let Some(observation) = observation {
+        output.push_str("\nobservation: ");
+        output.push_str(&compact(&observation));
+    }
+    output
+}
+
 fn result(value: Value) -> CallToolResult {
     let failed = value.get("ok") == Some(&json!(false));
     let mut result = if failed {
-        CallToolResult::error(vec![Content::text(value.to_string())])
+        CallToolResult::error(vec![Content::text(compact(&value))])
     } else {
-        CallToolResult::success(vec![Content::text(value.to_string())])
+        CallToolResult::success(vec![Content::text(compact(&value))])
     };
     result.structured_content = Some(value);
     result
@@ -160,7 +198,7 @@ impl AndroidHandler {
         result(self.client.request("/agent/status", None).await)
     }
     #[tool(
-        description = "List supported Android controls and input limitations. Native focused text fields only; no password or webview text support."
+        description = "List supported Android controls and input limitations. Focused editable fields support Unicode insertion at the cursor. Password replacement is redacted."
     )]
     async fn phone_capabilities(&self) -> CallToolResult {
         result(self.client.request("/agent/capabilities", None).await)
@@ -184,10 +222,19 @@ impl AndroidHandler {
         result(self.client.request(&path, None).await)
     }
     #[tool(
-        description = "Execute 1..32 Android actions in order. All syntax is validated first; stop on first failure. Coordinates are normalized 0..1; positive scroll dy reveals content below. type requires clear:true and replaces the whole field. launch_app needs a package name. Read results: outcome=unknown forbids replay; completed counts acknowledged actions. Applied actions stay applied if observation fails."
+        description = "Execute 1..32 Android actions in order. All syntax is validated first; stop on first failure. Coordinates are normalized 0..1; positive scroll dy reveals content below. type inserts at the focused selection; clear:true replaces the field. wait_for confirms an app or element without mutation. launch_app needs a package name. Read results: outcome=unknown forbids replay; completed counts acknowledged actions. Applied actions stay applied if observation fails."
     )]
     async fn phone_actions(&self, Parameters(params): Parameters<ActionsParams>) -> CallToolResult {
         result(self.client.request("/agent/actions",Some(json!({"steps":params.steps,"observe":params.observe.unwrap_or(true),"settle_ms":params.settle_ms.unwrap_or(1500)}))).await)
+    }
+    #[tool(
+        description = "Run known Android steps in one call, using wait_for after screen changes. Alias of phone_actions; never replay a partial or unknown result."
+    )]
+    async fn phone_run_steps(
+        &self,
+        Parameters(params): Parameters<ActionsParams>,
+    ) -> CallToolResult {
+        self.phone_actions(Parameters(params)).await
     }
     #[tool(
         description = "Tap normalized Android screen coordinates, then observe. Prefer snapshot-bound element taps through phone_actions."
@@ -203,7 +250,7 @@ impl AndroidHandler {
         )
     }
     #[tool(
-        description = "Type Unicode into exactly one focused native Android text field. Set clear:true to replace the whole field; appending is unsupported. Password and webview fields are unsupported. Never replay after an unknown outcome."
+        description = "Type Unicode into exactly one focused native Android text field. Default inserts at the current selection; clear:true replaces the whole field. Password replacement uses clear:true and never returns the secret. WebView fields need editable accessibility support. Never replay after an unknown outcome."
     )]
     async fn phone_type(&self, Parameters(params): Parameters<TypeParams>) -> CallToolResult {
         result(self.client.request("/agent/input",Some(json!({"type":"type","text":params.text,"clear":params.clear.unwrap_or(false)}))).await)
@@ -232,5 +279,21 @@ impl ServerHandler for AndroidHandler {
         rmcp::model::InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("android-use",env!("CARGO_PKG_VERSION")))
             .with_instructions("Control one Android device through a shared phone-control core. Start with phone_capabilities and phone_elements. Prefer batching visible actions. Never replay unknown or partially completed actions. Release the lease when finished.")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn compact_preserves_indexes_delta_and_focus_without_repeating_geometry() {
+        let value = json!({"ok":true,"snapshot":"s","delta":{"removed":[2]},"elements":[{"index":7,"kind":"TextField","label":"日本語 🦊\nline","identifier":"field","value":"hello","focused":true,"visible":true,"rect":[1,2,3,4]}]});
+        let text = compact(&value);
+        assert!(text.contains("[7] TextField"));
+        assert!(text.contains("🦊\\nline"));
+        assert!(text.contains("focused"));
+        assert!(text.contains("removed"));
+        assert!(!text.contains("rect"));
+        assert!(text.len() < value.to_string().len());
     }
 }
