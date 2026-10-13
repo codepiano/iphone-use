@@ -56,6 +56,8 @@ agent 可以直接按名字打开 App（`launch_app {"app": "健康"}`），一�
 
 ## 工作原理
 
+Android 控制预览版见 [android-use](crates/android/README.md)。它提供独立的 CLI、HTTP 和 MCP 入口，与 iPhone 共用控制算法。当前位于开发分支，尚未发布 Android Release。
+
 ```text
  Claude Code / Codex / 任何 MCP 客户端 ─MCP──┐
  脚本和其他 agent ─────────────────────HTTP──┤

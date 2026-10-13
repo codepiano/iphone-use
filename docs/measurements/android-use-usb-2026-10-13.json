@@ -1,0 +1,80 @@
+{
+  "date": "2026-10-13T03:45:47.105130+00:00",
+  "device_model": "Samsung SM-A155M",
+  "android": "16",
+  "connection": "USB",
+  "checks": {
+    "launch_settings": true,
+    "snapshot_bound_tap": true,
+    "unicode_write_verified": true,
+    "unicode_readback": true,
+    "stale_snapshot_refused": true,
+    "invalid_batch_refused_before_first_step": true,
+    "exclusive_owner": true,
+    "back_and_launch_batch": true,
+    "longpress_acknowledged": true,
+    "scroll_acknowledged": true,
+    "scroll_changed_tree": true,
+    "swipe_acknowledged": true,
+    "screenshot_png": true,
+    "cli_release": true,
+    "mcp_initialize": true,
+    "mcp_real_device_read": true,
+    "mcp_home_and_restore_app": true,
+    "mcp_disconnect_releases_lease": true,
+    "original_app_restored": true
+  },
+  "screenshot": {
+    "dimensions": [
+      1080,
+      2340
+    ],
+    "bytes": 141167,
+    "sha256": "2795fb686431e2976186e683fc80c117c64597d74e64e870ef566096ca10c438"
+  },
+  "screenshots_committed": false,
+  "binary_sha256": "95cb9e0f2b1752a91d040dc07efa800f7f28393339dc13ed566828986355cff8",
+  "scope": "One device. Gesture acknowledgements are separate from observed tree changes. No wireless or Windows/Linux device acceptance.",
+  "loopback_hardening": {
+    "listening_addresses": [
+      "0000000000000000FFFF00000100007F:4A40"
+    ],
+    "only_loopback": true,
+    "home_action_reverified": true,
+    "foreground_task_restored": true,
+    "binary_sha256": "4418c260ef98bb84f7bcd5e2a68af31a026ebe11cb31f8c35477e98032196d45",
+    "runner_sha256": "be49d7d93984fdb542fc1c420fd2a56df3c3cd3a00dbf0528fb82fa03a896dfe",
+    "prior_control_run": "19 checks on the same control implementation before runner binding hardening"
+  },
+  "final_installed_smoke": {
+    "version": "0.1.0",
+    "capabilities": true,
+    "home_applied": true,
+    "foreground_task_restored": true,
+    "loopback_binding": true,
+    "binary_sha256": "0cf9770a5f55d2fb541774adec0f8853a559d55e2d80b709e9a6298c9668222d"
+  },
+  "shutdown_verified": {
+    "device_listener_closed": true,
+    "owned_adb_forward_removed": true
+  },
+  "source_branch": "feat/android-use",
+  "source_sha256": {
+    "crates/control/src/lib.rs": "e49225283902981afeda268f3bc01b768af0a64700f2a214e0638cb9e55475a6",
+    "crates/android/src/backend.rs": "caa1dd400965718ea75d0f0210a6140e45684739514c8794fba1a0f10aa01390",
+    "crates/android/src/runner.rs": "47e1cbdcae7a921f1a9bf228671ad9aa99dc6dbef370746ac4da141db338f536",
+    "crates/android/src/http.rs": "5f8d36dbf3a47c9f7d4ebbb23cfc7654904fdc27a9e2b93c3b5ccc6a2489cebb",
+    "crates/android/src/mcp.rs": "edfa7187621283fe94973360264ba27dffd1e181f4363841ecea833ba68134e5",
+    "crates/android/src/main.rs": "2c8bdc6e3836d63f26ff878301fe3a72ae4b13b5e5f2aba14b04ba8bec180200",
+    "crates/core/src/control.rs": "65fd1fb4a5ddc268415db33b2e10fd2249f0d79bfad199143a9476d7266bbad9"
+  },
+  "automated_tests": {
+    "iphone_server_unit": 822,
+    "iphone_control_integration": 59,
+    "shared_core": 25,
+    "control_runtime": 16,
+    "android_runner_and_protocol": 11,
+    "clippy": "passed",
+    "installer": "passed"
+  }
+}

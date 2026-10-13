@@ -1,0 +1,93 @@
+name: Android control
+on:
+  pull_request:
+    paths:
+      - 'crates/android/**'
+      - 'crates/control/**'
+      - 'crates/core/**'
+      - 'crates/server/src/http.rs'
+      - 'Cargo.*'
+      - '.github/workflows/android.yml'
+      - 'scripts/install-android.sh'
+  push:
+    tags: ['android-v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            name: linux-x86_64
+          - runner: macos-14
+            target: x86_64-apple-darwin
+            name: darwin-x86_64
+          - runner: macos-14
+            target: aarch64-apple-darwin
+            name: darwin-arm64
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: windows-x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Test shared core, Android protocol, CLI and MCP
+        run: cargo test -p core -p phone-control -p android-use --locked
+      - name: Test installer
+        if: runner.os != 'Windows'
+        run: sh scripts/test-install-android.sh
+      - name: Clippy
+        run: cargo clippy -p phone-control -p android-use --all-targets --locked -- -D warnings
+      - name: Build
+        run: cargo build -p android-use --release --target ${{ matrix.target }} --locked
+      - name: Package binaries and checksums
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          ASSET_PLATFORM: ${{ matrix.name }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist package
+          binary=android-use
+          if [[ "$TARGET" == *windows* ]]; then binary=android-use.exe; fi
+          cp "target/$TARGET/release/$binary" package/
+          cp crates/android/THIRD-PARTY-NOTICES.md package/
+          tar -czf "dist/android-use-$ASSET_PLATFORM.tar.gz" -C package .
+          python3 - <<'PY'
+          import hashlib, pathlib
+          for p in pathlib.Path('dist').glob('*.tar.gz'):
+              p.with_name(p.name+'.sha256').write_text(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-use-${{ matrix.name }}
+          path: dist/*
+  release:
+    if: startsWith(github.ref, 'refs/tags/android-v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish separate Android prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' crates/android/Cargo.toml | head -1)"
+          test "$TAG" = "android-v$version"
+          gh release create "$TAG" dist/* --verify-tag --prerelease --title "android-use $version" --notes-file crates/android/RELEASE-NOTES.md

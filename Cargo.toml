@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/control",
+    "crates/android",
     "crates/core",
     "crates/server",
     "crates/mcp",

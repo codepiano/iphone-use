@@ -56,6 +56,10 @@ The agent finds an app by its name (`launch_app {"app": "Health"}`) and types lo
 
 ## How it works
 
+The [android-use control preview](crates/android/README.md) provides separate CLI,
+HTTP and MCP entry points with control algorithms shared with iPhone. It is on the
+development branch; an Android Release has not been published yet.
+
 ```text
  Claude Code / Codex / any MCP client ──MCP──┐
  scripts and other agents ─────────────HTTP──┤
