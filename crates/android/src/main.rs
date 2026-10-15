@@ -188,23 +188,21 @@ async fn main() -> anyhow::Result<()> {
                 if response["error"] == "device_busy" {
                     anyhow::bail!("Another session owns the existing daemon");
                 }
-                if response["ok"] == true {
-                    let lock_path = backend::data_dir()?
-                        .join("locks")
-                        .join(format!("{:x}.lock", Sha256::digest(serial.as_bytes())));
-                    let lock = OpenOptions::new().read(true).write(true).open(lock_path)?;
-                    let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
-                    while fs2::FileExt::try_lock_exclusive(&lock).is_err() {
-                        if std::time::Instant::now() >= until {
-                            anyhow::bail!("Existing daemon has not released its device yet");
-                        }
-                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                    }
-                    fs2::FileExt::unlock(&lock)?;
-                }
             }
             let dir = backend::data_dir()?;
             std::fs::create_dir_all(&dir)?;
+            // A just-disconnected daemon may still be removing its runner.
+            // Wait for its lock, then leave the actual acquisition to serve.
+            let lock_path = dir.join("locks").join(format!("{:x}.lock",Sha256::digest(serial.as_bytes())));
+            if lock_path.exists() {
+                let lock = OpenOptions::new().read(true).write(true).open(lock_path)?;
+                let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+                while fs2::FileExt::try_lock_exclusive(&lock).is_err() {
+                    if std::time::Instant::now() >= until { anyhow::bail!("Existing daemon has not released its device yet"); }
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                }
+                fs2::FileExt::unlock(&lock)?;
+            }
             let mut options = OpenOptions::new();
             options.create(true).append(true);
             #[cfg(unix)]
@@ -213,7 +211,11 @@ async fn main() -> anyhow::Result<()> {
                 options.mode(0o600);
             }
             let log = options.open(dir.join("daemon.log"))?;
-            let mut child = tokio::process::Command::new(std::env::current_exe()?)
+            let mut daemon = tokio::process::Command::new(std::env::current_exe()?);
+            // The daemon must survive the invoking CLI's terminal/process group.
+            #[cfg(unix)] daemon.process_group(0);
+            #[cfg(windows)] daemon.creation_flags(0x00000008 | 0x00000200);
+            let mut child = daemon
                 .args(["serve", "--serial", &serial, "--port", &port.to_string()])
                 .stdin(std::process::Stdio::null())
                 .stdout(std::process::Stdio::null())

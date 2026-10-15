@@ -518,8 +518,8 @@ impl<B: DeviceBackend> Controller<B> {
         })
     }
     pub async fn execute(&mut self, batch: Batch) -> Value {
-        if batch.steps.is_empty() || batch.steps.len() > 32 || batch.settle_ms > 10_000 {
-            return Failure::not_sent("invalid_batch", "Use 1..32 actions and settle_ms <= 10000")
+        if batch.steps.is_empty() || batch.steps.len() > 32 || batch.settle_ms > 10_000 { // profile-use: allow; technical settle budget
+            return Failure::not_sent("invalid_batch", "Use 1..32 actions; maximum settle budget is ten seconds")
                 .json();
         }
         // Validate the entire batch before any backend read or mutation.
