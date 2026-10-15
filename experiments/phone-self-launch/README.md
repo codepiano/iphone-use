@@ -46,7 +46,7 @@
 
 后续物理设备测试只使用 iPhone 14。2026-10-11 读取到这台手机为 iOS 27.2，Developer Mode 已启用；现有 Mac Wi-Fi 启动路径报告 `wifi_automation_refused`。这些状态不证明手机内隧道能或不能启动 runner。
 
-已在 iPhone 14 安装并运行独立探测 App。本机未启用 VPN 时，62078 返回 `EPERM`，49152 的 RemotePairing 握手被重置，8100/8787 超时。报告见 [iPhone 14 无 VPN 探测](evidence/iphone14-no-vpn.json)，已去除手机局域网地址。LocalDevVPN 现已使用 App Store Connect 凭据完成开发签名并安装、打开在 iPhone 14；此前缺少 Network Extension / Personal VPN profile 的问题已解决。最新进程检查仅看到主 App，没有 VPN 扩展运行；仍需在手机完成首次 VPN 配置系统确认。
+已在 iPhone 14 安装并运行独立探测 App。本机未启用 VPN 时，62078 返回 `EPERM`，49152 的 RemotePairing 握手被重置，8100/8787 超时。报告见 [iPhone 14 无 VPN 探测](evidence/iphone14-no-vpn.json)，已去除手机局域网地址。LocalDevVPN 现已使用 App Store Connect 凭据完成开发签名并安装、打开在 iPhone 14；此前缺少 Network Extension / Personal VPN profile 的问题已解决。后续确认其扩展已运行，但普通 App 访问网关返回网络未就绪。随后采用 `explore/phone-self-host` 的自有网络扩展，在 iPhone 14 通过显式隧道连接取得合法 RemotePairing 握手（协议 26）。真实配对尚未完成。手机的 Mac runner supervisor 已暂停，握手不依赖 Mac runner。
 
 需记录并通过：
 
