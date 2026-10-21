@@ -69,13 +69,17 @@ fn clip(label: &str) -> String {
 /// printed only when the label cannot tell the row apart (empty, or shared
 /// with another row): it is in the structured content either way.
 fn row_line(index: u64, row: &Value, show_id: bool) -> String {
+    row_line_with_ids(index, row, show_id, false)
+}
+
+fn row_line_with_ids(index: u64, row: &Value, show_id: bool, full_id: bool) -> String {
     let kind = text(row, "kind").unwrap_or_default();
     let label = text(row, "label").unwrap_or_default();
     let mut line = format!("#{index} [{kind}] \"{}\"", clip(&label));
     if let Some(id) = text(row, "identifier")
-        .filter(|id| (show_id || label.is_empty()) && *id != label && !generated_id(id))
+        .filter(|id| full_id || ((show_id || label.is_empty()) && *id != label && !generated_id(id)))
     {
-        line.push_str(&format!(" id={}", clip(&id)));
+        line.push_str(&format!(" id={}", if full_id { id } else { clip(&id) }));
     }
     if let Some(value) = text(row, "value").filter(|value| *value != label) {
         line.push_str(&format!(" value={}", clip(&value)));
@@ -236,7 +240,11 @@ fn rows_block_with_hidden(rows: &[Value], out: &mut Vec<String>, include_hidden:
         }
         if is_hidden(row) {
             if include_hidden {
-                let mut line = row_line(row_index(row, index), row, true);
+                // Explicit expansion keeps even generated/long identifiers.
+                // Escape physical line breaks before charging the budget.
+                let mut line = row_line_with_ids(row_index(row, index), row, true, true)
+                    .replace('\r', "\\r")
+                    .replace('\n', "\\n");
                 line.push_str(" hidden");
                 budget.push(line, out);
             } else {
@@ -1000,6 +1008,31 @@ mod tests {
         }
         assert!(!expanded.contains("rows off-screen or not drawn:"), "{expanded}");
         assert_eq!(body["elements"][1]["visible"], false);
+    }
+
+    #[test]
+    fn hidden_rows_keep_full_generated_identifiers_and_escape_line_breaks() {
+        let uuid = "12345678-1234-1234-1234-123456789012";
+        let long = "identifier-".repeat(20);
+        let body = json!({"snapshot":"S", "elements":[
+            {"index":10,"kind":"Button","label":"A\nB","identifier":uuid,"value":"one\r\ntwo","visible":false},
+            {"index":15,"kind":"Button","label":"Long","identifier":long,"visible":false},
+            {"index":18,"kind":"Cell","label":"Same","identifier":"Same","visible":false},
+            {"index":19,"kind":"TextField","label":"","placeholder":"first\nsecond","identifier":"id\r\nnext","visible":false}
+        ]});
+        let expanded = elements_with_hidden(&body, true).unwrap();
+        let lines: Vec<_> = expanded.lines().filter(|line| line.starts_with('#')).collect();
+        assert_eq!(lines.len(), 4, "{expanded}");
+        assert!(lines[0].contains("A\\nB") && lines[0].contains("value=one\\r\\ntwo"), "{expanded}");
+        assert!(lines[0].contains(uuid), "{expanded}");
+        assert!(lines[1].contains(&long), "{expanded}");
+        assert!(lines[2].contains("id=Same"), "{expanded}");
+        assert!(lines[3].contains("id=id\\r\\nnext") && lines[3].contains("placeholder=first\\nsecond"), "{expanded}");
+        assert!(lines.iter().all(|line| line.ends_with(" hidden")), "{expanded}");
+        // One header and one hidden-state notice plus exactly four row lines.
+        assert_eq!(expanded.lines().count(), 6, "{expanded}");
+        // The serialized source remains untouched for programmatic consumers.
+        assert_eq!(body["elements"][0]["value"], "one\r\ntwo");
     }
 
     #[test]
