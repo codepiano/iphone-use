@@ -13,13 +13,17 @@ fn path() -> serde_json::Value {
         {"x":0.3,"y":0.4},{"x":0.13,"y":0.5,"dwell_ms":900},{"x":1,"y":0.4}
     ],"hold_ms":400,"duration_ms":300})
 }
-async fn post(base: &str, body: serde_json::Value) -> (StatusCode, serde_json::Value) {
+async fn post_to(
+    base: &str,
+    uri: &str,
+    body: serde_json::Value,
+) -> (StatusCode, serde_json::Value) {
     let app = server::http::router(build_state_with_runner(base));
     let response = app
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/agent/actions")
+                .uri(uri)
                 .header("x-phone-control", "1")
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from(body.to_string()))
@@ -31,6 +35,9 @@ async fn post(base: &str, body: serde_json::Value) -> (StatusCode, serde_json::V
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     (status, serde_json::from_slice(&bytes).unwrap())
 }
+async fn post(base: &str, body: serde_json::Value) -> (StatusCode, serde_json::Value) {
+    post_to(base, "/agent/actions", body).await
+}
 fn batch(action: serde_json::Value) -> serde_json::Value {
     serde_json::json!({"steps":[{"kind":"action","action":action}]})
 }
@@ -38,59 +45,68 @@ fn batch(action: serde_json::Value) -> serde_json::Value {
 #[test]
 fn a_path_is_one_w3c_gesture_with_an_edge_pause_and_one_release() {
     block(async {
-        let sent = Arc::new(Mutex::new(Vec::new()));
-        let record = Arc::clone(&sent);
-        let runner = mock_runner(move |request, _| {
-            if request.starts_with("POST /session ") {
-                return Some((Duration::ZERO, r#"{"value":{"sessionId":"S"}}"#.into()));
+        for single in [false, true] {
+            let sent = Arc::new(Mutex::new(Vec::new()));
+            let record = Arc::clone(&sent);
+            let runner = mock_runner(move |request, _| {
+                if request.starts_with("POST /session ") {
+                    return Some((Duration::ZERO, r#"{"value":{"sessionId":"S"}}"#.into()));
+                }
+                if request.contains("/window/size") {
+                    return Some((
+                        Duration::ZERO,
+                        r#"{"value":{"width":390,"height":844}}"#.into(),
+                    ));
+                }
+                if request.starts_with("POST ") && request.contains("/actions ") {
+                    let body: serde_json::Value =
+                        serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
+                    record.lock().unwrap().push(body);
+                }
+                Some((Duration::ZERO, r#"{"value":null}"#.into()))
+            });
+            let (status, body) = if single {
+                post_to(runner.url(), "/agent/input", path()).await
+            } else {
+                post(runner.url(), batch(path())).await
+            };
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(body["ok"], true);
+            if !single {
+                assert_eq!(body["applied_actions"], 1);
             }
-            if request.contains("/window/size") {
-                return Some((
-                    Duration::ZERO,
-                    r#"{"value":{"width":390,"height":844}}"#.into(),
-                ));
-            }
-            if request.starts_with("POST ") && request.contains("/actions ") {
-                let body: serde_json::Value =
-                    serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
-                record.lock().unwrap().push(body);
-            }
-            Some((Duration::ZERO, r#"{"value":null}"#.into()))
-        });
-        let (status, body) = post(runner.url(), batch(path())).await;
-        assert_eq!(status, StatusCode::OK, "{body}");
-        assert_eq!(body["applied_actions"], 1);
-        let sent = sent.lock().unwrap();
-        assert_eq!(
-            sent.len(),
-            1,
-            "one mutation, not a separate drag per segment"
-        );
-        let sources = sent[0]["actions"].as_array().unwrap();
-        assert_eq!(sources.len(), 1);
-        let actions = sources[0]["actions"].as_array().unwrap();
-        assert_eq!(
-            actions
-                .iter()
-                .filter(|s| s["type"] == "pointerDown")
-                .count(),
-            1
-        );
-        assert_eq!(
-            actions.iter().filter(|s| s["type"] == "pointerUp").count(),
-            1
-        );
-        assert_eq!(
-            actions[2],
-            serde_json::json!({"type":"pause","duration":400})
-        );
-        assert_eq!(actions[3]["type"], "pointerMove");
-        assert_eq!(
-            actions[4],
-            serde_json::json!({"type":"pause","duration":900})
-        );
-        assert_eq!(actions[5]["x"], 389.0, "edge stays inside the screen");
-        assert_eq!(actions.last().unwrap()["type"], "pointerUp");
+            let sent = sent.lock().unwrap();
+            assert_eq!(
+                sent.len(),
+                1,
+                "one mutation, not a separate drag per segment"
+            );
+            let sources = sent[0]["actions"].as_array().unwrap();
+            assert_eq!(sources.len(), 1);
+            let actions = sources[0]["actions"].as_array().unwrap();
+            assert_eq!(
+                actions
+                    .iter()
+                    .filter(|s| s["type"] == "pointerDown")
+                    .count(),
+                1
+            );
+            assert_eq!(
+                actions.iter().filter(|s| s["type"] == "pointerUp").count(),
+                1
+            );
+            assert_eq!(
+                actions[2],
+                serde_json::json!({"type":"pause","duration":400})
+            );
+            assert_eq!(actions[3]["type"], "pointerMove");
+            assert_eq!(
+                actions[4],
+                serde_json::json!({"type":"pause","duration":900})
+            );
+            assert_eq!(actions[5]["x"], 389.0, "edge stays inside the screen");
+            assert_eq!(actions.last().unwrap()["type"], "pointerUp");
+        }
     });
 }
 
@@ -122,7 +138,8 @@ fn an_invalid_path_later_in_a_batch_cannot_send_an_earlier_tap() {
             ]});
             let (status, body) = post(runner.url(), request).await;
             assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-            assert_eq!(body["applied_actions"], 0, "{body}");
+            assert_eq!(body["batch_outcome"], "nothing_applied", "{body}");
+            assert_eq!(body["retry_safe"], true, "{body}");
         }
         assert_eq!(
             *calls.lock().unwrap(),
@@ -160,7 +177,6 @@ fn losing_the_gesture_reply_does_not_replay_any_part_of_the_path() {
         assert_eq!(*calls.lock().unwrap(), 1);
     });
 }
-
 
 #[test]
 fn a_system_alert_blocks_the_whole_path_before_motion() {
