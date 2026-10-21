@@ -37,6 +37,11 @@ enum W3CActions {
       switch action["type"] as? String {
       case "pause":
         t += duration
+        // A time gap alone would interpolate the next move across the pause.
+        // Pin the finger here until the pause ends (long-press / edge hover).
+        if downAt != nil, duration > 0 {
+          current.append(step("move", position, t))
+        }
       case "pointerMove":
         let dx = CGFloat(number(action, "x") ?? 0)
         let dy = CGFloat(number(action, "y") ?? 0)

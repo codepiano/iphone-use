@@ -5568,6 +5568,11 @@ async fn agent_capabilities(State(state): State<Arc<AppState>>, headers: HeaderM
             // device: an unlisted name is refused without reaching the phone.
             "perform_actions": perform,
             "element_tree": true,
+            "drag_path": {
+                "max_points": core::drag::MAX_POINTS,
+                "max_total_ms": core::drag::MAX_DURATION_MS,
+                "duration_ms": "per_segment",
+            },
             "observation": {
                 "return_delta": true,
                 "settle_ms_max": AGENT_INPUT_SETTLE_MAX_MS,
@@ -9035,6 +9040,16 @@ async fn runner_control_with_client(
         // scroll deltas (runner has no scroll-wheel; a delta stream turned into a
         // storm of discrete swipes that kept scrolling after release — issue: the
         // screen "kept moving" after the finger stopped).
+        "drag" if v.get("points").is_some() => {
+            let path = match core::drag::Path::parse(v) {
+                Ok(path) => path,
+                Err(hint) => return RunnerControlOutcome::InvalidValue(hint),
+            };
+            if refuse_scroll_alert(w, guard_alert, detail).await {
+                return RunnerControlOutcome::Refused("alert_present", SCROLL_ALERT_HINT);
+            }
+            w.drag_path(&path).await
+        }
         "swipe" | "drag" => {
             let g = |k: &str| v.get(k).and_then(|x| x.as_f64());
             match (g("x1"), g("y1"), g("x2"), g("y2")) {
@@ -10655,6 +10670,11 @@ fn validate_agent_action_value(
                 .is_some_and(|name| matches!(name, "home" | "spotlight"))
             {
                 return invalid("shortcut must be home or spotlight");
+            }
+        }
+        "drag" if action.contains_key("points") => {
+            if let Err(hint) = core::drag::Path::parse(&serde_json::Value::Object(action.clone())) {
+                return invalid(hint);
             }
         }
         "swipe" | "drag" => {
@@ -19353,13 +19373,13 @@ mod tests {
             .next()
             .unwrap();
         assert!(shared.contains("scroll_snapshot_element(w, v, guard_alert, detail)"));
-        // Page, coordinate and swipe/drag dispatch each have a gate; element has its own.
+        // Page, coordinate, two-point and path gestures each have a gate; element has its own.
         assert_eq!(
             shared
                 .split("refuse_scroll_alert(w, guard_alert, detail).await")
                 .count()
                 - 1,
-            3
+            4
         );
         for typ in ["scroll", "swipe", "drag"] {
             let block =

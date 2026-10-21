@@ -501,6 +501,12 @@ original indexes, identifiers, values and a `hidden` marker. The 200-row / 32 Ki
 text budget still applies; use `query`/`limit` to narrow a large list. Scroll a
 hidden target into view and read again before acting.
 
+For a continuous drag that pauses at an edge, `phone_run_steps` accepts a
+`drag` step with `points: [{x, y, dwell_ms}, …]`. Use 2–16 normalized points;
+`duration_ms` is travel time per segment, `hold_ms` the initial hold, and total
+hold/travel/dwell must fit in 10 seconds. The finger stays down through every
+stop. Flow drafts keep the path for replay. The four-coordinate form also works.
+
 Each of these 26 tools answers in two parts.
 
 * **The text block** is compact and written for the model. It holds the settled
