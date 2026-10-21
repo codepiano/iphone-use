@@ -8746,11 +8746,10 @@ fn runner_predicate_literal(value: &str) -> String {
 
 /// Build a fresh runner element lookup for a strict agent locator.
 ///
-/// runner's predicate attributes do not expose the source tree's
-/// `rawIdentifier`. When an identifier is the only condition, accessibility-id
-/// is the closest native lookup and the caller still requires exactly one
-/// result. When other fields exist, the source-tree precheck above enforces the
-/// identifier while the predicate re-resolves every runner-queryable condition.
+/// The native runner exposes `identifier` separately from `name` (which can
+/// fall back to the label). Match the actual identifier, even when it is the
+/// only condition: a namesake without that identifier must not replace a
+/// target that disappeared after the source precheck.
 fn locator_runner_query(locator: &AgentElementLocator) -> Option<(&'static str, String)> {
     let mut clauses = Vec::new();
     if let Some(kind) = &locator.kind {
@@ -8762,6 +8761,9 @@ fn locator_runner_query(locator: &AgentElementLocator) -> Option<(&'static str, 
     if let Some(label) = &locator.label {
         let label = runner_predicate_literal(label);
         clauses.push(format!("(label == {label} OR name == {label})"));
+    }
+    if let Some(identifier) = &locator.identifier {
+        clauses.push(format!("identifier == {}", runner_predicate_literal(identifier)));
     }
     if let Some(value) = &locator.value {
         clauses.push(format!("value == {}", runner_predicate_literal(value)));
@@ -8775,14 +8777,7 @@ fn locator_runner_query(locator: &AgentElementLocator) -> Option<(&'static str, 
     if let Some(visible) = locator.visible {
         clauses.push(format!("visible == {}", u8::from(visible)));
     }
-    if clauses.is_empty() {
-        locator
-            .identifier
-            .as_ref()
-            .map(|identifier| ("accessibility id", identifier.clone()))
-    } else {
-        Some(("predicate string", clauses.join(" AND ")))
-    }
+    (!clauses.is_empty()).then(|| ("predicate string", clauses.join(" AND ")))
 }
 
 async fn runner_control_with_client(
@@ -21461,7 +21456,7 @@ mod tests {
         assert_eq!(using, "predicate string");
         assert_eq!(
             value,
-            "type == 'XCUIElementTypeCell' AND (label == '保存到“文件”' OR name == '保存到“文件”') AND focused == 0 AND enabled == 1 AND visible == 1"
+            "type == 'XCUIElementTypeCell' AND (label == '保存到“文件”' OR name == '保存到“文件”') AND identifier == 'actionGroupCell' AND focused == 0 AND enabled == 1 AND visible == 1"
         );
     }
 
@@ -21482,7 +21477,7 @@ mod tests {
     }
 
     #[test]
-    fn locator_runner_query_falls_back_to_identifier_and_escapes_predicates() {
+    fn locator_runner_query_matches_the_identifier_and_escapes_predicates() {
         let locator = AgentElementLocator {
             label: None,
             identifier: Some("unique-control".to_string()),
@@ -21494,7 +21489,7 @@ mod tests {
         };
         assert_eq!(
             locator_runner_query(&locator),
-            Some(("accessibility id", "unique-control".to_string()))
+            Some(("predicate string", "identifier == 'unique-control'".to_string()))
         );
         assert_eq!(
             runner_predicate_literal("O'Reilly\\Files"),
