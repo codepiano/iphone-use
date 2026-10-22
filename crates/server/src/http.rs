@@ -3491,8 +3491,8 @@ fn human_next_step(
                 "This iOS 15/16 iPhone is neither plugged in nor reachable over Wi-Fi from this Mac: plug it in once and keep it unlocked — it connects in about 20 s, and after that it can be unplugged and used over Wi-Fi (on the same network as this Mac)",
             ),
             "automation_not_allowed" => (
-                "自动化会话未建立（错误码 74），原因尚未确认。请保持解锁；若手机出现密码或允许提示，请处理。若已授权，检查 CoreDevice 连接和 runner 日志；会按退避策略重试。",
-                "The automation session was not established (exit code 74); its cause is unconfirmed. Keep the phone unlocked and handle a passcode or Allow prompt if one appears. If already authorized, inspect the CoreDevice connection and runner log; retries use backoff.",
+                "自动化会话未建立（错误码 74），原因尚未确认。请保持解锁并检查 设置 › 开发者 › 启用 UI 自动化；若手机出现密码或允许提示，请处理。若已授权，检查 CoreDevice 连接和 runner 日志；会按退避策略重试。",
+                "The automation session was not established (exit code 74); its cause is unconfirmed. Keep the phone unlocked, check Settings › Developer › Enable UI Automation, and handle a passcode or Allow prompt if one appears. If already authorized, inspect the CoreDevice connection and runner log; retries use backoff.",
             ),
             "wifi_automation_refused" => (
                 "这次 Wi-Fi 自动化会话未建立，不能仅凭错误码 74 判断手机永久不支持 Wi-Fi。检查 CoreDevice 隧道；必要时可插一次线启动，拔掉后用新的屏幕读取验证连接。",
@@ -3662,7 +3662,7 @@ fn setup_blocker_hint(blocked_on: &str) -> Option<&'static str> {
             "the phone runs iOS 15/16 and is neither on USB nor reachable over Wi-Fi (its lockdownd does not answer on its LAN address, or that address is not known yet) — have a person plug it into this Mac once, unlocked; after that the runner starts over Wi-Fi and survives the unplug; the managed service starts it as soon as usbmuxd lists the phone on USB, so do not send another reconnect request",
         ),
         "automation_not_allowed" => Some(
-            "The runner's IDE channel was not established (exit code 74) although this Xcode supports its iOS. This does not prove an unanswered passcode or Allow prompt. Keep the phone unlocked and handle a prompt if one appears; if already authorized, inspect the CoreDevice connection and runner log. The managed service retries with backoff; do not send another reconnect request",
+            "The runner's IDE channel was not established (exit code 74) although this Xcode supports its iOS. This does not prove an unanswered passcode or Allow prompt. Keep the phone unlocked, check Settings › Developer › Enable UI Automation, and handle a prompt if one appears; if already authorized, inspect the CoreDevice connection and runner log. The managed service retries with backoff; do not send another reconnect request",
         ),
         "wifi_automation_refused" => Some(
             "The runner failed to establish its IDE channel over Wi-Fi (exit code 74; setup_message has the wait). This does not prove a permanent Wi-Fi restriction or an unanswered prompt. Inspect the CoreDevice tunnel and runner log. Starting by USB once is a recovery option; verify fresh reads after you unplug. The managed service retries with backoff; do not send another reconnect request",
@@ -22161,9 +22161,8 @@ mod tests {
 
     #[test]
     fn automation_not_allowed_names_the_phone_switch_and_the_quiet_retry() {
-        // A code-74 refusal with an Xcode that supports the phone's iOS
-        // (hardware: iOS 27.2 beta with Xcode 27.2 beta): the phone has not
-        // allowed UI automation, which is not an Xcode problem.
+        // A supported SDK does not explain a code-74 failure. Preserve
+        // useful authorization checks without claiming that they caused it.
         let payload = r#"{"phase":"building-fail","blocked_on":"automation_not_allowed","message":"the iPhone refused the UI-automation session","ts":1000}"#;
         let status = parse_setup_status(payload, 1100).expect("fresh status");
         assert_eq!(status.blocked_on, "automation_not_allowed");
