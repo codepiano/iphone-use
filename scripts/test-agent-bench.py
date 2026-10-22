@@ -13,6 +13,13 @@ spec = importlib.util.spec_from_file_location("agent_bench", HERE / "agent-bench
 bench = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bench)
 
+
+def forbid_live_task(*args, **kwargs):
+    raise AssertionError("offline audit tests must never start a real agent or phone task")
+
+
+bench.run_task = forbid_live_task
+
 with open(HERE / "fixtures" / "agent-bench-run.jsonl", encoding="utf-8") as source:
     summary = bench.audit(source)
 assert summary["tool_calls"] == 3, summary
@@ -108,9 +115,19 @@ with tempfile.TemporaryDirectory() as tmp:
     trace.write_text(original.replace("Your iPhone runs iOS 18.1.", "Android"))
     code, row = replay("--returncode", "0")
     assert code == 1 and row["passed"] is False and not row["checks_passed"]
-    extra_call = json.dumps({"type": "assistant", "message": {"content": [
-        {"type": "tool_use", "id": "extra", "name": "mcp__iphone-use__phone_status"}]}})
-    trace.write_text(original + (extra_call + "\n") * 6)
+    events = [json.loads(line) for line in lines if line != "not json at all"]
+    final = events.pop()
+    for i in range(6):
+        call_id = f"extra-{i}"
+        events.extend([
+            {"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "id": call_id,
+                 "name": "mcp__iphone-use__phone_status", "input": {}}]}},
+            {"type": "user", "message": {"content": [
+                {"type": "tool_result", "tool_use_id": call_id, "content": "ready"}]}},
+        ])
+    events.append(final)
+    trace.write_text("\n".join(json.dumps(event) for event in events) + "\n")
     code, row = replay("--returncode", "0")
     assert code == 1 and row["tool_calls"] == 9 and not row["checks_passed"]
 
