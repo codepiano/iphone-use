@@ -594,20 +594,23 @@ mod tests {
     fn timeout_kills_wrapper_descendants_that_hold_stdout() {
         let dir = tempfile::tempdir().unwrap();
         let marker = dir.path().join("escaped-timeout");
+        let descendant_started = dir.path().join("descendant-started");
         let started = Instant::now();
         let (out, ok) = run_bounded(
             "/bin/sh",
             &[
                 "-c",
-                "(sleep 2; printf escaped > \"$1\") & printf started; wait",
+                "(printf started > \"$2\"; sleep 2; printf escaped > \"$1\") & printf started; wait",
                 "fixture",
                 marker.to_str().unwrap(),
+                descendant_started.to_str().unwrap(),
             ],
             Duration::from_millis(200),
         );
         assert!(!ok);
         assert_eq!(out, "started");
         assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(descendant_started.exists(), "the descendant did not start");
         // The descendant must be stopped too, not just detached from a
         // leaked reader thread. Its delayed write would otherwise escape.
         std::thread::sleep(Duration::from_millis(2200));
