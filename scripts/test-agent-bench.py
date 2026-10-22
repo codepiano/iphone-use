@@ -67,6 +67,11 @@ with tempfile.TemporaryDirectory() as tmp:
     row = bench.assess(header, trace, returncode=0)
     assert row["checks_passed"] and row["passed"] is None, row
     assert row["verification"]["state"] == "unverified", row
+    display = io.StringIO()
+    with contextlib.redirect_stdout(display):
+        bench.print_report([{**row, "duration_ms": None, "wall_ms": None}])
+    assert "duration unknown" in display.getvalue()
+    assert "0.0 s" not in display.getvalue()
     assert row["trace_sha256"] == hashlib.sha256(trace.read_bytes()).hexdigest()
 
     receipt = {"task": header["name"], "trace_sha256": row["trace_sha256"],

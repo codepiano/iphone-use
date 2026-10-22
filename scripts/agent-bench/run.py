@@ -196,10 +196,13 @@ def run_task(path, out_dir, mcp, model):
 def print_report(rows):
     for row in rows:
         mark = "UNVERIFIED" if row["passed"] is None else "PASS" if row["passed"] else "FAIL"
-        secs = (row.get("duration_ms") or row.get("wall_ms") or 0) / 1000
+        elapsed = row.get("duration_ms")
+        if elapsed is None:
+            elapsed = row.get("wall_ms")
+        timing = f"{elapsed / 1000:.1f} s" if elapsed is not None else "duration unknown"
         cost = row.get("cost_usd")
         print(f"{mark} {row['task']}: {row['tool_calls']} tool calls, "
-              f"{len(row['failed_calls'])} failed, {row.get('turns')} turns, {secs:.1f} s"
+              f"{len(row['failed_calls'])} failed, {row.get('turns')} turns, {timing}"
               + (f", ${cost:.4f}" if isinstance(cost, (int, float)) else ""))
         print(f"     sequence: {' → '.join(row['sequence']) or '(none)'}")
         for reason in row["reasons"]:
