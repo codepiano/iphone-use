@@ -326,11 +326,9 @@
         'Keep it on USB, unlocked and with the screen on; check again once developer services finish mounting.',
       '保持 USB、解锁和亮屏；开发者服务就绪后会自动继续。':
         'Keep it on USB, unlocked and with the screen on; it continues on its own once developer services are ready.',
-      'iPhone 未开启 UI 自动化': 'UI Automation is off on the iPhone',
-      '解锁 iPhone，打开“设置 › 开发者 › 启用 UI 自动化”，并在手机上确认密码或“允许自动化”提示，再重新运行设置命令。':
-        'Unlock the iPhone, turn on Settings › Developer › Enable UI Automation, confirm the passcode or “Allow automation” prompt on the phone, then run the setup command again.',
-      '解锁 iPhone，打开“设置 › 开发者 › 启用 UI 自动化”，并确认手机上的密码或“允许自动化”提示；服务会自动重试。':
-        'Unlock the iPhone, turn on Settings › Developer › Enable UI Automation and confirm the passcode or “Allow automation” prompt on the phone; the service retries on its own.',
+      '自动化模式未就绪': 'Automation mode is not ready',
+      '请检查 设置 › 开发者 › 启用 UI 自动化，并处理实际出现的授权提示；若已启用并授权，检查 CoreDevice 连接和日志。检查后再重新运行设置。': 'Check Settings › Developer › Enable UI Automation and handle a prompt if one appears; if already enabled and authorized, inspect the CoreDevice connection and runner log. Run setup again after checking.',
+      '请检查 设置 › 开发者 › 启用 UI 自动化，并处理实际出现的授权提示；若已启用并授权，检查 CoreDevice 连接和日志。服务会按退避策略重试。': 'Check Settings › Developer › Enable UI Automation and handle a prompt if one appears; if already enabled and authorized, inspect the CoreDevice connection and runner log. The service retries with backoff.',
       'iPhone 重启后还没解锁': 'The iPhone has not been unlocked since it restarted',
       '这台 iPhone 重启后还没解锁过：需要有人在手机上输入一次密码，之后会自动连上。':
         'This iPhone restarted and has not been unlocked since: someone needs to enter the passcode on the phone once, then it connects on its own.',
@@ -486,9 +484,9 @@
         retry: t('保持 USB、解锁和亮屏；开发者服务就绪后会自动继续。'),
       },
       automation_mode_disabled: {
-        title: t('iPhone 未开启 UI 自动化'),
-        setup: t('解锁 iPhone，打开“设置 › 开发者 › 启用 UI 自动化”，并在手机上确认密码或“允许自动化”提示，再重新运行设置命令。'),
-        retry: t('解锁 iPhone，打开“设置 › 开发者 › 启用 UI 自动化”，并确认手机上的密码或“允许自动化”提示；服务会自动重试。'),
+        title: t('自动化模式未就绪'),
+        setup: t('请检查 设置 › 开发者 › 启用 UI 自动化，并处理实际出现的授权提示；若已启用并授权，检查 CoreDevice 连接和日志。检查后再重新运行设置。'),
+        retry: t('请检查 设置 › 开发者 › 启用 UI 自动化，并处理实际出现的授权提示；若已启用并授权，检查 CoreDevice 连接和日志。服务会按退避策略重试。'),
       },
       locked_after_restart: {
         title: t('iPhone 重启后还没解锁'),

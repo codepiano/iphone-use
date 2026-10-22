@@ -165,10 +165,11 @@ KeepAlive keeps the last concrete blocker while it re-checks).
 - **`proxy`**: an enabled macOS HTTP/HTTPS/SOCKS entry is malformed or points at
   a loopback port with no listener; start that proxy app or disable the stale entry.
 - **`trust`**: a one-time "trust the Apple Development certificate" tap on the phone.
-- **`automation_mode_disabled`**: the phone is unlocked but iOS has not enabled UI
-  automation (runner log: "Timed out while enabling automation mode"). Ask the
-  operator to turn on **Settings › Developer › Enable UI Automation** and accept
-  any passcode / "Allow automation" prompt. KeepAlive retries; do not loop reconnect.
+- **`automation_mode_disabled`**: the runner did not become ready for UI
+  automation (for example, "Timed out while enabling automation mode"). Check
+  **Settings › Developer › Enable UI Automation** and handle a prompt if one
+  appears. If already enabled and authorized, inspect the CoreDevice connection
+  and runner log. KeepAlive retries; do not loop reconnect.
 - **`needs_passcode_on_phone`**: setup recorded a possible requirement for
   on-phone authorization. Handle a passcode or Allow prompt only if one appears.
   If the operator already authorized it, inspect the CoreDevice connection and

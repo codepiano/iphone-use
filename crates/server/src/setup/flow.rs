@@ -1753,7 +1753,7 @@ impl Setup {
             AUTOMATION_MODE_HINT,
         );
         die(format!(
-            "iOS did not enable UI automation for the device runner — {AUTOMATION_MODE_HINT}, then rerun setup (KeepAlive retries on its own). Log: {}",
+            "the device runner did not become ready for UI automation — {AUTOMATION_MODE_HINT}, then rerun setup (KeepAlive retries on its own). Log: {}",
             self.ctx.run_log.display()
         ))
     }

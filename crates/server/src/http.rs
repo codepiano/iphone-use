@@ -3467,8 +3467,8 @@ fn human_next_step(
                 "Setup recorded a possible on-phone authorization requirement. Handle a passcode or Allow prompt if one appears; if already authorized, inspect the CoreDevice connection and runner log.",
             ),
             "automation_mode_disabled" => (
-                "在 iPhone 的 设置 › 开发者 里打开「启用 UI 自动化」，并允许弹出的提示",
-                "On the iPhone, turn on Settings › Developer › Enable UI Automation and allow the prompt",
+                "自动化模式未就绪。请检查 设置 › 开发者 › 启用 UI 自动化，并处理实际出现的授权提示；若已启用并授权，检查连接和日志。",
+                "Automation mode is not ready. On the unlocked iPhone, check Settings › Developer › Enable UI Automation and handle a prompt if one appears; if already enabled and authorized, inspect the connection and runner log.",
             ),
             "locked" => (
                 "请解锁 iPhone 并保持亮屏，解锁后会自动接着连接",
@@ -3644,7 +3644,7 @@ fn setup_blocker_hint(blocked_on: &str) -> Option<&'static str> {
             "Setup recorded a possible on-phone authorization requirement. If a passcode or Allow prompt appears, handle it on the unlocked phone. If already authorized, inspect the CoreDevice connection and runner log; this historical blocker does not prove that a prompt was ignored. keep_runner_alive avoids unnecessary relaunches; do not send another reconnect request",
         ),
         "automation_mode_disabled" => Some(
-            "iOS has not enabled UI automation for the device runner — on the unlocked iPhone turn on Settings › Developer › Enable UI Automation and accept any passcode or Allow automation prompt; the managed service retries on its own backoff, so do not send another reconnect request",
+            "The device runner did not become ready for UI automation. On the unlocked iPhone, check Settings › Developer › Enable UI Automation and handle a passcode or Allow automation prompt if one appears; if already enabled and authorized, inspect the CoreDevice connection and runner log; the managed service retries on its own backoff, so do not send another reconnect request",
         ),
         "locked" => Some(
             "the iPhone is locked — unlock it and keep it awake; connecting continues on its own as soon as it is unlocked, so do not send another reconnect request",
@@ -22123,7 +22123,7 @@ mod tests {
     }
 
     #[test]
-    fn automation_mode_blocker_names_the_phone_setting_not_a_log() {
+    fn automation_mode_failure_checks_the_setting_without_claiming_it_is_off() {
         // setup-runner publishes this when the runner log says "The test runner
         // failed to initialize for UI testing. (Underlying Error: Timed out
         // while enabling automation mode.)" on an unlocked phone.
@@ -22137,6 +22137,8 @@ mod tests {
         );
         assert!(hint.contains("Allow automation"), "{hint}");
         assert!(hint.contains("unlocked"), "{hint}");
+        assert!(hint.contains("if already enabled and authorized"), "{hint}");
+        assert!(!hint.contains("nobody entered"), "{hint}");
         assert!(!hint.contains("runner-agent.log"), "{hint}");
         // The hint is spliced into the status JSON unescaped.
         assert!(!hint.contains('"') && !hint.contains('{') && !hint.contains('}'));

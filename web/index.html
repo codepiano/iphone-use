@@ -1347,8 +1347,8 @@ const I18N_EN = {
   '请在 iPhone 上信任开发者证书；完成后会自动继续': 'Trust the developer certificate on the iPhone; it continues automatically when done',
   '开发者服务未就绪': 'Developer services are not ready',
   '请保持 USB、解锁和亮屏；设备准备完成后会自动继续': 'Keep the phone on USB, unlocked and with the screen on; it continues automatically when the device is ready',
-  '请开启 UI 自动化': 'Turn on UI Automation',
-  '解锁 iPhone，打开 设置 › 开发者 › 启用 UI 自动化，并确认手机上的密码或“允许自动化”提示；稍候会自动重试': 'Unlock the iPhone, turn on Settings › Developer › Enable UI Automation, and confirm the passcode or “Allow automation” prompt on the phone; it retries automatically shortly',
+  '自动化模式未就绪': 'Automation mode is not ready',
+  '请检查 设置 › 开发者 › 启用 UI 自动化，并处理实际出现的授权提示；若已启用并授权，检查 CoreDevice 连接和日志。服务会按退避策略重试。': 'Check Settings › Developer › Enable UI Automation and handle a prompt if one appears; if already enabled and authorized, inspect the CoreDevice connection and runner log. The service retries with backoff.',
   '请解锁 iPhone': 'Unlock the iPhone',
   '手机锁着屏，设备服务启动不了；解锁并保持亮屏后会自动接着连接': 'The phone is locked, so the device service cannot start; unlock it and keep the screen on and it connects automatically',
   'iPhone 重启后还没解锁': 'The iPhone has not been unlocked since it restarted',
@@ -1965,7 +1965,7 @@ function setupBlockerCopy(blockedOn) {
     case 'ddi':
       return [t('开发者服务未就绪'), t('请保持 USB、解锁和亮屏；设备准备完成后会自动继续')];
     case 'automation_mode_disabled':
-      return [t('请开启 UI 自动化'), t('解锁 iPhone，打开 设置 › 开发者 › 启用 UI 自动化，并确认手机上的密码或“允许自动化”提示；稍候会自动重试')];
+      return [t('自动化模式未就绪'), t('请检查 设置 › 开发者 › 启用 UI 自动化，并处理实际出现的授权提示；若已启用并授权，检查 CoreDevice 连接和日志。服务会按退避策略重试。')];
     case 'locked':
       return [t('请解锁 iPhone'), t('手机锁着屏，设备服务启动不了；解锁并保持亮屏后会自动接着连接')];
     case 'locked_after_restart':
