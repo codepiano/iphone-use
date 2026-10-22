@@ -204,6 +204,7 @@ def case(daemon, args, label, carrier, hover):
     before = daemon.wait_metrics(nonce)
     if not before or any(before.get(k) != 0 for k in ("down_count", "up_count", "cancel_count")):
         raise RuntimeError("fixture is not fresh and ready; no gesture sent")
+    runner_window, _ = runner_call(args, "/window/size")
     command(["xcrun", "simctl", "io", args.udid, "screenshot", out / "before.png"], timeout=30)
     action = {"type": "drag", "hold_ms": 400, "duration_ms": 300 if hover else 900,
               "points": [{"x": 0.3, "y": 0.4}, {"x": 0.13, "y": 0.5, "dwell_ms": 900 if hover else 0}]}
@@ -244,7 +245,7 @@ def case(daemon, args, label, carrier, hover):
     if reply_error or not isinstance(reply, dict) or reply.get("ok") is not True:
         errors.append("gesture acknowledgement failed: " + str(reply_error or reply))
     report = {"case": label, "carrier": carrier, "expected_hover": hover, "passed": not errors, "errors": errors, "before": before,
-              "after": after, "action": action, "reply": reply, "reply_error": reply_error}
+              "after": after, "runner_window": runner_window, "action": action, "reply": reply, "reply_error": reply_error}
     (out / "result.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps({"case": label, "passed": not errors, "after": after, "errors": errors}), flush=True)
     return report

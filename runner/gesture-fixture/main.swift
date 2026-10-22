@@ -71,6 +71,11 @@ final class TouchPad: UIView {
       "start": start.map(normalize) as Any? ?? NSNull(),
       "end": end.map(normalize) as Any? ?? NSNull(),
       "visits": visits, "width": Double(bounds.width), "height": Double(bounds.height),
+      "screen_width": Double(window?.screen.bounds.width ?? 0),
+      "screen_height": Double(window?.screen.bounds.height ?? 0),
+      "native_width": Double(window?.screen.nativeBounds.width ?? 0),
+      "native_height": Double(window?.screen.nativeBounds.height ?? 0),
+      "screen_scale": Double(window?.screen.scale ?? 0),
     ]
     if let data = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]),
        let text = String(data: data, encoding: .utf8) {
