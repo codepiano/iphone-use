@@ -139,6 +139,9 @@ with tempfile.TemporaryDirectory() as tmp:
     assert code == 3 and row["passed"] is None
 
     for args in [["--verification", str(proof)],
+                 ["--from-jsonl", ""], ["--from-jsonl", "   "],
+                 ["--verification", ""],
+                 ["--from-jsonl", str(trace), "--verification", ""],
                  ["--from-jsonl", str(trace), "--task", "notes-search", "--task", "home-screen-apps"],
                  ["--from-jsonl", str(trace), "--task", "missing-task"]]:
         with contextlib.redirect_stderr(io.StringIO()):

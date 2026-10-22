@@ -216,12 +216,17 @@ def main(argv=None):
     parser.add_argument("--returncode", type=int, help="original process exit code for --from-jsonl")
     parser.add_argument("--json", action="store_true", help="print machine-readable results")
     args = parser.parse_args(argv)
-    if args.verification and not args.from_jsonl:
+    replay = args.from_jsonl is not None
+    if replay and not args.from_jsonl.strip():
+        parser.error("--from-jsonl must name a trace file")
+    if args.verification is not None and not args.verification.strip():
+        parser.error("--verification must name a receipt file")
+    if args.verification is not None and not replay:
         parser.error("--verification requires --from-jsonl")
-    if args.returncode is not None and not args.from_jsonl:
+    if args.returncode is not None and not replay:
         parser.error("--returncode requires --from-jsonl")
 
-    if args.from_jsonl:
+    if replay:
         if args.task and len(args.task) != 1:
             parser.error("re-auditing needs exactly one --task")
         name = args.task[0] if args.task else pathlib.Path(args.from_jsonl).stem
