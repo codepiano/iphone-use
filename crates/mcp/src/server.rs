@@ -84,6 +84,7 @@ pub struct TypeParams {
 
 /// Select one zero-based home page, or omit to read every page and folder.
 #[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct HomeLayoutParams {
     pub page: Option<usize>,
 }
@@ -4173,6 +4174,9 @@ mod tests {
 
     #[test]
     fn home_layout_preserves_failures_and_page_index_space() {
+        assert!(
+            serde_json::from_value::<HomeLayoutParams>(serde_json::json!({"pages":0})).is_err()
+        );
         for (status, body, fails) in [
             ("503 Service Unavailable", br#"{"ok":false,"error":"home_layout_unavailable"}"#.to_vec(), true),
             ("200 OK", b"<html>proxy error</html>".to_vec(), true),

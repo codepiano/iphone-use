@@ -48,10 +48,13 @@ fn auth_precedes_target_discovery() {
 fn private_handoff_precedes_any_device_read() {
     block(async {
         let state = build_state(None);
-        *state.private_until.lock().unwrap() = Some(Instant::now() + Duration::from_secs(30));
-        let (status, body) = get(state, None, "/agent/home-layout").await;
-        assert_eq!(status, StatusCode::LOCKED);
-        assert_eq!(body["error"], "screen_private");
+        for duration in [Duration::from_secs(30), Duration::from_millis(900)] {
+            *state.private_until.lock().unwrap() = Some(Instant::now() + duration);
+            let (status, body) = get(state.clone(), None, "/agent/home-layout").await;
+            assert_eq!(status, StatusCode::LOCKED);
+            assert_eq!(body["error"], "screen_private");
+            assert!(body["screen_private_secs"].as_u64().unwrap() >= 1);
+        }
     });
 }
 #[test]

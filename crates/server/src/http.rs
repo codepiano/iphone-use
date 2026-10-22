@@ -15243,8 +15243,13 @@ fn try_take_hold(
 /// Seconds left on a private hold (0 when none or expired).
 fn private_secs_left(private_until: &Mutex<Option<Instant>>) -> u64 {
     recover(private_until.lock())
-        .map(|until| until.saturating_duration_since(Instant::now()).as_secs())
-        .filter(|secs| *secs > 0)
+        .map(|until| {
+            let remaining = until.saturating_duration_since(Instant::now());
+            // A private hold protects its last fractional second too.
+            remaining
+                .as_secs()
+                .saturating_add(u64::from(remaining.subsec_nanos() > 0))
+        })
         .unwrap_or(0)
 }
 
