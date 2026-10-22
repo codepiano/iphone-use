@@ -102,10 +102,10 @@ pub fn run_bounded(program: &str, args: &[&str], limit: Duration) -> (String, bo
     let mut text = Vec::new();
     let mut buffer = [0; 8192];
     let deadline = Instant::now() + limit;
-    let mut exited = None;
+    let mut exited = false;
     loop {
-        if exited.is_none() {
-            match child.try_wait() {
+        if !exited {
+            match command_exit_pending(&child) {
                 Ok(status) => exited = status,
                 Err(_) => {
                     kill_command_group(&mut child);
@@ -134,17 +134,13 @@ pub fn run_bounded(program: &str, args: &[&str], limit: Duration) -> (String, bo
                 }
             }
         }
-        if let Some(status) = exited {
-            if drained {
-                return (String::from_utf8_lossy(&text).into_owned(), status.success());
-            }
+        if exited && drained {
+            let success = child.wait().is_ok_and(|status| status.success());
+            return (String::from_utf8_lossy(&text).into_owned(), success);
         }
         let left = deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {
-            // Do not signal an already reaped PID, which could be reused.
-            if exited.is_none() {
-                kill_command_group(&mut child);
-            }
+            kill_command_group(&mut child);
             return (String::from_utf8_lossy(&text).into_owned(), false);
         }
         if drained {
@@ -153,10 +149,39 @@ pub fn run_bounded(program: &str, args: &[&str], limit: Duration) -> (String, bo
     }
 }
 
+/// Check for exit without reaping. The leader's PID must remain reserved
+/// until group cleanup or the successful buffered-output drain is complete.
+fn command_exit_pending(child: &std::process::Child) -> std::io::Result<bool> {
+    // SAFETY: a zeroed siginfo_t is valid storage for waitid. With WNOHANG,
+    // a zero PID also represents no available exit event.
+    let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+    loop {
+        // SAFETY: P_PID restricts this to our child; WNOWAIT leaves the exit
+        // status waitable and prevents this check from releasing its PID.
+        let result = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                child.id() as libc::id_t,
+                &mut info,
+                libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+            )
+        };
+        if result == 0 {
+            // SAFETY: waitid initialized the exit event, or left our zero PID.
+            return Ok(unsafe { info.si_pid() } == child.id() as libc::pid_t);
+        }
+        let error = std::io::Error::last_os_error();
+        if error.kind() != std::io::ErrorKind::Interrupted {
+            return Err(error);
+        }
+    }
+}
+
 fn kill_command_group(child: &mut std::process::Child) {
-    // Only while this child is still ours and unreaped. process_group(0)
-    // gives this command its own group; never signal the caller's group.
-    if matches!(child.try_wait(), Ok(None)) {
+    // A successful non-reaping check confirms the leader is still our child,
+    // even if it exited. process_group(0) isolates it from the caller's group.
+    // Never signal a numeric group after ownership has been lost (ECHILD).
+    if command_exit_pending(child).is_ok() {
         if let Ok(group) = i32::try_from(child.id()) {
             // SAFETY: this is the dedicated process group of our live child.
             unsafe {
@@ -639,6 +664,42 @@ mod tests {
         // Let this fixture finish before its temporary directory is removed.
         std::thread::sleep(Duration::from_millis(2200));
         assert_eq!(std::fs::read_to_string(marker).unwrap(), "finished");
+    }
+
+    #[test]
+    fn cleanup_keeps_the_exited_group_leader_waitable_until_descendants_stop() {
+        use std::os::unix::process::CommandExt as _;
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("escaped-cleanup");
+        let ready = dir.path().join("descendant-started");
+        let mut child = Command::new("/bin/sh")
+            .args([
+                "-c",
+                "(printf ready > \"$2\"; sleep 2; printf escaped > \"$1\") & while [ ! -f \"$2\" ]; do sleep 0.01; done",
+                "fixture",
+                marker.to_str().unwrap(),
+                ready.to_str().unwrap(),
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while !command_exit_pending(&child).unwrap() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(ready.exists(), "the descendant must hold stdout open");
+        assert!(command_exit_pending(&child).unwrap());
+        assert!(
+            command_exit_pending(&child).unwrap(),
+            "checking again must not have reaped the leader"
+        );
+        kill_command_group(&mut child);
+        assert!(child.wait().unwrap().success(), "the leader had exited normally");
+        std::thread::sleep(Duration::from_millis(2200));
+        assert!(!marker.exists(), "cleanup must stop the descendant");
     }
 
     #[test]
