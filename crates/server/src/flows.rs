@@ -1252,16 +1252,19 @@ pub fn locator_at(rows: &[crate::runner::ElementRow], x: f64, y: f64) -> Option<
         .map(|(_, locator)| locator)
 }
 
-
 #[cfg(test)]
 mod drag_path_tests {
     use super::*;
     #[test]
     fn drag_recording_preserves_waypoints_and_dwell_for_replay() {
         let action = json!({"type":"drag","points":[{"x":0.3,"y":0.4},{"x":0.13,"y":0.5,"dwell_ms":900},{"x":0.5,"y":0.4}],"hold_ms":400,"duration_ms":300});
-        let Converted::Step(step) = convert_action(&action, None) else { panic!("drag must be recordable") };
+        let Converted::Step(step) = convert_action(&action, None) else {
+            panic!("drag must be recordable")
+        };
         assert_eq!(step["kind"], "drag");
-        for key in ["points", "hold_ms", "duration_ms"] { assert_eq!(step[key], action[key]); }
+        for key in ["points", "hold_ms", "duration_ms"] {
+            assert_eq!(step[key], action[key]);
+        }
         assert!(step.get("x1").is_none());
     }
 }

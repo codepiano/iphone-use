@@ -3043,7 +3043,14 @@ pub(crate) fn phone_steps_request(steps: Vec<PhoneStep>) -> Result<serde_json::V
                 )
             }
             PhoneStep::Drag {
-                x1, y1, x2, y2, points, hold_ms, duration_ms, after_ms,
+                x1,
+                y1,
+                x2,
+                y2,
+                points,
+                hold_ms,
+                duration_ms,
+                after_ms,
             } => {
                 validate_after(after_ms)?;
                 if let Some(points) = points {
@@ -3051,19 +3058,28 @@ pub(crate) fn phone_steps_request(steps: Vec<PhoneStep>) -> Result<serde_json::V
                         return Err(format!("steps[{index}] drag needs either points or x1/y1/x2/y2, not both; no action was sent"));
                     }
                     let action = serde_json::json!({"type":"drag","points":points,"hold_ms":hold_ms,"duration_ms":duration_ms});
-                    iu_core::drag::Path::parse(&action).map_err(|error| format!("steps[{index}] {error}; no action was sent"))?;
+                    iu_core::drag::Path::parse(&action)
+                        .map_err(|error| format!("steps[{index}] {error}; no action was sent"))?;
                     action_step(action, after_ms)
                 } else {
                     let (Some(x1), Some(y1), Some(x2), Some(y2)) = (x1, y1, x2, y2) else {
                         return Err(format!("steps[{index}] drag needs points or all four x1/y1/x2/y2 coordinates; no action was sent"));
                     };
-                    if ![x1, y1, x2, y2].into_iter().all(|v| v.is_finite() && (0.0..=1.0).contains(&v))
-                        || hold_ms > 10_000 || !(1..=10_000).contains(&duration_ms)
+                    if ![x1, y1, x2, y2]
+                        .into_iter()
+                        .all(|v| v.is_finite() && (0.0..=1.0).contains(&v))
+                        || hold_ms > 10_000
+                        || !(1..=10_000).contains(&duration_ms)
                         || (x1 == x2 && y1 == y2)
                     {
-                        return Err(format!("steps[{index}] drag geometry or timing is invalid; no action was sent"));
+                        return Err(format!(
+                            "steps[{index}] drag geometry or timing is invalid; no action was sent"
+                        ));
                     }
-                    action_step(serde_json::json!({"type":"drag","x1":x1,"y1":y1,"x2":x2,"y2":y2,"hold_ms":hold_ms,"duration_ms":duration_ms}), after_ms)
+                    action_step(
+                        serde_json::json!({"type":"drag","x1":x1,"y1":y1,"x2":x2,"y2":y2,"hold_ms":hold_ms,"duration_ms":duration_ms}),
+                        after_ms,
+                    )
                 }
             }
             PhoneStep::TapLabel { label, after_ms } => {
@@ -4534,16 +4550,33 @@ mod tests {
         let valid = serde_json::json!({"kind":"drag","points":[
             {"x":0.3,"y":0.4},{"x":0.13,"y":0.5,"dwell_ms":900},{"x":0.5,"y":0.4}
         ],"hold_ms":400,"duration_ms":300});
-        let request = phone_steps_request(vec![serde_json::from_value(valid.clone()).unwrap()]).unwrap();
-        let expected = valid["points"].as_array().unwrap().iter().map(|p| {
-            let mut p = p.clone();
-            if p.get("dwell_ms").is_none() { p["dwell_ms"] = serde_json::json!(0); }
-            p
-        }).collect::<Vec<_>>();
-        assert_eq!(request["steps"][0]["action"]["points"].as_array().unwrap(), &expected);
-        for change in [serde_json::json!({"x1":0.1}), serde_json::json!({"points":[]}), serde_json::json!({"hold_ms":10000})] {
+        let request =
+            phone_steps_request(vec![serde_json::from_value(valid.clone()).unwrap()]).unwrap();
+        let expected = valid["points"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| {
+                let mut p = p.clone();
+                if p.get("dwell_ms").is_none() {
+                    p["dwell_ms"] = serde_json::json!(0);
+                }
+                p
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            request["steps"][0]["action"]["points"].as_array().unwrap(),
+            &expected
+        );
+        for change in [
+            serde_json::json!({"x1":0.1}),
+            serde_json::json!({"points":[]}),
+            serde_json::json!({"hold_ms":10000}),
+        ] {
             let mut step = valid.clone();
-            for (key, value) in change.as_object().unwrap() { step[key] = value.clone(); }
+            for (key, value) in change.as_object().unwrap() {
+                step[key] = value.clone();
+            }
             let step = serde_json::from_value(step).unwrap();
             assert!(phone_steps_request(vec![step]).is_err());
         }

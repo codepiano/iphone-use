@@ -5569,6 +5569,10 @@ async fn agent_capabilities(State(state): State<Arc<AppState>>, headers: HeaderM
             "perform_actions": perform,
             "element_tree": true,
             "drag_path": {
+                "requires_runner_capability": "ipu:timedDragPath",
+                "min_segment_ms": 80,
+                "max_segment_ms": 2000,
+                "max_hold_ms": 2000,
                 "max_points": core::drag::MAX_POINTS,
                 "max_total_ms": core::drag::MAX_DURATION_MS,
                 "duration_ms": "per_segment",
@@ -9043,6 +9047,12 @@ async fn runner_control_with_client(
             if refuse_scroll_alert(w, guard_alert, detail).await {
                 return RunnerControlOutcome::Refused("alert_present", SCROLL_ALERT_HINT);
             }
+            if !w.supports_timed_drag_path().await.unwrap_or(false) {
+                return RunnerControlOutcome::Refused(
+                    "runner_upgrade_required",
+                    "Timed drag paths require a rebuilt runner with ipu:timedDragPath; no gesture was sent",
+                );
+            }
             w.drag_path(&path).await
         }
         "swipe" | "drag" => {
@@ -9943,6 +9953,18 @@ async fn direct_control(
             );
         }
     };
+    // Browser controls have a short freshness/acknowledgement deadline. Timed
+    // paths belong to the agent endpoints, which budget for the whole gesture.
+    if value.get("type").and_then(serde_json::Value::as_str) == Some("drag")
+        && value.get("points").is_some()
+    {
+        return hinted_control_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "drag_path_requires_agent_endpoint",
+            "not_sent",
+            "Use /agent/input or /agent/actions for timed drag paths; /control has a short browser deadline",
+        );
+    }
     let lifecycle = state.runner_lifecycle.current();
     let releasing = lifecycle == RunnerLifecycleTransition::Releasing;
     let reconnecting = lifecycle == RunnerLifecycleTransition::Reconnecting;

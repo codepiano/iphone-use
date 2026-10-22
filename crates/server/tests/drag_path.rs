@@ -52,6 +52,12 @@ fn a_path_is_one_w3c_gesture_with_an_edge_pause_and_one_release() {
                 if request.starts_with("POST /session ") {
                     return Some((Duration::ZERO, r#"{"value":{"sessionId":"S"}}"#.into()));
                 }
+                if request.starts_with("GET /session/S ") {
+                    return Some((
+                        Duration::ZERO,
+                        r#"{"value":{"capabilities":{"ipu:timedDragPath":true}}}"#.into(),
+                    ));
+                }
                 if request.contains("/window/size") {
                     return Some((
                         Duration::ZERO,
@@ -158,6 +164,12 @@ fn losing_the_gesture_reply_does_not_replay_any_part_of_the_path() {
             if request.starts_with("POST /session ") {
                 return Some((Duration::ZERO, r#"{"value":{"sessionId":"S"}}"#.into()));
             }
+            if request.starts_with("GET /session/S ") {
+                return Some((
+                    Duration::ZERO,
+                    r#"{"value":{"capabilities":{"ipu:timedDragPath":true}}}"#.into(),
+                ));
+            }
             if request.contains("/window/size") {
                 return Some((
                     Duration::ZERO,
@@ -202,6 +214,66 @@ fn a_system_alert_blocks_the_whole_path_before_motion() {
         assert_eq!(status, StatusCode::CONFLICT, "{body}");
         assert_eq!(body["error"], "alert_present");
         assert_eq!(body["retry_safe"], true);
+        assert_eq!(*calls.lock().unwrap(), 0);
+    });
+}
+
+#[test]
+fn old_or_unreadable_runner_refuses_a_path_without_sending_a_gesture() {
+    block(async {
+        for single in [false, true] {
+            for capability in [
+                serde_json::json!({}),
+                serde_json::json!({"ipu:timedDragPath":false}),
+                serde_json::json!({"ipu:timedDragPath":"true"}),
+            ] {
+                let calls = Arc::new(Mutex::new(0));
+                let sent = Arc::clone(&calls);
+                let runner = mock_runner(move |request, _| {
+                    if request.starts_with("POST /session ") {
+                        return Some((Duration::ZERO, r#"{"value":{"sessionId":"S"}}"#.into()));
+                    }
+                    if request.starts_with("GET /session/S ") {
+                        return Some((
+                            Duration::ZERO,
+                            serde_json::json!({"value":{"capabilities":capability}}).to_string(),
+                        ));
+                    }
+                    if request.starts_with("POST ") && request.contains("/actions ") {
+                        *sent.lock().unwrap() += 1;
+                    }
+                    Some((Duration::ZERO, r#"{"value":null}"#.into()))
+                });
+                let (status, body) = if single {
+                    post_to(runner.url(), "/agent/input", path()).await
+                } else {
+                    post(runner.url(), batch(path())).await
+                };
+                assert_eq!(status, StatusCode::CONFLICT, "{body}");
+                assert_eq!(body["error"], "runner_upgrade_required", "{body}");
+                assert_eq!(body["outcome"], "not_sent", "{body}");
+                assert_eq!(*calls.lock().unwrap(), 0);
+            }
+        }
+    });
+}
+
+#[test]
+fn browser_control_refuses_paths_before_any_runner_request() {
+    block(async {
+        let calls = Arc::new(Mutex::new(0));
+        let seen = Arc::clone(&calls);
+        let runner = mock_runner(move |_, _| {
+            *seen.lock().unwrap() += 1;
+            Some((Duration::ZERO, r#"{"value":null}"#.into()))
+        });
+        let mut action = path();
+        action["ttl_ms"] = serde_json::json!(2500);
+        action["points"][1]["dwell_ms"] = serde_json::json!(3000);
+        let (status, body) = post_to(runner.url(), "/control", action).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert_eq!(body["error"], "drag_path_requires_agent_endpoint");
+        assert_eq!(body["outcome"], "not_sent");
         assert_eq!(*calls.lock().unwrap(), 0);
     });
 }

@@ -507,6 +507,10 @@ For a continuous drag that pauses at an edge, `phone_run_steps` accepts a
 hold/travel/dwell must fit in 10 seconds. The finger stays down through every
 stop. Flow drafts keep the path for replay. The four-coordinate form also works.
 
+Send paths through `/agent/input`, `/agent/actions`, or MCP/Flow; the browser `/control` deadline does not accept paths.
+Both drag forms use 80–2000 ms travel per segment and at most 2000 ms initial hold. Rebuild the Runner before using paths; older runners return `runner_upgrade_required` without sending a gesture. Flows containing `points` require an updated client and must stay out of the public Flow registry until that release is broadly available.
+
+
 Each of these 26 tools answers in two parts.
 
 * **The text block** is compact and written for the model. It holds the settled

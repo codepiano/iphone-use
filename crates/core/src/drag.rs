@@ -67,8 +67,8 @@ impl Path {
         {
             return Err("drag path must move between at least two distinct points");
         }
-        if !(1..=MAX_DURATION_MS).contains(&self.duration_ms) || self.hold_ms > MAX_DURATION_MS {
-            return Err("drag path timing is invalid");
+        if !(80..=2_000).contains(&self.duration_ms) || self.hold_ms > 2_000 {
+            return Err("drag path duration_ms must be 80 to 2000 and hold_ms at most 2000");
         }
         let total = self.points.iter().try_fold(
             self.hold_ms + self.duration_ms * (self.points.len() - 1) as u64,
@@ -143,6 +143,9 @@ mod tests {
             json!({"hold_ms":-1}),
             json!({"hold_ms":null}),
             json!({"duration_ms":0}),
+            json!({"duration_ms":79}),
+            json!({"duration_ms":2001}),
+            json!({"hold_ms":2001}),
             json!({"duration_ms":10001}),
             json!({"points":[{"x":0.1,"y":0.2},{"x":1.1,"y":0.2}]}),
             json!({"points":[{"x":0.1,"y":0.2},{"x":0.1,"y":0.2}]}),

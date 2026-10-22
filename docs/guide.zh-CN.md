@@ -255,6 +255,11 @@ verb 定义在 `~/.iphone-use/intents-registry.json`（从 [`deploy/intents-regi
 需要在边缘停留后继续拖拽时，可在 `phone_run_steps` 的 `drag` 步骤中传
 `points: [{x, y, dwell_ms}, …]`，指定 2–16 个归一化坐标点。`duration_ms`
 是每段移动的时间，`hold_ms` 是起始按住时间，加上各点停留后总时长不超过 10 秒。
+
+路径通过 `/agent/input`、`/agent/actions` 或 MCP/Flow 发送；浏览器 `/control` 的短截止时间不接受路径。
+路径写法与两点写法一致：每段移动 80–2000 ms，起始按住最多 2000 ms。使用前需重建 Runner；旧 Runner 会返回 `runner_upgrade_required`，不发送手势。
+含 `points` 的 Flow 需要新版客户端，在新版发布普及前不要提交到公共 Flow 注册表。
+
 整个路径中手指保持按下；Flow 草稿会保留路径和停留时间。原有四坐标写法仍可用。
 
 这 26 个工具的返回都分两部分：
