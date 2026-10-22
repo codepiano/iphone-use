@@ -257,7 +257,7 @@ verb 定义在 `~/.iphone-use/intents-registry.json`（从 [`deploy/intents-regi
 是每段移动的时间，`hold_ms` 是起始按住时间，加上各点停留后总时长不超过 10 秒。
 
 路径通过 `/agent/input`、`/agent/actions` 或 MCP/Flow 发送；浏览器 `/control` 的短截止时间不接受路径。
-路径写法与两点写法一致：每段移动 80–2000 ms，起始按住最多 2000 ms。使用前需重建 Runner；旧 Runner 会返回 `runner_upgrade_required`，不发送手势。
+路径写法要求每段移动 80–2000 ms、起始按住最多 2000 ms。四坐标写法接受 1–10000 ms 移动和最多 10000 ms 按住，Runner 会将实际移动限制到 80–2000 ms、按住限制到最多 2000 ms。使用前需重建 Runner；旧 Runner 会返回 `runner_upgrade_required`，不发送手势。能力读取失败则返回 `runner_capability_unavailable`，应先检查连接再重试。
 含 `points` 的 Flow 需要新版客户端，在新版发布普及前不要提交到公共 Flow 注册表。
 
 整个路径中手指保持按下；Flow 草稿会保留路径和停留时间。原有四坐标写法仍可用。

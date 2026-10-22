@@ -105,6 +105,12 @@ class VerdictTests(unittest.TestCase):
                         check.localized_settings_suite(daemon, args)
                 self.assertFalse(args.settings_suite.exists())
 
+    def test_compatibility_sized_fixture_is_refused_before_input(self):
+        check.require_matching_viewport({"width":393,"height":852}, {"value":{"width":393,"height":852}})
+        for fixture in [{"width":390,"height":844}, {"width":float("nan"),"height":852}, {}]:
+            with self.assertRaises(RuntimeError):
+                check.require_matching_viewport(fixture, {"value":{"width":393,"height":852}})
+
     def test_remote_and_ambiguous_urls_are_refused(self):
         for base in ["http://example.com:44321", "https://127.0.0.1", "http://user@localhost", "http://localhost?x=1"]:
             with self.assertRaises(ValueError):

@@ -69,6 +69,16 @@ def judge(value, nonce, hover, kind="path"):
     return errors
 
 
+def require_matching_viewport(fixture, runner_window):
+    size = runner_window.get("value", {})
+    for key in ("width", "height"):
+        actual, expected = fixture.get(key), size.get(key)
+        if (type(actual) not in (int, float) or type(expected) not in (int, float)
+                or not math.isfinite(actual) or not math.isfinite(expected)
+                or actual <= 0 or abs(actual - expected) > 1):
+            raise RuntimeError(f"fixture {key} does not match Runner screen; check app compatibility mode; no gesture sent")
+
+
 def build_fixture(out):
     app = out / "GestureFixture.app"
     app.mkdir(exist_ok=True)
@@ -80,7 +90,10 @@ def build_fixture(out):
     built = command(["xcrun", "swiftc", "-O", "-sdk", sdk, "-target", f"{arch}-apple-ios17.0-simulator",
                      "-module-name", "GestureFixture", ROOT / "runner/gesture-fixture/main.swift",
                      "-o", app / "GestureFixture"])
-    (out / "fixture-build.log").write_text(built.stdout + built.stderr)
+    launch = command(["xcrun", "ibtool", "--compile", app / "LaunchScreen.storyboardc",
+                      ROOT / "runner/gesture-fixture/LaunchScreen.storyboard", "--sdk", sdk,
+                      "--minimum-deployment-target", "17.0", "--target-device", "iphone", "--target-device", "ipad"])
+    (out / "fixture-build.log").write_text(built.stdout + built.stderr + launch.stdout + launch.stderr)
     command(["codesign", "--force", "--sign", "-", app])
     return app
 
@@ -205,6 +218,7 @@ def case(daemon, args, label, carrier, hover):
     if not before or any(before.get(k) != 0 for k in ("down_count", "up_count", "cancel_count")):
         raise RuntimeError("fixture is not fresh and ready; no gesture sent")
     runner_window, _ = runner_call(args, "/window/size")
+    require_matching_viewport(before, runner_window)
     command(["xcrun", "simctl", "io", args.udid, "screenshot", out / "before.png"], timeout=30)
     action = {"type": "drag", "hold_ms": 400, "duration_ms": 300 if hover else 900,
               "points": [{"x": 0.3, "y": 0.4}, {"x": 0.13, "y": 0.5, "dwell_ms": 900 if hover else 0}]}
@@ -301,7 +315,7 @@ def main():
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 value.update(chunk)
         return value.hexdigest()
-    source_files = ["scripts/test-drag-simulator.py", "runner/gesture-fixture/main.swift", "runner/gesture-fixture/Info.plist",
+    source_files = ["scripts/test-drag-simulator.py", "runner/gesture-fixture/main.swift", "runner/gesture-fixture/Info.plist", "runner/gesture-fixture/LaunchScreen.storyboard",
                     "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerActions.swift",
                     "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m"]
     provenance = {"source_commit": command(["git", "-C", ROOT, "rev-parse", "HEAD"], check=False).stdout.strip() if (ROOT/".git").exists() else None,

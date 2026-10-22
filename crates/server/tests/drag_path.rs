@@ -219,7 +219,7 @@ fn a_system_alert_blocks_the_whole_path_before_motion() {
 }
 
 #[test]
-fn old_or_unreadable_runner_refuses_a_path_without_sending_a_gesture() {
+fn old_runner_refuses_a_path_without_sending_a_gesture() {
     block(async {
         for single in [false, true] {
             for capability in [
@@ -275,5 +275,36 @@ fn browser_control_refuses_paths_before_any_runner_request() {
         assert_eq!(body["error"], "drag_path_requires_agent_endpoint");
         assert_eq!(body["outcome"], "not_sent");
         assert_eq!(*calls.lock().unwrap(), 0);
+    });
+}
+
+#[test]
+fn lost_capability_probe_is_not_misreported_as_an_upgrade() {
+    block(async {
+        for single in [false, true] {
+            let calls = Arc::new(Mutex::new(0));
+            let sent = Arc::clone(&calls);
+            let runner = mock_runner(move |request, _| {
+                if request.starts_with("POST /session ") {
+                    return Some((Duration::ZERO, r#"{"value":{"sessionId":"S"}}"#.into()));
+                }
+                if request.starts_with("GET /session/S ") {
+                    return None;
+                }
+                if request.starts_with("POST ") && request.contains("/actions ") {
+                    *sent.lock().unwrap() += 1;
+                }
+                Some((Duration::ZERO, r#"{"value":null}"#.into()))
+            });
+            let (status, body) = if single {
+                post_to(runner.url(), "/agent/input", path()).await
+            } else {
+                post(runner.url(), batch(path())).await
+            };
+            assert_eq!(status, StatusCode::CONFLICT, "{body}");
+            assert_eq!(body["error"], "runner_capability_unavailable");
+            assert_eq!(body["outcome"], "not_sent");
+            assert_eq!(*calls.lock().unwrap(), 0);
+        }
     });
 }

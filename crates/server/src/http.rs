@@ -9047,11 +9047,19 @@ async fn runner_control_with_client(
             if refuse_scroll_alert(w, guard_alert, detail).await {
                 return RunnerControlOutcome::Refused("alert_present", SCROLL_ALERT_HINT);
             }
-            if !w.supports_timed_drag_path().await.unwrap_or(false) {
-                return RunnerControlOutcome::Refused(
+            match w.supports_timed_drag_path().await {
+                Ok(true) => {}
+                Ok(false) => return RunnerControlOutcome::Refused(
                     "runner_upgrade_required",
                     "Timed drag paths require a rebuilt runner with ipu:timedDragPath; no gesture was sent",
-                );
+                ),
+                Err(error) => {
+                    tracing::warn!("drag path capability probe failed: {error:#}");
+                    return RunnerControlOutcome::Refused(
+                        "runner_capability_unavailable",
+                        "Could not read Runner capabilities; no gesture was sent. Check Runner connectivity and try again",
+                    );
+                }
             }
             w.drag_path(&path).await
         }
