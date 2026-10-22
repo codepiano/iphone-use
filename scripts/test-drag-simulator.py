@@ -10,7 +10,6 @@ import json
 import math
 import os
 from pathlib import Path
-import platform
 import shutil
 import re
 import subprocess
@@ -80,20 +79,18 @@ def require_matching_viewport(fixture, runner_window):
 
 
 def build_fixture(out):
+    # Let Xcode process Info.plist and platform metadata too. A hand-linked
+    # app can run in a compatibility-sized viewport on older iOS runtimes.
+    derived = out / "fixture-build"
+    built = command(["xcodebuild", "-project", ROOT / "runner/gesture-fixture/GestureFixture.xcodeproj",
+                     "-scheme", "GestureFixture", "-configuration", "Release", "-sdk", "iphonesimulator",
+                     "-destination", "generic/platform=iOS Simulator", "-derivedDataPath", derived,
+                     "-jobs", "2", "CODE_SIGNING_ALLOWED=NO", "build"], check=False, timeout=180)
+    (out / "fixture-build.log").write_text(built.stdout + built.stderr)
+    if built.returncode:
+        raise RuntimeError("fixture Xcode build failed; see fixture-build.log")
     app = out / "GestureFixture.app"
-    app.mkdir(exist_ok=True)
-    shutil.copyfile(ROOT / "runner/gesture-fixture/Info.plist", app / "Info.plist")
-    sdk = command(["xcrun", "--sdk", "iphonesimulator", "--show-sdk-path"]).stdout.strip()
-    arch = platform.machine()
-    if arch not in ("arm64", "x86_64"):
-        raise RuntimeError(f"unsupported simulator architecture: {arch}")
-    built = command(["xcrun", "swiftc", "-O", "-sdk", sdk, "-target", f"{arch}-apple-ios17.0-simulator",
-                     "-module-name", "GestureFixture", ROOT / "runner/gesture-fixture/main.swift",
-                     "-o", app / "GestureFixture"])
-    launch = command(["xcrun", "ibtool", "--compile", app / "LaunchScreen.storyboardc",
-                      ROOT / "runner/gesture-fixture/LaunchScreen.storyboard", "--sdk", sdk,
-                      "--minimum-deployment-target", "17.0", "--target-device", "iphone", "--target-device", "ipad"])
-    (out / "fixture-build.log").write_text(built.stdout + built.stderr + launch.stdout + launch.stderr)
+    shutil.copytree(derived / "Build/Products/Release-iphonesimulator/GestureFixture.app", app)
     command(["codesign", "--force", "--sign", "-", app])
     return app
 
@@ -218,6 +215,8 @@ def case(daemon, args, label, carrier, hover):
     if not before or any(before.get(k) != 0 for k in ("down_count", "up_count", "cancel_count")):
         raise RuntimeError("fixture is not fresh and ready; no gesture sent")
     runner_window, _ = runner_call(args, "/window/size")
+    (out / "result.json").write_text(json.dumps({"case": label, "passed": False,
+        "stage": "viewport_preflight", "before": before, "runner_window": runner_window}, indent=2) + "\n")
     require_matching_viewport(before, runner_window)
     command(["xcrun", "simctl", "io", args.udid, "screenshot", out / "before.png"], timeout=30)
     action = {"type": "drag", "hold_ms": 400, "duration_ms": 300 if hover else 900,
@@ -315,7 +314,7 @@ def main():
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 value.update(chunk)
         return value.hexdigest()
-    source_files = ["scripts/test-drag-simulator.py", "runner/gesture-fixture/main.swift", "runner/gesture-fixture/Info.plist", "runner/gesture-fixture/LaunchScreen.storyboard",
+    source_files = ["scripts/test-drag-simulator.py", "runner/gesture-fixture/main.swift", "runner/gesture-fixture/Info.plist", "runner/gesture-fixture/LaunchScreen.storyboard", "runner/gesture-fixture/GestureFixture.xcodeproj/project.pbxproj",
                     "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerActions.swift",
                     "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m"]
     provenance = {"source_commit": command(["git", "-C", ROOT, "rev-parse", "HEAD"], check=False).stdout.strip() if (ROOT/".git").exists() else None,
