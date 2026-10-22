@@ -269,9 +269,9 @@ do {
   check(swipe[0].contains { $0["type"] as? String == "move" && $0["y"] as? Double == 500 && abs(t($0) - 0.08) < 1e-9 },
         "the initial hold pins the finger before any motion")
   let moves = swipe[0].filter { $0["type"] as? String == "move" && t($0) > 0.08 }
-  check(moves.count == 16, "250 ms move sampled every ~16 ms (got \(moves.count))")
+  check(moves.count == 1, "a move keeps one timed endpoint for XCTest interpolation")
   check(moves.last?["y"] as? Double == 100 && abs(t(moves.last!) - 0.33) < 1e-9, "move ends at target and time")
-  check(abs(t(moves.first!) - (0.08 + 0.25 / 16)) < 1e-9, "move starts after the pause")
+  check(abs(t(moves.first!) - 0.33) < 1e-9, "endpoint preserves the full move duration after the pause")
 
   let edgeDrag = try pointer([
     ["type":"pointerMove", "duration":0, "x":117, "y":337.6],
