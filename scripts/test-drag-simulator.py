@@ -318,7 +318,7 @@ def input_case(daemon, args, label, kind):
     until = time.monotonic() + 4
     while time.monotonic() < until:
         after = daemon.metrics(nonce, "input-result")
-        if after and (after.get("text") if kind == "typing" else after.get("selections")):
+        if after and (after.get("text") == "照片" if kind == "typing" else after.get("selections")):
             break
         time.sleep(0.1)
     errors = judge_input(after, nonce, kind, row)

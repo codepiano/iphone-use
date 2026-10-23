@@ -27,7 +27,7 @@ class VerdictTests(unittest.TestCase):
     def test_first_focus_typing_requires_the_actual_text_receiver(self):
         record = {"run_id": "fresh", "text": "照片", "began_editing": 1, "selections": []}
         self.assertEqual(check.judge_input(record, "fresh", "typing", 3), [])
-        for key, value in [("text", ""), ("text", "照片照片"), ("began_editing", 0),
+        for key, value in [("text", ""), ("text", "照"), ("text", "照片照片"), ("began_editing", 0),
                            ("began_editing", True), ("selections", [3]), ("run_id", "old")]:
             self.assertTrue(check.judge_input(dict(record, **{key: value}), "fresh", "typing", 3))
 
