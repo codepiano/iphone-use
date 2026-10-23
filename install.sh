@@ -2457,6 +2457,9 @@ plist_own_env_keys() {
         [ -f "$plist" ] || continue
         for key in $(/usr/bin/plutil -extract EnvironmentVariables xml1 -o - "$plist" 2>/dev/null \
             | sed -n 's:^[[:space:]]*<key>\([A-Z][A-Z0-9_]*\)</key>.*:\1:p'); do
+            # The getter reads these old spellings; select their current names
+            # so legacy-only settings reach it, without writing old names back.
+            case "$key" in PHONE_REMOTE_?*) key="IPHONE_USE_${key#PHONE_REMOTE_}" ;; esac
             case "$seen" in *" $key "*) continue ;; esac
             seen="${seen}${key} "
             case "$key" in

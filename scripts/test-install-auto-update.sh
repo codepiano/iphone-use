@@ -143,6 +143,17 @@ carry_default
 [ "$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:IPHONE_USE_BACKEND' "$TMP/carried.plist")" = direct ] \
     || bad "a legacy-only install lost direct"
 ok_t "a legacy-only install retains native settings without a current plist"
+/usr/libexec/PlistBuddy -c 'Delete :EnvironmentVariables:IPHONE_USE_BACKEND' "$TMP/legacy.plist"
+/usr/libexec/PlistBuddy -c 'Add :EnvironmentVariables:PHONE_REMOTE_BACKEND string direct' "$TMP/legacy.plist"
+/usr/libexec/PlistBuddy -c 'Add :EnvironmentVariables:PHONE_REMOTE_TELEMETRY string 1' "$TMP/legacy.plist"
+carry_default
+[ "$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:IPHONE_USE_BACKEND' "$TMP/carried.plist")" = direct ] \
+    || bad "the legacy spelling of direct was dropped instead of canonicalized"
+[ "$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:IPHONE_USE_TELEMETRY' "$TMP/carried.plist")" = 0 ] \
+    || bad "the canonical setting did not win over the legacy spelling in the same plist"
+! /usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:PHONE_REMOTE_BACKEND' "$TMP/carried.plist" >/dev/null 2>&1 \
+    || bad "the obsolete key spelling was written to the new plist"
+ok_t "supported legacy spellings become canonical keys without overriding canonical values"
 grep -q '^    IPHONE_USE_BASE_PATH \\$' "$ROOT/install.sh" || bad "IPHONE_USE_BASE_PATH is not on the default instance's list"
 ok_t "the default instance keeps IPHONE_USE_BASE_PATH"
 
