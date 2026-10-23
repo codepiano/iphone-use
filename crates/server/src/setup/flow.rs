@@ -29,7 +29,7 @@ const MJPEG_DEVICE_PORT: u16 = 9100;
 /// The foreground has already built the product. Allow the supervisor's
 /// first device launch and relay/product checks, including a cold Wi-Fi start.
 const SUPERVISOR_START_WINDOW: Duration = Duration::from_secs(15 * 60);
-const SUPERVISOR_GENERATION_ENV: &str = "IPU_RUNNER_SUPERVISOR_GENERATION";
+pub(crate) const SUPERVISOR_GENERATION_ENV: &str = "IPU_RUNNER_SUPERVISOR_GENERATION";
 /// How long a launch keeps retrying, in place, while a previous runner still
 /// holds the runner port on the phone (#265) …
 const PORT_IN_USE_WINDOW: Duration = Duration::from_secs(60);
@@ -98,6 +98,8 @@ pub struct Setup {
     /// tunnel, not usbmuxd (only for what the log calls it).
     relay_over_tunnel: bool,
     supervisor_generation: Option<String>,
+    // Held through commit/rollback cleanup; children do not inherit it.
+    _interactive_guard: Option<super::coordination::Guard>,
 }
 
 /// A phone on the legacy (iOS 15/16) path: see `legacy_ios`.
@@ -175,6 +177,7 @@ impl Setup {
             upgrade_rebuild: false,
             relay_over_tunnel: false,
             supervisor_generation: None,
+            _interactive_guard: None,
         }
     }
 
@@ -227,8 +230,10 @@ impl Setup {
                 self.run = Some(run);
                 Ok(())
             }
-            Err(_) => {
-                super::term::die_line("could not initialize the setup status owner");
+            Err(error) => {
+                super::term::die_line(&format!(
+                    "could not initialize the setup status owner: {error}"
+                ));
                 Err(1)
             }
         }
@@ -4326,9 +4331,6 @@ impl Setup {
     /// Prepare the product, start it under launchd, and verify supervision.
     pub fn run_interactive(mut self) -> i32 {
         proc::install_signal_handlers();
-        if let Err(code) = self.install_self() {
-            return code;
-        }
         let code = match self.interactive() {
             Ok(()) => 0,
             Err(Exit(code)) => code,
@@ -4341,6 +4343,19 @@ impl Setup {
         if owner::check(&self.ctx) != 0 {
             return Err(Exit(1));
         }
+        self._interactive_guard = match super::coordination::try_acquire(self.ctx.state_dir()) {
+            Ok(Some(guard)) => Some(guard),
+            Ok(None) => {
+                return die(
+                    "another setup or reconnect is changing this phone; wait for it to finish",
+                )
+            }
+            Err(error) => {
+                return die(format!(
+                    "could not acquire the runner transition lock: {error}"
+                ))
+            }
+        };
         // Before anything is paused or built, so stopping here undoes nothing.
         if sys::stdout_is_tty() && !self.first_run_checklist() {
             return die(format!(
@@ -4348,6 +4363,7 @@ impl Setup {
                 self.ctx.rerun_command()
             ));
         }
+        self.install_self().map_err(Exit)?;
         if let Err(code) = self.begin_status() {
             return Err(Exit(code));
         }
@@ -4532,6 +4548,15 @@ impl Setup {
         };
         self.supervisor_generation = Some(generation.clone());
         let ctx = self.ctx.clone();
+        // A legacy daemon may have reloaded the old policy during the build.
+        // Stop it immediately before publishing this run's new configuration.
+        if launchd::loaded(&ctx, &ctx.instance.runner_label) {
+            launchd::bootout(&ctx, &ctx.instance.runner_label);
+            if !launchd::wait_gone(&ctx, &ctx.instance.runner_label) {
+                warn("old runner supervisor did not stop before staging the new configuration");
+                return false;
+            }
+        }
         if !sys::is_executable(&ctx.self_install) {
             warn(&format!(
                 "fixed setup script is missing or not executable: {}",

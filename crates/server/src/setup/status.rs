@@ -282,7 +282,7 @@ impl Run {
         if generation.is_some_and(|s| s.len() != 64 || !s.bytes().all(|b| b.is_ascii_hexdigit())) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                "invalid supervisor generation",
+                "invalid IPU_RUNNER_SUPERVISOR_GENERATION (expected 64 hexadecimal characters)",
             ));
         }
         let pid = std::process::id();
@@ -568,6 +568,9 @@ mod tests {
                 .err()
                 .unwrap();
             assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+            assert!(error
+                .to_string()
+                .contains("IPU_RUNNER_SUPERVISOR_GENERATION"));
             assert!(!path.exists());
             assert!(!dir.path().join("s.json.lock").exists());
         }
