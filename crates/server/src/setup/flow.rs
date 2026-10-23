@@ -2559,8 +2559,8 @@ impl Setup {
 
     // ── the daemon ──────────────────────────────────────────────────────────
 
-    /// Point the daemon at the verified endpoints. It restarts only for the
-    /// settings it reads at startup: a restart drops every in-flight request,
+    /// Configure daemon endpoints; readiness is verified after startup.
+    /// Restart only for settings it reads at startup: a restart drops every in-flight request,
     /// hold and owner lease.
     fn configure_daemon(&mut self, target_url: &str) -> Step<DaemonEndpoint> {
         let ctx = self.ctx.clone();
@@ -2683,7 +2683,7 @@ impl Setup {
             }
             launchd::enable(&ctx, &label);
             if !launchd::bootstrap(&ctx, &ctx.daemon_plist) {
-                return die("the device runner is reachable, but the daemon LaunchAgent could not be bootstrapped");
+                return die("the configured daemon LaunchAgent could not be bootstrapped");
             }
         }
         let loaded = launchd::loaded(&ctx, &label);
@@ -4693,7 +4693,7 @@ impl Setup {
         info("Starting the prebuilt runner under launchd; keep the iPhone unlocked and handle any authorization prompt on it");
         if !self.start_supervisor() {
             return die(
-                "the runner product is built, but its launchd supervisor could not be installed",
+                "the runner product is built, but its launchd supervisor could not be started",
             );
         }
         let runner_port = valid_port(&ctx.runner_port).unwrap_or(8100);
