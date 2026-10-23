@@ -2444,11 +2444,12 @@ named_plist_env() {
 }
 
 # Our settings in a daemon plist, one name per line: everything spelled
-# IPHONE_USE_* or IPU_RUNNER_*. An upgrade carries forward the ones it does not
-# set itself, so a setting added by hand (or one this installer does not know)
-# survives the nightly auto-update. Left behind on purpose: IPHONE_USE_BACKEND
-# (the mirror backend is gone), pre-rename runner names (read into the new
-# ones), the ASC signing keys (they travel as a set of three or not at all)
+# IPHONE_USE_* or IPU_RUNNER_*, plus the phone-specific DEVELOPER_DIR. An upgrade
+# carries forward the ones it does not set itself, so a setting added by hand
+# (or one this installer does not know)
+# survives the nightly auto-update. Keep the native direct backend marker that
+# setup writes; discard obsolete mirror values. Also leave pre-rename runner
+# names (read into the new ones), the ASC signing keys (they travel as a set)
 # and test hooks.
 plist_own_env_keys() {
     [ -f "$1" ] || return 0
@@ -2456,8 +2457,12 @@ plist_own_env_keys() {
         | sed -n 's:^[[:space:]]*<key>\([A-Z][A-Z0-9_]*\)</key>.*:\1:p' \
         | while IFS= read -r key; do
             case "$key" in
-                IPHONE_USE_BACKEND|IPHONE_USE_INTERNAL_TEST_*|IPHONE_USE_WDA_*|IPU_RUNNER_ASC_*) ;;
-                IPHONE_USE_?*|IPU_RUNNER_?*) printf '%s\n' "$key" ;;
+                IPHONE_USE_INTERNAL_TEST_*|IPHONE_USE_WDA_*|IPU_RUNNER_ASC_*) ;;
+                IPHONE_USE_BACKEND)
+                    if [ "$(plist_env_get_from "$1" "$key")" = direct ]; then
+                        printf '%s\n' "$key"
+                    fi ;;
+                DEVELOPER_DIR|IPHONE_USE_?*|IPU_RUNNER_?*) printf '%s\n' "$key" ;;
             esac
         done
 }
