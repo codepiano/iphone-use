@@ -102,6 +102,47 @@ plist_own_env_keys '$TMP/old.plist'")"
 ! printf '%s\n' "$got" | grep -Fx IPHONE_USE_BACKEND >/dev/null \
     || bad "the obsolete legacy-mirror backend was carried forward"
 ok_t "obsolete legacy-mirror remains excluded"
+
+# Exercise the actual default serialization loop with a legacy fallback.
+# Native setup's Xcode choice may live only in the pre-rename daemon plist.
+/usr/libexec/PlistBuddy -c 'Set :EnvironmentVariables:IPHONE_USE_BACKEND direct' "$TMP/old.plist"
+cp "$TMP/old.plist" "$TMP/legacy.plist"
+cat > "$TMP/current.plist" <<'PLIST'
+<plist version="1.0"><dict><key>EnvironmentVariables</key><dict>
+<key>IPHONE_USE_PORT</key><string>45555</string>
+</dict></dict></plist>
+PLIST
+DEFAULT_FUNCS="$(sed -n '/^plist_env_get() {$/,/^}$/p;/^xml_escape() {$/,/^}$/p;/^append_plist_env() {$/,/^}$/p' "$ROOT/install.sh")"
+CARRY_LOOP="$(sed -n '/^# The rest of our settings in the previous plist, as they were\.$/,/^done$/p' "$ROOT/install.sh")"
+carry_default() {
+    bash -c "$FUNCS
+$DEFAULT_FUNCS
+PLIST_DST='$TMP/current.plist'; OLD_PLIST='$TMP/legacy.plist'
+PLIST_ENV_BLOCK=''; PLIST_ENV_HANDLED=' '
+$CARRY_LOOP
+printf '<plist version=\"1.0\"><dict><key>EnvironmentVariables</key><dict>%s</dict></dict></plist>\n' \"\$PLIST_ENV_BLOCK\"" > "$TMP/carried.plist"
+}
+carry_default
+[ "$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:DEVELOPER_DIR' "$TMP/carried.plist")" = '/Applications/Xcode Beta & QA.app/Contents/Developer' ] \
+    || bad "the default upgrade lost the legacy Xcode choice"
+[ "$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:IPHONE_USE_BACKEND' "$TMP/carried.plist")" = direct ] \
+    || bad "the default upgrade lost legacy direct"
+[ "$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:IPHONE_USE_PORT' "$TMP/carried.plist")" = 45555 ] \
+    || bad "legacy settings overwrote the current plist"
+ok_t "the default serializer preserves legacy-only settings and gives current values precedence"
+/usr/libexec/PlistBuddy -c 'Add :EnvironmentVariables:DEVELOPER_DIR string /Applications/Current.app/Contents/Developer' "$TMP/current.plist"
+/usr/libexec/PlistBuddy -c 'Add :EnvironmentVariables:IPHONE_USE_BACKEND string mirror' "$TMP/current.plist"
+carry_default
+[ "$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:DEVELOPER_DIR' "$TMP/carried.plist")" = /Applications/Current.app/Contents/Developer ] \
+    || bad "legacy Xcode overwrote the current phone choice"
+! /usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:IPHONE_USE_BACKEND' "$TMP/carried.plist" >/dev/null 2>&1 \
+    || bad "legacy direct resurrected the current mirror backend"
+ok_t "current Xcode wins and obsolete current backend cannot be revived from legacy direct"
+rm "$TMP/current.plist"
+carry_default
+[ "$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:IPHONE_USE_BACKEND' "$TMP/carried.plist")" = direct ] \
+    || bad "a legacy-only install lost direct"
+ok_t "a legacy-only install retains native settings without a current plist"
 grep -q '^    IPHONE_USE_BASE_PATH \\$' "$ROOT/install.sh" || bad "IPHONE_USE_BASE_PATH is not on the default instance's list"
 ok_t "the default instance keeps IPHONE_USE_BASE_PATH"
 
