@@ -3821,24 +3821,29 @@ mod tests {
         status::publish(&old, &status::Op::BeginForSupervisor(a.clone())).unwrap();
         status::publish(&old, &status::Op::ProductKey("product".into())).unwrap();
         status::publish(&old, &ready).unwrap();
-        assert!(!supervisor_ready(&path, &b, "product"));
+        assert_eq!(supervisor_ready(&path, &b, "product"), Ok(false));
         status::publish(&new, &status::Op::BeginForSupervisor(b.clone())).unwrap();
+        assert_eq!(supervisor_ready(&path, &b, "product"), Ok(false));
         status::publish(&new, &ready).unwrap();
         assert!(
-            !supervisor_ready(&path, &b, "product"),
-            "old product proof must not survive Begin"
+            supervisor_ready(&path, &b, "product")
+                .unwrap_err()
+                .contains("without product verification"),
+            "old product proof must not survive Begin, and missing proof must fail immediately"
         );
         status::publish(&new, &status::Op::ProductKey("wrong".into())).unwrap();
-        assert!(!supervisor_ready(&path, &b, "product"));
+        assert!(supervisor_ready(&path, &b, "product")
+            .unwrap_err()
+            .contains("different product"));
         status::publish(&new, &status::Op::ProductKey("product".into())).unwrap();
-        assert!(supervisor_ready(&path, &b, "product"));
+        assert_eq!(supervisor_ready(&path, &b, "product"), Ok(true));
         assert!(!status::publish(&old, &status::Op::ProductKey("wrong".into())).unwrap());
-        assert!(supervisor_ready(&path, &b, "product"));
+        assert_eq!(supervisor_ready(&path, &b, "product"), Ok(true));
         status::publish(&owner("generic"), &status::Op::Begin).unwrap();
         status::publish(&owner("generic"), &ready).unwrap();
-        assert!(!supervisor_ready(&path, &b, "product"));
+        assert_eq!(supervisor_ready(&path, &b, "product"), Ok(false));
         std::fs::write(path.clone(), b"not JSON").unwrap();
-        assert!(!supervisor_ready(&path, &b, "product"));
+        assert_eq!(supervisor_ready(&path, &b, "product"), Ok(false));
     }
 
     #[test]
@@ -4717,10 +4722,15 @@ impl Setup {
             .and_then(|_| pid::parse(&ctx.runner_pid_file, &self.legacy.runner))
             .map(|record| (record.pid, record.lstart));
             let identified = new_id.as_ref().is_some_and(|id| !id.1.is_empty());
-            let ready = self
-                .supervisor_generation
-                .as_deref()
-                .is_some_and(|expected| supervisor_ready(&ctx.status_file, expected, expected_key));
+            let ready = match self.supervisor_generation.as_deref() {
+                Some(expected) => {
+                    match supervisor_ready(&ctx.status_file, expected, expected_key) {
+                        Ok(ready) => ready,
+                        Err(reason) => return die(reason),
+                    }
+                }
+                None => false,
+            };
             if identified
                 && ready
                 && launchd::loaded(&ctx, &ctx.instance.runner_label)
@@ -4877,15 +4887,27 @@ fn ensure_supervisor_started(
     loaded()
 }
 
-fn supervisor_ready(path: &Path, expected_generation: &str, expected_product: &str) -> bool {
-    std::fs::read(path)
+/// A fresh ready report with the wrong product cannot become this setup's
+/// success by waiting. Fail immediately rather than using the launch deadline.
+fn supervisor_ready(
+    path: &Path,
+    expected_generation: &str,
+    expected_product: &str,
+) -> Result<bool, &'static str> {
+    let Some(report) = std::fs::read(path)
         .ok()
         .and_then(|s| serde_json::from_slice::<serde_json::Value>(&s).ok())
-        .is_some_and(|s| {
-            s["phase"] == "ready"
-                && s["supervisor_generation"] == expected_generation
-                && s["product_key"] == expected_product
-        })
+    else {
+        return Ok(false);
+    };
+    if report["supervisor_generation"] != expected_generation || report["phase"] != "ready" {
+        return Ok(false);
+    }
+    match report.get("product_key").and_then(serde_json::Value::as_str) {
+        Some(product) if product == expected_product => Ok(true),
+        Some(_) => Err("runner supervisor reached ready with a different product; refusing the mismatched configuration and rolling back setup"),
+        None => Err("runner supervisor reached ready without product verification; refusing the unverified startup and rolling back setup"),
+    }
 }
 
 /// Warn, on a background thread, when the video relay has not delivered its
