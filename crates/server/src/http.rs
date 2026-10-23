@@ -4947,9 +4947,20 @@ fn admit_managed_reconnect(
     lifecycle: &RunnerLifecycle,
     state_dir: &std::path::Path,
 ) -> Result<(crate::setup::coordination::Guard, RunnerTransitionToken), ReconnectAdmissionError> {
+    // Reading the phase does not acquire it: interactive setup still wins
+    // admission before any reconnect can transition the lifecycle.
+    if lifecycle.is_transitioning() {
+        return Err(ReconnectAdmissionError::LifecycleBusy);
+    }
     let guard = match crate::setup::coordination::try_acquire(state_dir) {
         Ok(Some(guard)) => guard,
-        Ok(None) => return Err(ReconnectAdmissionError::SetupBusy),
+        Ok(None) => {
+            return Err(if lifecycle.is_transitioning() {
+                ReconnectAdmissionError::LifecycleBusy
+            } else {
+                ReconnectAdmissionError::SetupBusy
+            })
+        }
         Err(error) => {
             tracing::warn!("could not acquire runner transition lock: {error}");
             return Err(ReconnectAdmissionError::CoordinationUnavailable);
@@ -20347,6 +20358,28 @@ mod tests {
             heartbeat_ts,
             supervisor_generation: String::new(),
         }
+    }
+
+    #[test]
+    fn concurrent_reconnect_keeps_its_lifecycle_busy_response() {
+        let dir = tempfile::tempdir().unwrap();
+        let lifecycle = RunnerLifecycle::new();
+        let (guard, token) = admit_managed_reconnect(&lifecycle, dir.path()).unwrap();
+        assert_eq!(
+            admit_managed_reconnect(&lifecycle, dir.path()).unwrap_err(),
+            ReconnectAdmissionError::LifecycleBusy
+        );
+        assert!(lifecycle.finish_reconnecting(token));
+        // Observation can end while the blocking bootstrap still owns its
+        // descriptor: do not admit another start in that interval either.
+        assert_eq!(
+            admit_managed_reconnect(&lifecycle, dir.path()).unwrap_err(),
+            ReconnectAdmissionError::SetupBusy
+        );
+        drop(guard);
+        let (guard, token) = admit_managed_reconnect(&lifecycle, dir.path()).unwrap();
+        assert!(lifecycle.finish_reconnecting(token));
+        drop(guard);
     }
 
     #[test]
