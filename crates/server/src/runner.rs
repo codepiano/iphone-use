@@ -85,6 +85,8 @@ pub struct RunnerClient {
     session: Option<String>,
     /// Negotiated per session; old runners retain their existing input path.
     guarded_input: bool,
+    continuation_input: bool,
+    input_continuation: crate::input_continuation::Store,
     /// Last `GET /window/size` answer and when it was read. Every coordinate
     /// gesture needs the size to map normalized points, and the read costs
     /// ~180 ms on a real phone — more than a third of a tap. A short TTL keeps
@@ -342,6 +344,8 @@ impl RunnerClient {
             auth: std::sync::Arc::new(crate::runner_token::TokenSource::instance()),
             session: None,
             guarded_input: false,
+            continuation_input: false,
+            input_continuation: Default::default(),
             window: None,
             posted_at: None,
             no_alert_at: None,
@@ -706,6 +710,8 @@ impl RunnerClient {
                         .and_then(serde_json::Value::as_bool)
                 })
                 == Some(true);
+            self.continuation_input = serde_json::from_str::<serde_json::Value>(&text).ok()
+                .and_then(|v| v.pointer("/value/capabilities/ipu:inputContinuation").and_then(serde_json::Value::as_bool)) == Some(true);
             self.window = None;
             self.no_alert_at = None;
             self.device_settle = None;
@@ -1858,6 +1864,19 @@ impl RunnerClient {
         Ok(())
     }
 
+    pub(crate) fn save_input_continuation(&mut self, scope: crate::input_continuation::Scope,
+        target: String, remaining: String, budget_ms: u64) -> Option<String> {
+        if !self.continuation_input { return None; }
+        self.input_continuation.issue(scope, self.session.clone()?, target, remaining, budget_ms, std::time::Instant::now())
+    }
+
+    pub(crate) fn supports_input_continuation(&self) -> bool { self.continuation_input }
+
+    pub(crate) fn take_input_continuation(&mut self, token: &str, scope: &crate::input_continuation::Scope)
+        -> Option<crate::input_continuation::Pending> {
+        self.input_continuation.take(token, scope, self.session.as_deref()?, std::time::Instant::now())
+    }
+
     /// Bind a long text to the live focused field on a supporting runner. Once advertised,
     /// failure to bind is an error, never permission to fall back to unguarded typing.
     pub async fn input_target(&mut self) -> Result<Option<String>> {
@@ -2327,6 +2346,7 @@ impl RunnerClient {
             || path.ends_with("/elements")
             || path.ends_with("/element");
         if !read_only {
+            self.input_continuation.clear();
             // A new app or the Home Screen is a screen of unknown size.
             if path.ends_with("/wda/apps/launch")
                 || path.ends_with("/wda/apps/activate")
@@ -2521,8 +2541,10 @@ impl RunnerClient {
     /// Drop the cached session (e.g. after an error that suggests it went
     /// stale); the next call re-creates one via [`Self::ensure_session`].
     pub fn invalidate_session(&mut self) {
+        self.input_continuation.clear();
         self.session = None;
         self.guarded_input = false;
+        self.continuation_input = false;
         self.window = None;
         self.no_alert_at = None;
         self.last_tree = None;

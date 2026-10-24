@@ -95,7 +95,7 @@ it off again.
 | Tap a unique label | `tap` + `label` | `phone_tap_label` | `tap_label` |
 | Tap by locator | `tap_locator` + `locator` | `phone_run_steps` step | `tap_locator` |
 | Tap a point | `tap` + `x`,`y` | `phone_tap` | `tap` |
-| Type | `text` (into the focused field; up to 20000 chars — on `text_partially_typed` send only `remaining_text` with `clear:false`) | `phone_type` | `type` (`input` names a runtime value) |
+| Type | `text` (into the focused field; up to 20000 chars — on a safe partial use `continue_token` alone; unknown delivery requires inspecting the original field) | `phone_type` | `type` (`input` names a runtime value) |
 | Key | `key` `return`… | `phone_key` | `key` |
 | Home / Spotlight | `shortcut` | `phone_shortcut` | `shortcut` |
 | Scroll | `scroll` `dy` (80 ≈ 15% of a screen, 400 ≈ 75%) | `phone_scroll` (`x`, `y`, `dx`, `dy` required) | `scroll` (`x`, `y`, `dx`, `dy` required in MCP batches) |
@@ -147,6 +147,14 @@ curl -s -H "$AUTH" -H "$MUTATION" -H "$OWNER" -X POST "$HOST/agent/actions" -d '
 | Reconnect to check health | `phone_status`; reconnect only when the task needs the phone |
 | Type without checking focus | Confirm the foreground app and focused field, then type |
 | Repeat a label that was not found | Use the `did you mean` label the error offers, or re-read |
+
+Bounded long input: `phone_type {"text":"…","budget_ms":15000}` can return a
+single-use `continue_token` at a safe chunk boundary. Continue with
+`phone_type {"continue_token":"…"}` only, without text or budget. Keep the same
+owner; an intervening action or owner/session/field change invalidates it.
+`retry_safe:false` forbids replaying the original text. No token is issued for
+unknown delivery. If continuation is refused, inspect the original field;
+never rebind to the current focus or resend the full text.
 
 Task metrics: `iphone-use metrics` / `GET /agent/metrics` count HTTP calls, not
 model turns. To count one task exactly, wrap it in `phone_run_start` /

@@ -1,6 +1,6 @@
 # Target-bound input: candidate validation
 
-This candidate binds long-text chunks to a live AX field on supporting native
+The first candidate (`33afac7`) binds long-text chunks to a live AX field on supporting native
 runners. It has not been installed on a physical phone, released, or compared
 for task speed against another product.
 
@@ -69,3 +69,6 @@ Failures are retained alongside the successful run:
 Each attempt cleaned up its disposable simulator. None of these runs proves
 physical-device behavior or superiority across full agent tasks. Remaining
 work is tracked in [the acceptance matrix](../../development/competitive-acceptance.md).
+
+Later continuation work and its separate evidence are in
+[the follow-up report](../input-continuation-2026-10-25/README.md).

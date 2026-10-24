@@ -49,15 +49,21 @@ Targeted synthesis must support the original process ID or refuse.
 
 Limits to close before claiming input superiority:
 
-- This first change binds chunks within one long-text action. It does not yet
-  provide an owner-bound continuation token across API calls.
-- Focus may change while an individual chunk is being synthesized. Checking
-  chunk boundaries and targeting a process does not prove per-character field
-  isolation. Exercise this explicitly on device before choosing a smaller
-  chunk or a different insertion primitive.
+- The current candidate adds owner-bound, single-use continuation across API
+  calls and native invalidation for intervening commands. Its current native
+  capability is `ipu:inputContinuation`; older `guardedInput`-only runners do
+  not provide the continuation contract. Actual daemon/runner continuation
+  acceptance is recorded below; physical-device testing remains open.
+- Native postflight detects an observed focus/app change during a chunk and
+  reports that chunk as unknown. The simulator covers this with a 20/180 split
+  between two fields. This does not prove per-character isolation, rapid
+  away-and-back focus detection or physical-device behavior.
 - Old runners without the capability keep their existing input behavior;
   they must not be described as protected.
-- Short text and other key entry paths retain their existing behavior.
+- Short text rechecks ownership after queueing and ambiguous synthesis never
+  falls back to another typing implementation. Short literal input does not yet
+  carry the same explicit field binding as long/continued input. Separate key
+  paths and daemon-level best-effort legacy clear behavior still need review.
 - No physical-device acceptance or comparative speed result is available yet.
 
 ## Trial protocol
@@ -82,8 +88,9 @@ keep equivalent raw trace and postcondition evidence for the reference.
 
 ## Current candidate evidence
 
-[Target-bound input validation](../measurements/input-target-2026-10-24/README.md)
-records the device-free checks, actual simulator guard cases and earlier failed
-fixture runs. Five native simulator cases pass. Physical-device acceptance,
-continuation across calls, in-flight focus changes and comparative task trials
-remain open; the broader goal is not complete.
+[First binding validation](../measurements/input-target-2026-10-24/README.md)
+records the initial candidate. [Continuation validation](../measurements/input-continuation-2026-10-25/README.md)
+records 13 actual daemon/runner simulator cases, HTTP/MCP entry checks, exact
+source and binary hashes, and earlier failed attempts. Physical acceptance,
+complete short-input/legacy-clear protection, the remaining recovery/host work
+and comparative task trials remain open. The broader goal is not complete.

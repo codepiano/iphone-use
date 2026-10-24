@@ -1,0 +1,108 @@
+{
+  "scope": "local candidate checks; no physical-device, release or competitive performance acceptance",
+  "checks": {
+    "server_lib_and_related_http": {
+      "log_sha256": "c4b50f6089f508bd30b03ca31e9b6d01bb32b8b52179457a71373d0ad2ecac7c",
+      "results": [
+        {
+          "passed": 883,
+          "failed": 0,
+          "ignored": 1
+        },
+        {
+          "passed": 20,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 9,
+          "failed": 0,
+          "ignored": 0
+        }
+      ]
+    },
+    "mcp_lib_and_actual_stdio": {
+      "log_sha256": "821729a0a1a3f3b0a245286607adb9a5de7675ee69597029c5154360152ca24c",
+      "results": [
+        {
+          "passed": 232,
+          "failed": 0,
+          "ignored": 1
+        },
+        {
+          "passed": 15,
+          "failed": 0,
+          "ignored": 0
+        }
+      ]
+    },
+    "earlier_parallel_server_failure": {
+      "log_sha256": "f84ebf4fc6aaab5bbfce1d329f9bf6b83753be727790420a1cec74671c757032",
+      "results": [
+        {
+          "passed": 882,
+          "failed": 1,
+          "ignored": 1
+        }
+      ]
+    },
+    "earlier_parallel_readiness_failures": {
+      "log_sha256": "7b4a3eb8838abb98402becd10a00bf5cbdda2d6ad2df13c635ca0c5dea5746b5",
+      "results": [
+        {
+          "passed": 880,
+          "failed": 3,
+          "ignored": 1
+        }
+      ]
+    },
+    "final_default_thread_server_lib": {
+      "log_sha256": "5da5e36f401c5bf3fcb4d1449c62c7e2da974ba4392a9473d5efc877c0ad6dc8",
+      "results": [
+        {
+          "passed": 883,
+          "failed": 0,
+          "ignored": 1
+        }
+      ]
+    }
+  },
+  "existing_coordination_check_recheck": {
+    "runs": 10,
+    "passed": 10
+  },
+  "swift_checks": 278,
+  "home_checks": 7,
+  "xcode_version": [
+    "Xcode 27.0",
+    "Build version 27A266a"
+  ],
+  "base_revision": "33afac79aaf9502ad4fd0a280d5ae3108f4aa0fc",
+  "device_target_compile": "unsigned compile passed; not installed on a physical phone",
+  "source_hashes": {
+    "Cargo.toml": "6008d2ba76fe92052c4427887edbf12889fbe51aac2af83853c673158df35949",
+    "Cargo.lock": "ec67c15c155372e3d7a5cb137d2ade949cff033bea14a97bfaad9ba58ac036fe",
+    "crates/server/src/boot.rs": "b5d1da07482b7f393aa775e43778f08c4c586066a4c1c91e5e8c3b2ae85a0fbb",
+    "crates/server/src/http.rs": "1bcb06b024f404f35b8ba4006a7d79dcbfd68bc3760fc6077f1665318e80e78a",
+    "crates/server/src/runner.rs": "e8133bdcdc819ce9abfa4609f4f4ff9bd0846c9ac8e716a9d60eb6efc75bc2ce",
+    "crates/server/src/input_continuation.rs": "1fa8bb7bcfe52c345f23c193a8b8d05aa21a14210429838502cd446fb48b29e1",
+    "crates/server/src/activity.rs": "ab7ef42cb85dba452b5aa8f16f3df3775d5221143be053f902facc0324e7378a",
+    "crates/server/src/flows.rs": "dd941e8df54d189addd47ecbbf71f43126361b3247b51d84b221fb9378072f66",
+    "crates/mcp/src/client.rs": "47a2b3953d04ffa6b6c2b522d9f061d9f7622d91e6ed8e6225d7f86a86e66d91",
+    "crates/mcp/src/server.rs": "f4bb473ae452f4731d6dee88425b4a1486f302b8d469861d1808ea55f14b3348",
+    "crates/mcp/tests/observe_over_stdio.rs": "0dece56df10ba6c5cf3ca499af9d58a882e65ba140bb47615220921d2bd50a54",
+    "crates/server/tests/input_continuation.rs": "1fa929544839b509818a2b9a12faa9ba95f1f1c4eeaaa049085fa4ce674609d0",
+    "docs/agent-reference.md": "f332422464c82aea813c438d0df8d9a99a8a0fee42791c6c8a9fd57c6ce013d4",
+    "scripts/test-input-target-simulator.py": "7c21435f7a77da7e2f1270e4c6d5fa3be2b6f9411ea0c67151493a18381cdf3a"
+  }
+}

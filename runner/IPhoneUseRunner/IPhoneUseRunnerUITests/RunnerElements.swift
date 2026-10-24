@@ -314,6 +314,20 @@ struct ClassChain {
 /// non-editable nodes and unreported focus cannot authorize typing. Geometry and labels are not
 /// identities. The caller re-snapshots the retained live AX element on each chunk.
 enum InputTargetCheck {
+  /// Only these bridge failures precede event dispatch. An arbitrary synthesis error may
+  /// already have delivered text, so it must never trigger another typing implementation.
+  static func mayFallbackAfterTextSynthesis(_ error: String, targeted: Bool) -> Bool {
+    !targeted && ["private XCTest text synthesis unavailable",
+      "private XCTest text synthesis failed: could not create text event"].contains(error)
+  }
+
+  /// Read-only routes never reach this gate. Only the same bound keys/clear may preserve the
+  /// binding across a mutation; arbitrary keys, Home, taps and other controllers invalidate it.
+  static func preservesBinding(path: String, binding: String?, body: [String: Any]) -> Bool {
+    guard let binding, body["inputTarget"] as? String == binding else { return false }
+    return path.hasSuffix("/wda/keys") || path.hasSuffix("/element/\(binding)/clear")
+  }
+
   static func refusal(type: String, focused: Bool, enabled: Bool, pid: Int32,
                       foregroundPID: Int32, live: Bool) -> String? {
     guard live else { return "input_target_unreadable" }

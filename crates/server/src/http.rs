@@ -475,6 +475,9 @@ pub struct AppState {
     pub owner: Arc<Mutex<Option<PhoneOwner>>>,
     /// How long an owner's lease outlives its last control request.
     pub owner_lease_secs: u64,
+    /// Changes under the owner lock on acquisition, handoff or release; a name alone is not
+    /// an ownership incarnation (a -> b -> a must not revive a continuation).
+    pub owner_epoch: Arc<std::sync::atomic::AtomicU64>,
     /// How a reconnect brings the managed supervisor up: `(setup_sh, log,
     /// udid) -> started`. Blocking. The daemon uses
     /// [`write_and_bootstrap_runner_agent`]; tests substitute a fake so a
@@ -626,6 +629,11 @@ fn claim_phone_owner(state: &AppState, headers: &HeaderMap) -> Result<bool, Resp
     let mut slot = recover(state.owner.lock());
     let previous = slot.clone();
     let outcome = arbitrate_owner(&mut slot, claim, now, lease);
+    if outcome.is_ok() {
+        let before = previous.as_ref().filter(|o| now.saturating_duration_since(o.last_seen) < lease).map(|o| &o.name);
+        let after = slot.as_ref().map(|o| &o.name);
+        if before != after { state.owner_epoch.fetch_add(1, std::sync::atomic::Ordering::AcqRel); }
+    }
     drop(slot);
     match outcome {
         Ok(()) => {
@@ -743,7 +751,7 @@ async fn agent_owner_inner(
                 .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
         );
     }
-    *recover(state.owner.lock()) = None;
+    state.release_owner_lease();
     // While a lease is live the idle watchdog leaves the phone alone; the
     // idle window starts when it is given back, not at the last action.
     state.touch_activity();
@@ -765,6 +773,12 @@ pub type ElementSnapshotCache =
     std::collections::VecDeque<(String, Arc<Vec<crate::runner::ElementRow>>)>;
 
 impl AppState {
+    fn release_owner_lease(&self) {
+        let mut owner = recover(self.owner.lock());
+        *owner = None;
+        self.owner_epoch.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+    }
+
     /// Stamp "remote driving happened just now" for the idle-release watchdog.
     /// Called by every `/agent` action and live-view request (NOT `/agent/status`,
     /// which the web client polls constantly — counting it would pin the phone
@@ -4789,7 +4803,7 @@ pub fn spawn_idle_release_watchdog(state: Arc<AppState>) {
                     *recover(state.runner_health.lock()) = crate::runner::RunnerHealth::down();
                     state.released.store(true, Ordering::Release);
                     recover(state.flow_trail.lock()).reset();
-                    *recover(state.owner.lock()) = None;
+                    state.release_owner_lease();
                     note_idle_release();
                     release_backoff_until = None;
                     release_failures = 0;
@@ -4903,7 +4917,7 @@ pub fn spawn_idle_release_watchdog(state: Arc<AppState>) {
                 *recover(state.runner_health.lock()) = crate::runner::RunnerHealth::down();
                 state.released.store(true, Ordering::Release);
                 recover(state.flow_trail.lock()).reset();
-                *recover(state.owner.lock()) = None;
+                state.release_owner_lease();
                 note_idle_release();
                 was_up = false;
                 release_backoff_until = None;
@@ -6069,7 +6083,7 @@ async fn agent_mode_inner(
                 state
                     .released
                     .store(true, std::sync::atomic::Ordering::Release);
-                *recover(state.owner.lock()) = None;
+                state.release_owner_lease();
                 HUMAN_HANDOFF.store(true, std::sync::atomic::Ordering::Release);
                 tracing::info!("phone handed to a human: managed runner stopped on request");
             }
@@ -9625,12 +9639,26 @@ async fn type_text_chunked(
     deadline: tokio::time::Instant,
     detail: &mut Option<serde_json::Value>,
 ) -> RunnerControlOutcome {
+    type_text_chunked_bound(w, actionable, text, clear, deadline, detail, None, None, None).await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn type_text_chunked_bound(
+    w: &mut crate::runner::RunnerClient,
+    actionable: &std::sync::atomic::AtomicBool,
+    text: &str,
+    clear: bool,
+    deadline: tokio::time::Instant,
+    detail: &mut Option<serde_json::Value>,
+    bound_target: Option<String>,
+    context: Option<(&crate::input_continuation::Scope, &std::sync::atomic::AtomicU64)>,
+    budget_ms: Option<u64>,
+) -> RunnerControlOutcome {
     use crate::text_input::{char_count, chunk_timeout, split, typing_time, CHUNK_CHARS};
     use std::sync::atomic::Ordering;
-    let deadline = deadline
-        .checked_sub(TEXT_CHUNK_DEADLINE_MARGIN)
-        .unwrap_or(deadline);
-    let target = match w.input_target().await {
+    let target = match bound_target {
+        Some(target) => Some(target),
+        None => match w.input_target().await {
         Ok(target) => target,
         Err(error) => {
             if let Some(runner) = crate::runner::runner_http_error(&error) {
@@ -9640,7 +9668,17 @@ async fn type_text_chunked(
             tracing::warn!("long text target binding failed before dispatch: {error:#}");
             return RunnerControlOutcome::NotSent;
         }
-    };
+    }};
+    if budget_ms.is_some() && (target.is_none() || !w.supports_input_continuation()) {
+        return RunnerControlOutcome::Refused("input_continuation_unsupported", "bounded input requires a runner with ipu:inputContinuation; upgrade the runner before trying again");
+    }
+    // budget_ms limits typing, not the read-only target lookup. The entry point still bounds
+    // binding and typing together by its outer request deadline.
+    let deadline = budget_ms.map(|ms| deadline.min(tokio::time::Instant::now() + std::time::Duration::from_millis(ms))).unwrap_or(deadline);
+    let deadline = deadline.checked_sub(TEXT_CHUNK_DEADLINE_MARGIN).unwrap_or(deadline);
+    if context.is_some_and(|(scope, epoch)| scope.epoch != epoch.load(Ordering::Acquire)) {
+        return RunnerControlOutcome::Refused("input_owner_changed", "phone ownership changed before typing; no input was sent");
+    }
     if clear && target.is_some() {
         if let Err(error) = w.clear_input_target(target.as_deref().unwrap()).await {
             return runner_failure_outcome(w, actionable, &error, "text", detail);
@@ -9653,18 +9691,33 @@ async fn type_text_chunked(
     }
     let mut confirmed = 0;
     for piece in split(text, CHUNK_CHARS) {
+        if context.is_some_and(|(scope, epoch)| scope.epoch != epoch.load(Ordering::Acquire)) {
+            *detail = Some(serde_json::json!({"input_error":"input_owner_changed"}));
+            if confirmed == 0 && !clear {
+                return RunnerControlOutcome::Refused("input_owner_changed", "phone ownership changed; inspect the original field before continuing");
+            }
+            return RunnerControlOutcome::TextPartial { confirmed, uncertain: 0 };
+        }
         let n = char_count(piece);
         let left = deadline.saturating_duration_since(tokio::time::Instant::now());
         if left < typing_time(n) + std::time::Duration::from_millis(500) {
             // Not enough time to type this chunk: stop before sending it.
             tracing::warn!("chunked text stopped at the deadline after {confirmed} characters");
             if confirmed == 0 && !clear {
-                return RunnerControlOutcome::NotSent;
+                return if budget_ms.is_some() {
+                    RunnerControlOutcome::Refused("input_budget_exhausted", "no chunk fit in the typing budget; no text was sent. Inspect the original field and increase budget_ms before starting a new input")
+                } else { RunnerControlOutcome::NotSent };
             }
-            return RunnerControlOutcome::TextPartial {
-                confirmed,
-                uncertain: 0,
-            };
+            if let (Some(target), Some((scope, epoch))) = (target.as_ref(), context) {
+                if scope.epoch == epoch.load(Ordering::Acquire) {
+                    let remaining: String = text.chars().skip(confirmed).collect();
+                    if let Some(token) = w.save_input_continuation(scope.clone(), target.clone(), remaining, budget_ms.unwrap_or(15000)) {
+                        let body = detail.get_or_insert_with(|| serde_json::json!({}));
+                        body["continue_token"] = token.into();
+                    }
+                }
+            }
+            return RunnerControlOutcome::TextPartial { confirmed, uncertain: 0 };
         }
         let result = if let Some(token) = target.as_deref() {
             w.keys_to_target(piece, token, chunk_timeout(n).min(left))
@@ -9729,6 +9782,91 @@ fn text_partial_body(
     })
 }
 
+fn text_partial_with_detail(action: &serde_json::Value, confirmed: usize, uncertain: usize,
+    detail: Option<&serde_json::Value>) -> serde_json::Value {
+    let mut body = text_partial_body(action, confirmed, uncertain);
+    if let Some(detail) = detail {
+        let mut extra = detail.clone();
+        if let Some(token) = extra.as_object_mut().and_then(|d| d.remove("continue_token")) {
+            body["continue_token"] = token;
+            body["continuation_safe"] = true.into();
+            body["continuation_expires_in_ms"] = 60000.into();
+            body["hint"] = "only unsent text remains. Continue with type:text and continue_token alone; do not resend text or clear the field. Any intervening action, ownership handoff or session change invalidates continuation".into();
+        }
+        if extra.as_object().is_some_and(|d| !d.is_empty()) { body["detail"] = extra; }
+    }
+    body
+}
+
+fn is_input_continuation(action: &serde_json::Value) -> bool {
+    action.get("type").and_then(serde_json::Value::as_str) == Some("text") && action.get("continue_token").is_some()
+}
+
+fn validate_text_request(action: &serde_json::Map<String, serde_json::Value>) -> Result<(), &'static str> {
+    if let Some(token) = action.get("continue_token") {
+        if action.len() != 2 || !token.as_str().is_some_and(|v| v.len()==64 && v.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())) {
+            return Err("continue_token must be 64 lowercase hex characters and passed alone with type:text");
+        }
+        return Ok(());
+    }
+    if action.get("text").and_then(serde_json::Value::as_str).is_none_or(|t| crate::text_input::char_count(t)>crate::text_input::MAX_TEXT_CHARS)
+        || action.get("clear").is_some_and(|v| !v.is_boolean())
+        || action.get("budget_ms").is_some_and(|v| v.as_u64().is_none_or(|ms| !(6000..=15000).contains(&ms))) {
+        return Err("text needs a string up to 20000 characters, optional bool clear and optional budget_ms from 6000 to 15000");
+    }
+    Ok(())
+}
+
+/// Production entry points carry the current ownership incarnation. The legacy dispatcher
+/// remains useful for native actions and device-free tests; it cannot resume token-only input.
+async fn owned_agent_action(
+    state: &AppState, headers: &HeaderMap, w: &mut crate::runner::RunnerClient,
+    action: &serde_json::Value, detail: &mut Option<serde_json::Value>, deadline: tokio::time::Instant,
+) -> (RunnerControlOutcome, Option<serde_json::Value>) {
+    let resume = is_input_continuation(action);
+    let text = action.get("text").and_then(serde_json::Value::as_str).unwrap_or("");
+    let budget = action.get("budget_ms").and_then(serde_json::Value::as_u64);
+    if action.get("type").and_then(serde_json::Value::as_str)!=Some("text") {
+        return (direct_agent_action(w, &state.runner_actionable, action, detail, deadline).await, None);
+    }
+    let scope = {
+        let slot = recover(state.owner.lock());
+        match (named_owner(headers), slot.as_ref()) {
+            (Some(name), Some(owner)) if owner.name == name => Some(crate::input_continuation::Scope {
+                owner: name.into(), epoch: state.owner_epoch.load(std::sync::atomic::Ordering::Acquire),
+            }),
+            (None, None) => Some(crate::input_continuation::Scope {
+                owner: String::new(), epoch: state.owner_epoch.load(std::sync::atomic::Ordering::Acquire),
+            }),
+            _ => None,
+        }
+    };
+    if named_owner(headers).is_none() && (resume || budget.is_some()) {
+        return (RunnerControlOutcome::Refused("input_owner_required", "bounded input and continuation require the same named X-Phone-Owner"), None);
+    }
+    if scope.is_none() {
+        return (RunnerControlOutcome::Refused("input_owner_changed", "phone ownership changed while this input waited; no text was sent"), None);
+    }
+    if !resume && budget.is_none() && text.chars().count() <= crate::text_input::CHUNK_CHARS {
+        return (direct_agent_action(w, &state.runner_actionable, action, detail, deadline).await, None);
+    }
+    let mut effective = None;
+    let (target, budget) = if resume {
+        let scope = scope.as_ref().unwrap();
+        let token = action["continue_token"].as_str().unwrap_or_default();
+        let Some(pending) = w.take_input_continuation(token, scope) else {
+            return (RunnerControlOutcome::Refused("input_continuation_expired", "continuation is expired, consumed or belongs to another owner/session; nothing was typed now. Read the original field before planning any further input"), None);
+        };
+        effective = Some(serde_json::json!({"type":"text","text":pending.remaining}));
+        (Some(pending.target), Some(pending.budget_ms))
+    } else { (None, budget) };
+    let value = effective.as_ref().unwrap_or(action);
+    let outcome = type_text_chunked_bound(w, &state.runner_actionable, value["text"].as_str().unwrap_or_default(),
+        value.get("clear").and_then(serde_json::Value::as_bool).unwrap_or(false), deadline, detail,
+        target, scope.as_ref().map(|scope| (scope, state.owner_epoch.as_ref())), budget).await;
+    (outcome, effective)
+}
+
 /// Typing a long text can outlast the owner lease and the idle-release
 /// window, both measured from when the request arrived. Count its end as
 /// activity and renew the caller's lease, so the follow-up (an append of the
@@ -9738,7 +9876,14 @@ fn renew_after_long_text(state: &AppState, headers: &HeaderMap, action: &serde_j
         return;
     }
     state.touch_activity();
-    let _ = claim_phone_owner(state, headers);
+    // This is a renewal of an in-flight request, never a fresh claim. Reusing its takeover
+    // header could steal the phone back after another owner (or a human release) won meanwhile.
+    if let Some(name) = named_owner(headers) {
+        let mut slot = recover(state.owner.lock());
+        if let Some(owner) = slot.as_mut().filter(|owner| owner.name == name) {
+            owner.last_seen = owner.last_seen.max(Instant::now());
+        }
+    }
 }
 
 /// A `text` action longer than the daemon types, refused before anything is
@@ -10873,22 +11018,7 @@ fn validate_agent_action_value(
                 );
             }
         }
-        "text" => {
-            if action
-                .get("text")
-                .and_then(serde_json::Value::as_str)
-                .is_none_or(|text| {
-                    crate::text_input::char_count(text) > crate::text_input::MAX_TEXT_CHARS
-                })
-                || action
-                    .get("clear")
-                    .is_some_and(|clear| clear.as_bool().is_none())
-            {
-                return invalid(
-                    "text needs a string up to 20000 characters and optional bool clear",
-                );
-            }
-        }
+        "text" => { validate_text_request(action).map_err(|error| format!("steps[{index}].action {error}"))?; }
         "key" => {
             if !action
                 .get("name")
@@ -11665,6 +11795,10 @@ async fn agent_actions_inner(
     if let Err(error) = validate_agent_actions(&request) {
         return agent_actions_invalid(error);
     }
+    if named_owner(&headers).is_none() && request.steps.iter().any(|step| matches!(step,
+        AgentActionStep::Action {action,..} if is_input_continuation(action) || action.get("budget_ms").is_some())) {
+        return agent_actions_invalid("bounded text and continuation require a named X-Phone-Owner");
+    }
     let observes_screen = request.observe || request.steps.iter().any(|step| {
         matches!(step, AgentActionStep::WaitFor { .. })
     });
@@ -11738,7 +11872,13 @@ async fn agent_actions_inner(
     // Control priority first: a health probe must not hold the runner while
     // the focus step (or the action after it) waits for it.
     let _priority = state.begin_runner_control();
-    engage_agent_focus(&state, runner, first_launch.flatten(), true).await;
+    let starts_with_text = request.steps.iter().find_map(|step| match step {
+        AgentActionStep::Action { action, .. } => Some(action.get("type").and_then(serde_json::Value::as_str) == Some("text")),
+        _ => None,
+    }).unwrap_or(false);
+    if !starts_with_text && !request.steps.iter().any(|step| matches!(step, AgentActionStep::Action {action,..} if is_input_continuation(action))) {
+        engage_agent_focus(&state, runner, first_launch.flatten(), true).await;
+    }
     // Long text steps add their typing time (zero for text up to one chunk).
     let typing_allowance: std::time::Duration = request
         .steps
@@ -11832,19 +11972,14 @@ async fn agent_actions_inner(
                 // not be replayed automatically.
                 let post_mark = w.last_post();
                 let mut step_detail = None;
+                let effective;
                 let outcome = match tokio::time::timeout_at(
                     batch_deadline,
-                    direct_agent_action(
-                        &mut w,
-                        &state.runner_actionable,
-                        action,
-                        &mut step_detail,
-                        batch_deadline,
-                    ),
+                    owned_agent_action(&state, &headers, &mut w, action, &mut step_detail, batch_deadline),
                 )
                 .await
                 {
-                    Ok(outcome) => outcome,
+                    Ok((outcome, resumed)) => { effective = resumed; outcome },
                     Err(_) => {
                         mark_runner_read_path_unactionable(&state);
                         // Only lookups ran: this step was never sent, so the
@@ -11910,7 +12045,8 @@ async fn agent_actions_inner(
                     if uncertain > 0 {
                         mark_runner_read_path_unactionable(&state);
                     }
-                    let partial = text_partial_body(action, confirmed, uncertain);
+                    record_partial_text_activity(&headers, confirmed, uncertain);
+                    let partial = text_partial_with_detail(effective.as_ref().unwrap_or(action), confirmed, uncertain, step_detail.as_ref());
                     let mut body = agent_actions_failure_body(
                         index,
                         completed,
@@ -11926,11 +12062,10 @@ async fn agent_actions_inner(
                         "characters_uncertain",
                         "characters_total",
                         "remaining_text",
-                        "hint",
+                        "hint", "continue_token", "continuation_safe", "continuation_expires_in_ms", "detail",
                     ] {
-                        body[key] = partial[key].clone();
+                        if let Some(value) = partial.get(key) { body[key] = value.clone(); }
                     }
-                    if let Some(detail) = step_detail.as_ref() { body["detail"] = detail.clone(); }
                     return agent_actions_json(StatusCode::BAD_GATEWAY, body);
                 }
                 if outcome != RunnerControlOutcome::Applied {
@@ -13682,6 +13817,14 @@ async fn agent_input_inner(
     if let Err(response) = reject_oversized_text(&value) {
         return response;
     }
+    if value.get("type").and_then(serde_json::Value::as_str)==Some("text") {
+        if let Err(error) = validate_text_request(value.as_object().unwrap()) {
+            return ControlRefusal::new(StatusCode::BAD_REQUEST, "invalid_text_request", false).with("hint", error.into()).into_response();
+        }
+        if (is_input_continuation(&value) || value.get("budget_ms").is_some()) && named_owner(&headers).is_none() {
+            return ControlRefusal::new(StatusCode::BAD_REQUEST, "input_owner_required", false).into_response();
+        }
+    }
     if let Err(response) = reject_invalid_open_url(&value) {
         return response;
     }
@@ -13718,7 +13861,10 @@ async fn agent_input_inner(
     // the focus step (or the action after it) waits for it.
     let _priority = state.begin_runner_control();
     let focus_started = tokio::time::Instant::now();
-    engage_agent_focus(&state, runner, crate::focus::launch_bundle(&value), true).await;
+    // Typing relies on an already-focused field. A DND shortcut must not replace that app.
+    if value.get("type").and_then(serde_json::Value::as_str) != Some("text") {
+        engage_agent_focus(&state, runner, crate::focus::launch_bundle(&value), true).await;
+    }
     // A long text gets its typing time on top (zero for text up to one chunk),
     // so the per-chunk timeouts, not this deadline, decide how it ends.
     let agent_runner_deadline = agent_runner_deadline
@@ -13772,21 +13918,14 @@ async fn agent_input_inner(
         {
             return None;
         }
-        unlock_before_action(&state, &mut client, agent_runner_deadline).await;
+        if value.get("type").and_then(serde_json::Value::as_str) != Some("text") { unlock_before_action(&state, &mut client, agent_runner_deadline).await; }
         *recover(dispatch_marker.lock()) = Some(client.last_post());
         let mut detail = None;
-        let outcome = direct_agent_action(
-            &mut client,
-            &state.runner_actionable,
-            &value,
-            &mut detail,
-            agent_runner_deadline,
-        )
-        .await;
-        Some((client, outcome, detail))
+        let (outcome, effective) = owned_agent_action(&state, &headers, &mut client, &value, &mut detail, agent_runner_deadline).await;
+        Some((client, outcome, detail, effective))
     })
     .await;
-    let (mut client, outcome, detail) = match dispatch {
+    let (mut client, outcome, detail, effective) = match dispatch {
         Ok(Some(dispatched)) => dispatched,
         Ok(None) => return runner_deadline_response(false),
         Err(_) => {
@@ -13794,6 +13933,7 @@ async fn agent_input_inner(
             return runner_deadline_response(posted_since(runner, mark).await);
         }
     };
+    let value = effective.unwrap_or(value);
     renew_after_long_text(&state, &headers, &value);
     // Post-action observation (`?return=delta`), still holding the SAME
     // guard so no other control interleaves between the action and its
@@ -13986,14 +14126,11 @@ async fn agent_input_inner(
             if uncertain > 0 {
                 mark_runner_read_path_unactionable(&state);
             }
+            record_partial_text_activity(&headers, confirmed, uncertain);
             with_security_headers(
                 (
                     StatusCode::BAD_GATEWAY,
-                    axum::Json({
-                        let mut body = text_partial_body(&value, confirmed, uncertain);
-                        if let Some(detail) = detail.as_ref() { body["detail"] = detail.clone(); }
-                        body
-                    }),
+                    axum::Json(text_partial_with_detail(&value, confirmed, uncertain, detail.as_ref())),
                 )
                     .into_response(),
             )
@@ -14403,6 +14540,13 @@ fn record_flow_action(state: &AppState, action: &serde_json::Value, now: Instant
 }
 
 /// One applied action on the activity feed, in plain words (`crate::activity`).
+fn record_partial_text_activity(headers: &HeaderMap, confirmed: usize, uncertain: usize) {
+    crate::activity::record(named_owner(headers), crate::activity::Line {
+        en: format!("Text input stopped: {confirmed} characters confirmed, {uncertain} uncertain"),
+        zh: format!("输入已暂停：已确认 {confirmed} 个字，另有 {uncertain} 个字结果未知"),
+    }, crate::metrics::now_ms());
+}
+
 fn record_activity(state: &AppState, headers: &HeaderMap, action: &serde_json::Value) {
     let rows = action
         .get("snapshot")
@@ -24420,7 +24564,7 @@ mod tests {
         assert_eq!(claim_phone_owner(&state, &named("a")).ok(), Some(true));
         assert_eq!(claim_phone_owner(&state, &named("a")).ok(), Some(false));
         assert!(claim_phone_owner(&state, &HeaderMap::new()).is_err());
-        *recover(state.owner.lock()) = None;
+        state.release_owner_lease();
         assert_eq!(claim_phone_owner(&state, &HeaderMap::new()).ok(), Some(false));
         assert_eq!(claim_phone_owner(&state, &named("b")).ok(), Some(true));
     }

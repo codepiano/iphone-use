@@ -74,15 +74,16 @@ pub struct ScrollParams {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TypeParams {
-    /// Unicode text to send through the device-side input service. Focus the
-    /// intended field and verify it before typing. Up to 20000 characters;
-    /// text over 200 is typed in chunks (about a minute per 3000 characters),
-    /// and a failure part-way reports `characters_confirmed` and
-    /// `remaining_text` with retry_safe=false — then type only the rest.
+    /// New Unicode text, up to 20000 characters. Omit when resuming with continue_token.
     #[schemars(length(max = 20000))]
-    pub text: String,
+    pub text: Option<String>,
+    /// Resume only the original unsent text using the token from a safe partial response.
+    /// Pass without text or budget_ms. A changed owner, field, app or session refuses it.
+    pub continue_token: Option<String>,
+    /// Optional per-call typing budget, 6000..15000 ms. Requires a named owner and a current
+    /// native runner. A safe boundary returns continue_token; never resend the whole text.
+    pub budget_ms: Option<u64>,
     /// Default true: return what the screen settled to (as on phone_tap).
-    /// `false` for the fastest bare action.
     #[serde(default)]
     pub observe: Option<bool>,
 }
@@ -1115,16 +1116,31 @@ impl PhoneHandler {
         description = "Insert literal Unicode text into the currently focused iPhone field. Use phone_tap_element to focus \
         the intended field first; use phone_key for a navigation or editing key. Requires \
         phone_status.drivable=true. Text can replace a selection or reach the wrong field if focus changed. \
-        Long text is chunked; on partial failure inspect characters_confirmed and remaining_text and never \
+        Long text is chunked. Optional budget_ms (6000..15000) stops at a safe chunk boundary. If a response has continue_token, resume with only that token and optional observe; any other action or owner/session/field change invalidates it. On uncertain input no safe token is issued; inspect characters_confirmed and remaining_text and never \
         resend the whole value blindly. observe defaults on and returns the settled screen change. Verify \
         the resulting field before submitting; an unknown outcome is not evidence that nothing was typed."
     )]
     async fn phone_type(
         &self,
-        Parameters(TypeParams { text, observe }): Parameters<TypeParams>,
+        Parameters(TypeParams { text, continue_token, budget_ms, observe }): Parameters<TypeParams>,
     ) -> CallToolResult {
+        let action = match (text, continue_token, budget_ms) {
+            (Some(text), None, budget) if text.chars().count() <= 20000
+                && budget.is_none_or(|ms| (6000..=15000).contains(&ms)) => {
+                    let mut action = serde_json::json!({"type":"text","text":text});
+                    if let Some(ms) = budget { action["budget_ms"] = ms.into(); }
+                    action
+                }
+            (None, Some(token), None) if token.len()==64 && token.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) =>
+                serde_json::json!({"type":"text","continue_token":token}),
+            _ => return CallToolResult::error(vec![Content::text("Pass text (up to 20000 characters) with optional budget_ms 6000..15000, or continue_token alone; no input was sent")]),
+        };
         self.progress_reset();
-        send_input_observed(&self.daemon, &InputMsg::Text { text }, observe).await
+        let observe = observe.unwrap_or(true);
+        match self.daemon.input_value_observed(&action, observe).await {
+            Ok(response) => daemon_action_result(&response, observe, "ok"),
+            Err(error) => unknown_action_result("transport_error", format!("the call failed: {error:#}.")),
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -4185,7 +4201,9 @@ mod tests {
         // The request stays small (the scripted daemon reads one 8 KiB
         // buffer); the answer is what is under test.
         let result = block(handler.phone_type(Parameters(TypeParams {
-            text: "x".repeat(600),
+            text: Some("x".repeat(600)),
+            continue_token: None,
+            budget_ms: None,
             observe: Some(false),
         })));
         task.join().unwrap();

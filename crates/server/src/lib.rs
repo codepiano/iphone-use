@@ -42,6 +42,7 @@ pub mod simulator;
 pub mod syslog;
 pub mod telemetry;
 pub mod text_input;
+pub mod input_continuation;
 pub mod timing;
 pub mod tunnel;
 pub mod update;

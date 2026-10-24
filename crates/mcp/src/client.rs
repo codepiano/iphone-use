@@ -638,12 +638,22 @@ impl DaemonClient {
     /// `POST /agent/input` with an arbitrary action body (element taps,
     /// set_value, …), keeping the daemon's structured result.
     pub async fn input_value(&self, action: &serde_json::Value) -> anyhow::Result<DaemonResponse> {
-        let req = self
-            .auth(self.http().post(self.url("/agent/input")))
+        self.input_value_observed(action, false).await
+    }
+
+    /// Structured text/continuation actions use the same observation and transport budgets as
+    /// ordinary input. A continuation has a daemon-side budget of at most 15 seconds.
+    pub async fn input_value_observed(&self, action: &serde_json::Value, observe: bool) -> anyhow::Result<DaemonResponse> {
+        let path = if observe { self.observed_input_path() } else { "/agent/input".into() };
+        let typing = action.get("text").and_then(serde_json::Value::as_str).map(text_allowance).unwrap_or_default();
+        let req = self.auth(self.http().post(self.url(&path)))
             .header("x-phone-control", "1")
             .header(header::CONTENT_TYPE, "application/json")
+            .timeout(if observe { OBSERVE_TIMEOUT + typing } else { REQUEST_TIMEOUT + typing })
             .body(action.to_string());
-        read_response(req.send().await?).await
+        let response = read_response(req.send().await?).await?;
+        self.remember_snapshot(response.json.as_ref());
+        Ok(response)
     }
 
     /// `POST /agent/actions`, keeping the response rather than raising it.

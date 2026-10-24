@@ -24,6 +24,7 @@ struct ScriptedDaemon {
     url: String,
     stop: Arc<AtomicBool>,
     thread: Option<std::thread::JoinHandle<()>>,
+    requests: Arc<std::sync::Mutex<Vec<String>>>,
 }
 
 impl ScriptedDaemon {
@@ -33,6 +34,8 @@ impl ScriptedDaemon {
         listener.set_nonblocking(true).unwrap();
         let stop = Arc::new(AtomicBool::new(false));
         let thread_stop = stop.clone();
+        let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen = requests.clone();
         let thread = std::thread::spawn(move || {
             let deadline = Instant::now() + Duration::from_secs(60);
             while !thread_stop.load(Ordering::Acquire) && Instant::now() < deadline {
@@ -46,7 +49,21 @@ impl ScriptedDaemon {
                         stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
                         stream.set_write_timeout(Some(Duration::from_secs(10))).ok();
                         let mut buffer = [0_u8; 8_192];
-                        let _ = stream.read(&mut buffer);
+                        let mut request = Vec::new();
+                        let read_deadline = Instant::now() + Duration::from_secs(10);
+                        while request.len() < 65536 && Instant::now() < read_deadline {
+                            stream.set_read_timeout(Some(read_deadline.saturating_duration_since(Instant::now()).max(Duration::from_millis(1)))).ok();
+                            match stream.read(&mut buffer) {
+                                Ok(0) | Err(_) => break,
+                                Ok(count) => request.extend_from_slice(&buffer[..count]),
+                            }
+                            if let Some(end) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                                let length = String::from_utf8_lossy(&request[..end]).lines()
+                                    .find_map(|line| line.to_ascii_lowercase().strip_prefix("content-length:").and_then(|s|s.trim().parse::<usize>().ok())).unwrap_or(0);
+                                if request.len() >= end + 4 + length { break; }
+                            }
+                        }
+                        seen.lock().unwrap().push(String::from_utf8_lossy(&request).to_string());
                         let head = format!(
                             "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                             body.len()
@@ -65,6 +82,7 @@ impl ScriptedDaemon {
             url: format!("http://{address}"),
             stop,
             thread: Some(thread),
+            requests,
         }
     }
 }
@@ -507,4 +525,40 @@ fn capabilities_reach_the_client_as_structured_content() {
     assert_eq!(structured["supported"]["element_tree"], true);
     assert_eq!(structured["available"]["blocked_by"], "released");
     assert_eq!(structured["scope"], "ui_control");
+}
+
+
+#[test]
+fn text_continuation_schema_and_verdict_survive_real_stdio() {
+    for mode in ["full", "slim"] {
+        let token = "a".repeat(64);
+        let body = serde_json::json!({"ok":false,"error":"text_partially_typed","outcome":"partial",
+            "retry_safe":false,"characters_confirmed":200,"characters_uncertain":0,
+            "characters_total":300,"remaining_text":"字".repeat(100),"continue_token":token,
+            "continuation_safe":true,"continuation_expires_in_ms":60000});
+        let daemon=ScriptedDaemon::start("502 Bad Gateway",body.to_string().into_bytes());
+        let mut mcp=McpChild::start_with(&daemon.url,mode);
+        mcp.send(&serde_json::json!({"jsonrpc":"2.0","id":10,"method":"tools/list"}));
+        let listed = mcp.read_reply(10);
+        let schema = &listed["result"]["tools"].as_array().unwrap().iter()
+            .find(|tool| tool["name"]=="phone_type").unwrap()["inputSchema"];
+        assert!(schema["properties"].get("continue_token").is_some(),"{schema}");
+        assert!(schema["properties"].get("budget_ms").is_some(),"{schema}");
+        assert!(!schema["required"].as_array().is_some_and(|fields|fields.iter().any(|field|field=="text")),"token-only input must be discoverable: {schema}");
+        let first=mcp.call_tool(2,"phone_type",serde_json::json!({"text":"x".repeat(300),"budget_ms":6000,"observe":false}));
+        assert_eq!(first["result"]["isError"],true,"{first}");
+        assert_eq!(first["result"]["structuredContent"]["continue_token"],token,"{first}");
+        let resumed=mcp.call_tool(3,"phone_type",serde_json::json!({"continue_token":token,"observe":false}));
+        assert_eq!(resumed["result"]["structuredContent"]["continuation_safe"],true,"{resumed}");
+        let requests=daemon.requests.lock().unwrap().clone();
+        assert_eq!(requests.len(),2);
+        let parse=|request:&str| serde_json::from_str::<serde_json::Value>(request.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(parse(&requests[0])["budget_ms"],6000);
+        assert_eq!(parse(&requests[1]),serde_json::json!({"type":"text","continue_token":token}));
+        let owner=|request:&str| request.lines().find(|line|line.starts_with("x-phone-owner:")).unwrap().to_string();
+        assert_eq!(owner(&requests[0]),owner(&requests[1]));
+        let mixed=mcp.call_tool(4,"phone_type",serde_json::json!({"continue_token":token,"text":"must not send"}));
+        assert_eq!(mixed["result"]["isError"],true,"{mixed}");
+        assert_eq!(daemon.requests.lock().unwrap().len(),2,"invalid mix never reaches daemon");
+    }
 }

@@ -368,6 +368,30 @@ values from the start), `characters_uncertain`, `remaining_text`, and
 `retry_safe:false`: read the field, then send only what is missing with
 `clear:false` — never the whole text again. One batch types at most 20000
 characters in total.
+With a current native runner advertising `ipu:inputContinuation`, a named
+`X-Phone-Owner` may optionally set `budget_ms` from 6000 to 15000. This caps
+typing time after the read-only target lookup; the endpoint's outer deadline
+still bounds the whole request. A safe stop between chunks returns
+`continue_token`, `continuation_safe:true` and a 60-second expiry alongside
+`text_partially_typed`. Continue with the same owner and daemon:
+
+```json
+{"type":"text","text":"the full draft","budget_ms":15000}
+{"type":"text","continue_token":"<64 lowercase hex characters from the response>"}
+```
+
+Pass the token alone with `type:text`; never add text, clear or a new budget.
+Each token is consumed before dispatch and a later safe stop issues a new one.
+`retry_safe:false` still forbids replaying the original request. The token
+resumes only unsent text in the original field and App. Read-only inspection
+preserves it; an intervening device command, ownership release/takeover,
+runner session change, eviction or expiry invalidates it. Field/App changes
+are checked on the phone. A rejected or consumed token never rebinds to the
+current field. Unknown delivery never issues a continuation. Older runners
+can keep ordinary input but refuse bounded input; they are not described as
+having this protection. A flow draft containing a continuation needs a reviewed
+replacement for the entire original type step, including its clear behavior.
+
 To check a long text, look at a screenshot of its end. Do not compare
 `value`: iOS cuts a text field's or text view's accessibility value at 512
 UTF-16 code units (an emoji counts two to four). On an iPhone 17 Pro Max

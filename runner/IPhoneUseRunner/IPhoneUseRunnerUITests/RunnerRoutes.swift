@@ -45,6 +45,7 @@ extension RunnerTests {
         switch method {
         case "DELETE":
           elements.removeAll()
+          inputBinding = nil
           return .value(NSNull(), sessionId: Self.sessionID)
         case "GET": return .value(["sessionId": Self.sessionID, "capabilities": capabilities()], sessionId: Self.sessionID)
         default: return nil
@@ -137,6 +138,7 @@ extension RunnerTests {
       "sdkVersion": Self.systemVersion,
       "ipu:timedDragPath": true,
       "ipu:guardedInput": true,
+      "ipu:inputContinuation": true,
       "browserName": NSNull(),
       "CFBundleIdentifier": NSNull(),
     ]
@@ -144,6 +146,7 @@ extension RunnerTests {
 
   private func createSession(_ request: HTTPRequest) throws -> HTTPResponse {
     elements.removeAll()  // Old input bindings cannot survive a session replacement.
+    inputBinding = nil
     let body = (try? request.jsonObject()) ?? [:]
     let capabilities = body["capabilities"] as? [String: Any]
     let always = capabilities?["alwaysMatch"] as? [String: Any] ?? [:]
@@ -297,7 +300,9 @@ extension RunnerTests {
       throw RunnerError.invalidArgument("input_target_ambiguous_or_missing; nothing was sent")
     }
     try checkInputTarget(node)
-    return .value(["token": elements.register(node)])
+    let token = elements.register(node)
+    inputBinding = token
+    return .value(["token": token])
   }
 
   private func checkInputTarget(_ node: UINode) throws {
@@ -315,6 +320,9 @@ extension RunnerTests {
       throw RunnerError.invalidArgument("input_target_expired_or_unreadable; nothing was sent")
     }
     try checkInputTarget(node)
+    guard inputBinding == token else {
+      throw RunnerError.invalidArgument("input_target_invalidated_by_another_command; nothing was sent")
+    }
     return node
   }
 
@@ -447,7 +455,10 @@ extension RunnerTests {
     if let error = IPURBridge.synthesizeText(mapped, charactersPerSecond: frequency, pid: targetPID ?? 0) {
       // Synthesis may have delivered a prefix. Guarded input never retries through a different
       // implementation (or a newly focused app) after an uncertain dispatch.
-      if targetPID != nil { throw RunnerError.failed("guarded typing outcome unknown: \(error)") }
+      if !InputTargetCheck.mayFallbackAfterTextSynthesis(error, targeted: targetPID != nil) {
+        inputBinding = nil
+        throw RunnerError.failed("typing outcome unknown: \(error)")
+      }
       NSLog("ipu-runner: text synthesis failed, using XCUIApplication.typeText: %@", error)
       let application = foreground().application
       let issuesBefore = recordedIssues.count
@@ -532,30 +543,17 @@ extension RunnerTests {
         throw RunnerError.invalidArgument("invalid inputTarget; nothing was sent")
       }
       guard token == id else { throw RunnerError.invalidArgument("input_target_mismatch; nothing was sent") }
-      var node = try checkedInputTarget(token)
-      var remaining = Self.clearableCount(node)
-      var sent = false
-      for _ in 0..<3 where remaining > 0 {
-        do { node = try checkedInputTarget(token) }
-        catch {
-          if sent { throw RunnerError.failed("input target changed during clear; clearing may be partial") }
-          throw error
-        }
-        sent = true
-        _ = try typeIntoFocus(String(repeating: XCUIKeyboardKey.delete.rawValue, count: min(remaining, 500)),
-                              frequency: 120, targetPID: node.pid)
-        IPURBridge.invalidateRequestCache()
-        guard let fresh = try? freshNode(token) else {
-          throw RunnerError.failed("input target unreadable after clear; clearing may be partial")
-        }
-        node = fresh
-        remaining = Self.clearableCount(node)
-      }
-      guard remaining == 0 else { throw RunnerError.failed("guarded clear incomplete") }
-      elements.renew(token, node: node)
-      return .value(NSNull())
+      return try clearBoundInput(token)
     }
     var node = try focusForTyping(id).node
+    if InputTargetCheck.refusal(type: node.type, focused: node.isFocused, enabled: node.isEnabled,
+        pid: node.pid, foregroundPID: foreground().pid, live: node.axElement != nil) == nil {
+      // A new binding, never the old caller's id: an ordinary clear from another controller
+      // must not revive a pending continuation that the dispatcher just invalidated.
+      let token = elements.register(node)
+      inputBinding = token
+      return try clearBoundInput(token)
+    }
     var remaining = Self.clearableCount(node)
     for _ in 0..<3 where remaining > 0 {
       _ = try typeIntoFocus(String(repeating: XCUIKeyboardKey.delete.rawValue, count: min(remaining, 500)), frequency: 120)
@@ -566,6 +564,43 @@ extension RunnerTests {
     if remaining > 0 {
       throw RunnerError.failed("could not clear element \(id): \(remaining) characters remain")
     }
+    return .value(NSNull())
+  }
+
+  /// Clear the whole original field, independent of the caret's position. Repeated Backspace
+  /// only deletes before the caret, so a mid-field tap previously left an undeletable suffix.
+  /// Select All is one key chord targeted at the original app; it never taps/refocuses a field.
+  /// Any uncertain selection/deletion stops, without retrying a different input path.
+  private func clearBoundInput(_ token: String) throws -> HTTPResponse {
+    let node = try checkedInputTarget(token)
+    if Self.clearableCount(node) == 0 {
+      elements.renew(token, node: node)
+      return .value(NSNull())
+    }
+    guard let application = IPURBridge.application(forPID: node.pid) else {
+      throw RunnerError.invalidArgument("input_target_app_unavailable; nothing was sent")
+    }
+    let issuesBefore = recordedIssues.count
+    var exception: String?
+    IPURBridge.performWithoutQuiescence(application) {
+      exception = IPURBridge.catchException { application.typeKey("a", modifierFlags: .command) }
+    }
+    if exception != nil || recordedIssues.count > issuesBefore {
+      inputBinding = nil
+      throw RunnerError.failed("select-all failed; clear outcome unknown")
+    }
+    do { _ = try checkedInputTarget(token) }
+    catch {
+      inputBinding = nil
+      throw RunnerError.failed("input target changed during select-all; clearing stopped")
+    }
+    _ = try typeIntoFocus(XCUIKeyboardKey.delete.rawValue, frequency: 120, targetPID: node.pid)
+    IPURBridge.invalidateRequestCache()
+    guard let after = try? checkedInputTarget(token), Self.clearableCount(after) == 0 else {
+      inputBinding = nil
+      throw RunnerError.failed("guarded clear incomplete or target changed; inspect the original field")
+    }
+    elements.renew(token, node: after)
     return .value(NSNull())
   }
 
@@ -954,7 +989,15 @@ extension RunnerTests {
       }
       let node = try checkedInputTarget(token)
       let path = try typeIntoFocus(text, frequency: frequency, targetPID: node.pid)
-      elements.renew(token, node: node)
+      // Focus can change while a chunk is in flight. A postflight refusal must never use the
+      // pre-dispatch "nothing was sent" envelope: some or all text may have landed elsewhere.
+      let after: UINode
+      do { after = try checkedInputTarget(token) }
+      catch {
+        inputBinding = nil
+        throw RunnerError.failed("input target changed or became unreadable during typing; text outcome unknown")
+      }
+      elements.renew(token, node: after)
       return .value(NSNull(), headers: ["X-IPU-Gesture": path])
     }
     let path = try typeIntoFocus(text, frequency: frequency)
