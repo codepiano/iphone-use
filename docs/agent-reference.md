@@ -1434,9 +1434,14 @@ The relay checks an opaque daemon-process/privacy incarnation before opening
 and after reading every batch. Scope changes discard buffered packets and
 require a new keyframe. Its parser bounds packet and buffered sizes; reads stop
 after 150 ms or 16 packets. Inactive subscriptions close after two seconds;
-HTTP connections have a 15-second lifetime. A cancelled poll owns and drops its
+HTTP connections have a 15-second lifetime and rotate after ten seconds, with
+a new keyframe, before expiry can trigger screenshot fallback. The relay refuses
+three seconds without a packet. A cancelled poll owns and drops its
 transport. Hidden or disposed panels clear decoded pixels and reject late
-decoder callbacks. Acknowledged controls remain separate from viewing.
+decoder callbacks. The canvas has a three-second decoded-frame watchdog; codec
+configuration is time-bounded. Same-scope transport renewal retains the last
+permitted pixels until the new decoder produces a frame. Acknowledged controls
+remain separate from viewing.
 
 This transport does not establish a frame-rate, bandwidth or end-to-end latency
 claim. Actual host WebCodecs support, frame presentation and physical-device

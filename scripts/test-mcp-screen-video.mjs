@@ -5,7 +5,7 @@ import vm from 'node:vm';
 const html=fs.readFileSync(new URL('../crates/mcp/src/screen.html',import.meta.url),'utf8');
 for (const resources of [false,true]) {
   const elements=new Map(),events=new Map(),timers=new Map(),messages=[];
-  let timerId=0,now=0,privateScreen=false,unavailable=false,scope='boot-0',draws=0,closed=0;
+  let timerId=0,now=0,privateScreen=false,unavailable=false,scope='boot-0',draws=0,closed=0,noOutput=false,landscape=false;
   const outputs=[];
   const element=id=>{
     if(!elements.has(id))elements.set(id,{hidden:true,dataset:{},textContent:'',
@@ -18,7 +18,7 @@ for (const resources of [false,true]) {
     constructor(callbacks){this.callbacks=callbacks;this.decodeQueueSize=0;}
     configure(){}
     close(){closed++;}
-    decode(){const run=()=>this.callbacks.output({displayWidth:16,displayHeight:32,close(){}});outputs.push(run);queueMicrotask(run);}
+    decode(){const w=landscape?32:16,h=landscape?16:32;const run=()=>this.callbacks.output({displayWidth:w,displayHeight:h,close(){}});outputs.push(run);if(!noOutput)queueMicrotask(run);}
   }
   const window={innerWidth:320,addEventListener(name,handler){events.set(name,handler);},parent:{postMessage(request){
     messages.push(request);if(!request.id)return;
@@ -44,15 +44,24 @@ for (const resources of [false,true]) {
     .replaceAll('__IU_VIDEO_RESOURCE__','ui://iphone-use/video-v1/').replaceAll('__IU_FRAME_TOOL__','phone_screen_frame').replaceAll('__IU_VERSION__','test');
   vm.runInNewContext(script,{window,document,navigator:{language:'en'},performance:{now:()=>now},VideoDecoder:Decoder,
     EncodedVideoChunk:class {constructor(data){Object.assign(this,data);}},Uint8Array,atob:value=>Buffer.from(value,'base64').toString('binary'),
-    setTimeout(handler,delay){timers.set(++timerId,{handler,delay});return timerId;},clearTimeout(id){timers.delete(id);},console});
+    setTimeout(handler,delay){timers.set(++timerId,{handler,delay,due:now+delay});return timerId;},clearTimeout(id){timers.delete(id);},console});
   const flush=async()=>{for(let i=0;i<8;i++)await new Promise(resolve=>setImmediate(resolve));};
-  const poll=async()=>{const item=[...timers].find(([,value])=>value.delay<8000);assert(item);timers.delete(item[0]);item[1].handler();await flush();};
+  const poll=async()=>{const item=[...timers].filter(([,value])=>value.delay<8000).sort((a,b)=>a[1].due-b[1].due)[0];assert(item);timers.delete(item[0]);now=Math.max(now,item[1].due);item[1].handler();await flush();};
   await flush();await poll();assert.equal(draws,1);assert.equal(element('video').hidden,false);assert.equal(element('image').hidden,true);
   privateScreen=true;await poll();assert.equal(element('video').hidden,true);assert.equal(element('video').width,1);
   const previous=draws;for(const output of outputs)output();assert.equal(draws,previous,'late decoder callbacks after private hold must not render');
   privateScreen=false;scope='boot-2';now=31000;await poll();assert.equal(draws,previous+1);assert(closed>0);
+  const oldOutput=outputs[outputs.length-1];
+  landscape=true;await poll();assert.equal(element('video').width,32);assert.equal(element('video').height,16);
+  const rendered=draws;oldOutput();assert.equal(draws,rendered,'a closed portrait decoder cannot overwrite the landscape frame');
+  noOutput=true;await poll();
+  const watchdog=[...timers].find(([,timer])=>timer.delay===3000);assert(watchdog);timers.delete(watchdog[0]);now=watchdog[1].due;watchdog[1].handler();await flush();
+  assert.equal(element('video').hidden,true,'decoder stalls must clear stale canvas even if packets keep arriving');
+  const stalledDraws=draws;outputs[outputs.length-1]();assert.equal(draws,stalledDraws,'late stalled decoder cannot restore pixels');
+  await poll();assert.equal(element('image').src,'data:image/png;base64,fixture');
+  noOutput=false;now+=31000;
   unavailable=true;await poll();assert.equal(element('video').hidden,true);await poll();assert.equal(element('image').src,'data:image/png;base64,fixture');
   events.get('pagehide')();const reads=messages.length;for(const [id,timer]of [...timers])if(timer.delay<8000){timers.delete(id);timer.handler();}await flush();assert.equal(messages.length,reads);
   assert.equal(element('video').hidden,true);assert(!JSON.stringify(messages).includes('Bearer'));
-  console.log(`ok - ${resources?'WorkBuddy resources':'generic/Doubao tools'}: native packets, privacy, late callbacks, reset, PNG fallback, hidden teardown`);
+  console.log(`ok - ${resources?'WorkBuddy resources':'generic/Doubao tools'}: native packets, privacy, rotation, stalled decoder, late callbacks, reset, PNG fallback, hidden teardown`);
 }

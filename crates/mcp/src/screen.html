@@ -107,6 +107,7 @@
     "empty frame": "没有收到画面",
     "Control the phone through the conversation.": "通过对话操作手机。",
     "Waiting for a new permitted frame.": "正在等待允许显示的新画面。",
+    "Video stalled; using screenshots.": "视频已停滞，正在切换截图。",
   };
   const ZH = (() => {
     const first = (navigator.languages && navigator.languages[0]) || navigator.language || "en";
@@ -227,13 +228,25 @@
   }
 
   let videoDecoder = null, videoScope = null, videoGeneration = 0;
-  let videoRetryAt = 0;
+  let videoRetryAt = 0, videoWatchdog = null;
   const canVideo = typeof VideoDecoder !== "undefined" && typeof EncodedVideoChunk !== "undefined";
-  function clearVideo() {
+  function clearVideo(keepPixels = false) {
     videoGeneration++;
+    if (videoWatchdog) {clearTimeout(videoWatchdog);videoWatchdog=null;}
     if (videoDecoder) { try { videoDecoder.close(); } catch (_) {} }
     videoDecoder = null; videoScope = null;
-    videoCanvas.hidden = true; videoCanvas.width = 1; videoCanvas.height = 1;
+    if (!keepPixels) { videoCanvas.hidden = true; videoCanvas.width = 1; videoCanvas.height = 1; }
+  }
+  function armVideoWatchdog() {
+    if (videoWatchdog) clearTimeout(videoWatchdog);
+    const generation=videoGeneration;
+    videoWatchdog=setTimeout(()=>{
+      if (generation!==videoGeneration) return;
+      clearVideo();videoRetryAt=performance.now()+30000;
+      image.hidden=true;image.removeAttribute("src");
+      empty.textContent=t("Video stalled; using screenshots.");empty.hidden=false;
+      stop();kick(0);
+    },3000);
   }
   function codecOf(bytes) {
     for (let i=0; i+7<bytes.length; i++) {
@@ -246,7 +259,10 @@
   }
   async function showVideo(video) {
     if (!video || video.format!=="iphone-use-h264-annexb-v1" || typeof video.scope!=="string" || !Array.isArray(video.packets)) throw new Error("invalid video batch");
-    if (video.reset || videoScope!==video.scope) { clearVideo(); videoScope=video.scope; }
+    if (video.reset || videoScope!==video.scope) {
+      const keepPixels=videoScope===video.scope && !videoCanvas.hidden;
+      clearVideo(keepPixels);videoScope=video.scope;armVideoWatchdog();
+    }
     const generation=videoGeneration;
     for (const packet of video.packets) {
       if (!visible() || generation!==videoGeneration) return;
@@ -256,7 +272,11 @@
         if (!codec) throw new Error("video keyframe has no SPS");
         {
           const config={codec,optimizeForLatency:true};
-          const support=await VideoDecoder.isConfigSupported(config);
+          let codecTimer;
+          const support=await Promise.race([
+            VideoDecoder.isConfigSupported(config),
+            new Promise((_,reject)=>{codecTimer=setTimeout(()=>reject(new Error("video codec timed out")),2500);}),
+          ]).finally(()=>clearTimeout(codecTimer));
           if (!visible() || generation!==videoGeneration) return;
           if (!support.supported) throw new Error("unsupported video codec");
           if (videoDecoder) videoDecoder.close();
@@ -269,6 +289,7 @@
                 }
                 videoCanvas.getContext("2d").drawImage(frame,0,0,videoCanvas.width,videoCanvas.height);
                 videoCanvas.hidden=false;image.hidden=true;image.removeAttribute("src");empty.hidden=true;
+                armVideoWatchdog();
               } finally { frame.close(); }
             },
             error() { if (videoDecoder!==decoder || generation!==videoGeneration) return; clearVideo();videoRetryAt=performance.now()+1000; },
@@ -349,6 +370,7 @@
     const started = performance.now();
     let delay = FRAME_INTERVAL_MS;
     const wantsVideo = canVideo && !fresh && performance.now()>=videoRetryAt;
+    const expectedVideoGeneration=videoGeneration;
     try {
       let body;
       if (RESOURCE_FRAMES) {
@@ -364,6 +386,7 @@
         body = result && result.structuredContent;
       }
       if (!visible()) {clearVideo();return;}
+      if (wantsVideo && expectedVideoGeneration!==videoGeneration) {delay=0;return;}
       const live = show(body);
       if (body.video && !body.private_secs && !body.clear_frame) {
         await showVideo(body.video);

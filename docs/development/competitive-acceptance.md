@@ -151,14 +151,16 @@ keep equivalent raw trace and postcondition evidence for the reference.
 [action observations](../measurements/observation-scope-2026-10-25/README.md)
 and [native admission](../measurements/native-scope-2026-10-25/README.md)
 retain exact staged source/binary hashes and earlier failures.
-The latest combined Simulator run passes 33 cases through the actual daemon,
+The latest combined Simulator run passes 35 cases through the actual daemon,
 runner and stdio MCP. It includes private input interruption and valid fresh
 work after expiry, alongside the prior target/cancellation/recovery/host checks.
 The native admission case additionally preserves one termination acknowledgement
 while refusing a later relaunch after privacy changes.
 Native H.264 packets also pass through runner/daemon/stdio resources and decode
-independently; private on/off forces a fresh video subscription. Actual browser
-WebCodecs and installed-host presentation remain unverified.
+independently; private on/off forces a fresh video subscription. [Continuous viewing evidence](../measurements/video-endurance-2026-10-25/README.md)
+adds a 20-second native run across HTTP expiry and two independent MCP viewers,
+plus idle-competition and decoder-stall fixes. Actual browser WebCodecs,
+installed-host presentation, physical rotation and long soak remain unverified.
 Physical acceptance, other action/key/set_value and observation/vault paths,
 remaining opaque-action/flow/vault/log, recovery/host/video work, distribution and comparative task trials
 remain open. The broader goal is not complete.

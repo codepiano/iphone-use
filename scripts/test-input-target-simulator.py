@@ -137,6 +137,51 @@ def build_fixture(out):
     return app
 
 
+class VideoPeer:
+    """An independent MCP session for read-only multi-viewer acceptance."""
+    def __init__(self, binary, environment, log_path):
+        with log_path.open("a") as log:
+            self.process = subprocess.Popen([str(binary)],env=environment,stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,stderr=log,start_new_session=True)
+        self.buffer = b""
+        self.identifier = 0
+
+    def initialize(self):
+        result=self.request("initialize",{"protocolVersion":"2025-06-18","capabilities":{},
+            "clientInfo":{"name":"independent-video-viewer","version":"1"}})
+        assert "result" in result,result
+        self.process.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
+        self.process.stdin.flush()
+
+    def request(self, method, params):
+        self.identifier+=1
+        self.process.stdin.write((json.dumps({"jsonrpc":"2.0","id":self.identifier,"method":method,"params":params})+"\n").encode())
+        self.process.stdin.flush()
+        until=time.monotonic()+12
+        while time.monotonic()<until:
+            while b"\n" in self.buffer:
+                line,self.buffer=self.buffer.split(b"\n",1)
+                reply=json.loads(line)
+                if reply.get("id")==self.identifier:return reply
+            if select.select([self.process.stdout],[],[],max(0,until-time.monotonic()))[0]:
+                data=os.read(self.process.stdout.fileno(),65536)
+                if not data:raise RuntimeError("independent viewer exited")
+                self.buffer+=data
+        raise RuntimeError("independent viewer deadline")
+
+    def frame(self, reset=False):
+        result=self.request("resources/read",{"uri":f"ui://iphone-use/video-v1/{int(reset)}/{self.identifier+1}"})
+        return json.loads(result["result"]["contents"][0]["text"])
+
+    def close(self):
+        if self.process.poll() is None:
+            os.killpg(self.process.pid,signal.SIGTERM)
+            try:self.process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                os.killpg(self.process.pid,signal.SIGKILL)
+                self.process.wait(timeout=10)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--xctestrun", required=True, type=Path)
@@ -158,6 +203,7 @@ def main():
     tok = secrets.token_hex(32)
     reports, cleanup_errors, udid, runner, daemon, mcp = [], [], None, None, None, None
     observations = []
+    video_peers = []
     daemon_binary = args.daemon.resolve(strict=True) if args.daemon else None
     mcp_binary = args.mcp.resolve(strict=True) if args.mcp else None
     if args.video and (not args.hosts or not shutil.which("ffmpeg")):
@@ -944,9 +990,75 @@ def main():
                 reports.append({"case":"native-h264-private-on-off-clears-old-subscription","passed":True,
                     "stale_packets_returned":0,"new_scope":True,"native_key_requests":0,"owner_unchanged":True})
 
+                started=time.monotonic()
+                rotations=0
+                packet_count=0
+                awaiting_key=False
+                while time.monotonic()-started<20:
+                    body=video_read(False)
+                    assert body.get("video") and not body.get("video_unavailable"),body
+                    video=body["video"]
+                    assert video["scope"]==fresh["video"]["scope"],"no privacy transition during endurance"
+                    if video.get("reset"):
+                        rotations+=1
+                        awaiting_key=True
+                    if video["packets"]:
+                        if awaiting_key:
+                            assert video["packets"][0]["keyframe"],"rotation must begin on a keyframe"
+                            awaiting_key=False
+                        packet_count+=len(video["packets"])
+                assert rotations>=1 and packet_count>=3
+                reports.append({"case":"native-h264-continuous-view-crosses-http-deadline","passed":True,
+                    "observed_ms":round((time.monotonic()-started)*1000),"automatic_rotations":rotations,
+                    "packets_received":packet_count,"png_fallbacks":0,"native_key_requests":native_keys()-before_keys})
+                peers=[]
+                for name in ["viewer-a","viewer-b"]:
+                    env=dict(environment)
+                    env.update(IPHONE_USE_URL=f"http://127.0.0.1:{daemon_port}",IPHONE_USE_TOKEN=tok,
+                        IPHONE_USE_OWNER=name,IPHONE_USE_MCP_HOST="workbuddy",IPHONE_USE_MCP_TOOLS="phone_screen")
+                    peer=VideoPeer(mcp_binary,env,out/"mcp.log")
+                    video_peers.append(peer)
+                    peer.initialize()
+                    peers.append(peer)
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    results=list(pool.map(lambda peer:peer.frame(True),peers))
+                assert all(body.get("video") and not body.get("video_unavailable") for body in results),results
+                for peer,body in zip(peers,results):
+                    until=time.monotonic()+5
+                    while not body["video"]["packets"]:
+                        assert time.monotonic()<until,"independent viewer received no keyframe"
+                        body=peer.frame(False)
+                        assert body.get("video") and not body.get("video_unavailable"),body
+                    assert body["video"]["packets"][0]["keyframe"],body
+                # Keep B polling while A reconnects/closes: a paused B would
+                # legitimately expire its own two-second lease on a slow host.
+                for operation in [lambda:peers[0].frame(True),peers[0].close]:
+                    with ThreadPoolExecutor(max_workers=1) as pool:
+                        pending=pool.submit(operation)
+                        independent=None
+                        while not pending.done() or independent is None:
+                            independent=peers[1].frame(False)
+                            assert independent.get("video",{}).get("reset") is False,independent
+                        pending.result(timeout=12)
+                peers[1].close()
+                until=time.monotonic()+6
+                while True:
+                    status,viewers=api("/agent/status")
+                    if viewers.get("viewer_count")==0:break
+                    assert time.monotonic()<until,viewers
+                    time.sleep(0.05)
+                assert native_keys()==before_keys
+                assert viewers.get("owner")==initial.get("owner")
+                reports.append({"case":"native-h264-two-mcp-viewers-independent-and-idle-close","passed":True,
+                    "independent_processes":2,"other_viewer_reset":False,"final_viewer_count":0,
+                    "native_key_requests":0,"owner_unchanged":True})
+
     except Exception as error:
         reports.append({"case": "harness-or-current-case", "passed": False, "error": str(error)})
     finally:
+        for peer in video_peers:
+            try:peer.close()
+            except Exception as error:cleanup_errors.append(str(error))
         for process in [mcp, daemon, runner]:
             if process and process.poll() is None:
                 try:
@@ -992,7 +1104,7 @@ def main():
             manifest["mcp_binary_sha256"] = hashlib.sha256(mcp_binary.read_bytes()).hexdigest()
         (out / "results.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(json.dumps({"cases": reports, "observations": observations, "cleanup_errors": cleanup_errors}))
-    expected = (20 if mcp_binary else 19 if daemon_binary else 6) + ((3 if mcp_binary else 2) if args.recovery else 0) + 2 * int(args.hosts) + 3 * int(args.input_privacy) + 2 * int(args.observation_scope) + int(args.native_scope) + 2 * int(args.video)
+    expected = (20 if mcp_binary else 19 if daemon_binary else 6) + ((3 if mcp_binary else 2) if args.recovery else 0) + 2 * int(args.hosts) + 3 * int(args.input_privacy) + 2 * int(args.observation_scope) + int(args.native_scope) + 4 * int(args.video)
     return 0 if len(reports) == expected and all(r["passed"] for r in reports) and not cleanup_errors else 1
 
 

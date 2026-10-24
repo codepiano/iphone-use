@@ -16,14 +16,24 @@ use tokio::sync::Mutex;
 const MAX_PACKET: usize = 512 * 1024;
 const MAX_BATCH: usize = 768 * 1024;
 const IDLE: Duration = Duration::from_secs(2);
+// Rotate well before DaemonClient's 15-second absolute request deadline.
+const CONNECTION_AGE: Duration = Duration::from_secs(10);
+const FRAME_GAP: Duration = Duration::from_secs(3);
 
 #[derive(Default, Clone)]
-pub struct Relay(Arc<Mutex<Option<Active>>>);
+pub struct Relay(Arc<RelayState>);
+#[derive(Default)]
+struct RelayState {
+    slot: Mutex<Option<Active>>,
+    polling: Mutex<()>,
+}
 struct Active {
     response: reqwest::Response,
     parser: Parser,
     scope: String,
     serial: u64,
+    opened_at: tokio::time::Instant,
+    last_packet: tokio::time::Instant,
 }
 #[derive(Default)]
 struct Parser {
@@ -121,7 +131,13 @@ impl Relay {
     /// an idle panel loses its subscription after two seconds, including if its
     /// host never sends teardown. A new connection must start at a keyframe.
     pub async fn poll(&self, daemon: &DaemonClient, reset: bool) -> anyhow::Result<Value> {
-        let mut slot = self.0.try_lock().context("video poll already in flight")?;
+        let _polling = self
+            .0
+            .polling
+            .try_lock()
+            .context("video poll already in flight")?;
+        // An idle cleanup briefly touches the slot too; it is not another poll.
+        let mut slot = self.0.slot.lock().await;
         let mut active = slot.take();
         if reset {
             active = None;
@@ -131,6 +147,12 @@ impl Relay {
         if active.as_ref().is_some_and(|v| v.scope != before) {
             // Never deliver queued data from a former privacy incarnation.
             bail!("screen scope changed; clear video");
+        }
+        if active
+            .as_ref()
+            .is_some_and(|value| value.opened_at.elapsed() >= CONNECTION_AGE)
+        {
+            active = None;
         }
         if active.is_none() {
             let response = daemon.screen_video().await?;
@@ -159,6 +181,8 @@ impl Relay {
                 },
                 scope,
                 serial: 0,
+                opened_at: tokio::time::Instant::now(),
+                last_packet: tokio::time::Instant::now(),
             });
             restarted = true;
         }
@@ -166,9 +190,10 @@ impl Relay {
         let deadline = tokio::time::Instant::now() + Duration::from_millis(150);
         let mut packets = Vec::new();
         let mut encoded = 0;
-        loop {
+        for _ in 0..64 {
             let prior = active.parser.bytes.len();
             if let Some(packet) = active.parser.packet()? {
+                active.last_packet = tokio::time::Instant::now();
                 encoded += packet["data"].as_str().unwrap().len();
                 packets.push(packet);
                 if packets.len() >= 16 || encoded >= MAX_BATCH {
@@ -186,6 +211,9 @@ impl Relay {
                 Err(_) => break,
             }
         }
+        if active.last_packet.elapsed() >= FRAME_GAP {
+            bail!("native video stopped producing frames");
+        }
         // Capture may have been revoked while its transport delivered buffered
         // packets. A fresh status fence is mandatory before publishing any batch.
         if daemon.screen_scope().await? != active.scope {
@@ -201,7 +229,7 @@ impl Relay {
         tokio::spawn(async move {
             tokio::time::sleep(IDLE).await;
             if let Some(state) = weak.upgrade() {
-                let mut state = state.lock().await;
+                let mut state = state.slot.lock().await;
                 if state.as_ref().is_some_and(|value| value.serial == serial) {
                     *state = None;
                 }
@@ -271,10 +299,20 @@ mod tests {
                         if change_scope {
                             epoch.fetch_add(1, Ordering::AcqRel);
                         }
-                        let mut byte = [0];
-                        let _ =
-                            tokio::time::timeout(Duration::from_secs(4), stream.read(&mut byte))
-                                .await;
+                        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+                        loop {
+                            let mut byte = [0];
+                            tokio::select! {
+                                _=stream.read(&mut byte)=>break,
+                                _=tokio::time::sleep_until(deadline)=>break,
+                                _=tokio::time::sleep(Duration::from_secs(1))=>{
+                                    let packet=frame(false);
+                                    if stream.write_all(format!("{:x}\r\n",packet.len()).as_bytes()).await.is_err()
+                                        || stream.write_all(&packet).await.is_err()
+                                        || stream.write_all(b"\r\n").await.is_err(){break;}
+                                }
+                            }
+                        }
                     } else {
                         assert!(request.starts_with("GET /agent/status "));
                         let response=format!("HTTP/1.1 200 OK\r\nx-ipu-screen-scope: boot-{}\r\nContent-Length: 11\r\nConnection: close\r\n\r\n{{\"ok\":true}}",epoch.load(Ordering::Acquire));
@@ -321,9 +359,84 @@ mod tests {
         assert_eq!(second["reset"], false);
         assert!(second["packets"].as_array().unwrap().is_empty());
         tokio::time::sleep(IDLE + Duration::from_millis(100)).await;
-        assert!(relay.0.lock().await.is_none());
+        assert!(relay.0.slot.lock().await.is_none());
         task.abort();
     }
+    #[tokio::test]
+    async fn continuous_view_rotates_before_http_deadline_without_png_fallback() {
+        let (daemon, task, _) = daemon(false).await;
+        let relay = Relay::default();
+        let started = tokio::time::Instant::now();
+        let mut resets = 0;
+        let mut polls = 0;
+        while started.elapsed() < Duration::from_secs(16) {
+            let body = relay
+                .poll(&daemon, false)
+                .await
+                .expect("continuous viewing must not hit the 15-second HTTP deadline");
+            resets += usize::from(body["reset"] == true);
+            polls += 1;
+        }
+        assert!(resets >= 2, "a new transport/keyframe must precede expiry");
+        assert!(polls > 20);
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn two_viewers_keep_independent_subscriptions() {
+        let (daemon, task, _) = daemon(false).await;
+        let first = Relay::default();
+        let second = Relay::default();
+        let (a, b) = tokio::join!(first.poll(&daemon, false), second.poll(&daemon, false));
+        for body in [a.unwrap(), b.unwrap()] {
+            assert_eq!(body["reset"], true);
+            assert_eq!(body["packets"].as_array().unwrap().len(), 1);
+        }
+        first.poll(&daemon, true).await.unwrap();
+        let b = second.poll(&daemon, false).await.unwrap();
+        assert_eq!(
+            b["reset"], false,
+            "one viewer reconnecting cannot reset another"
+        );
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn idle_cleanup_lock_is_not_a_second_foreground_poll() {
+        let (daemon, task, _) = daemon(false).await;
+        let relay = Relay::default();
+        let lock = relay.0.slot.lock().await;
+        let reader = relay.clone();
+        let poll = tokio::spawn(async move { reader.poll(&daemon, false).await });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(
+            !poll.is_finished(),
+            "cleanup may briefly own the state slot"
+        );
+        drop(lock);
+        assert!(poll.await.unwrap().is_ok());
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn stalled_video_is_not_returned_as_a_healthy_empty_batch() {
+        let (daemon, task, _) = daemon(false).await;
+        let relay = Relay::default();
+        relay.poll(&daemon, false).await.unwrap();
+        relay.0.slot.lock().await.as_mut().unwrap().last_packet =
+            tokio::time::Instant::now() - FRAME_GAP;
+        let body = relay
+            .frame(&daemon, false)
+            .await
+            .structured_content
+            .unwrap();
+        assert_eq!(body["clear_frame"], true);
+        assert_eq!(body["video_unavailable"], true);
+        assert!(body["video"].is_null());
+        assert!(relay.0.slot.lock().await.is_none());
+        task.abort();
+    }
+
     #[tokio::test]
     async fn post_read_scope_change_discards_buffered_packets() {
         let (daemon, task, _) = daemon(true).await;
@@ -334,7 +447,7 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("scope changed"));
-        assert!(relay.0.lock().await.is_none());
+        assert!(relay.0.slot.lock().await.is_none());
         task.abort();
     }
     #[tokio::test]
@@ -344,7 +457,7 @@ mod tests {
         relay.poll(&daemon, false).await.unwrap();
         epoch.fetch_add(2, Ordering::AcqRel);
         assert!(relay.poll(&daemon, false).await.is_err());
-        assert!(relay.0.lock().await.is_none());
+        assert!(relay.0.slot.lock().await.is_none());
         task.abort();
     }
     #[tokio::test]
@@ -357,7 +470,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(30)).await;
         handle.abort();
         let _ = handle.await;
-        assert!(relay.0.lock().await.is_none());
+        assert!(relay.0.slot.lock().await.is_none());
         task.abort();
     }
     #[test]

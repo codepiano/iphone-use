@@ -1,0 +1,287 @@
+{
+  "scope": "actual XCTest runner on disposable iOS Simulator; not physical-device evidence",
+  "simulator": "F70D6E21-4D3D-4BC0-AE69-5D68C8A8390D",
+  "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+  "cases": [
+    {
+      "case": "bound-input-readback",
+      "passed": true
+    },
+    {
+      "case": "bound-clear-and-append",
+      "passed": true
+    },
+    {
+      "case": "same-label-field-switch-refused",
+      "passed": true,
+      "refusal": {
+        "error": "invalid argument",
+        "message": "input_target_focus_changed; nothing was sent"
+      }
+    },
+    {
+      "case": "foreground-app-switch-refused",
+      "passed": true,
+      "refusal": {
+        "error": "invalid argument",
+        "message": "input_target_app_changed; nothing was sent"
+      }
+    },
+    {
+      "case": "session-replacement-refused",
+      "passed": true,
+      "refusal": {
+        "message": "input_target_expired_or_unreadable; nothing was sent",
+        "error": "invalid argument"
+      }
+    },
+    {
+      "case": "external-native-command-invalidates-binding",
+      "passed": true,
+      "refusal": {
+        "error": "invalid argument",
+        "message": "input_target_invalidated_by_another_command; nothing was sent"
+      }
+    },
+    {
+      "case": "daemon-continuation-500-character-readback",
+      "passed": true,
+      "confirmed_partial_portions": [
+        200,
+        200
+      ],
+      "final_length": 500
+    },
+    {
+      "case": "native-clear-after-mid-field-click",
+      "passed": true,
+      "before_length": 500,
+      "after_length": 0
+    },
+    {
+      "case": "daemon-owner-release-invalidates-continuation",
+      "passed": true
+    },
+    {
+      "case": "daemon-native-focus-change-refuses-continuation",
+      "passed": true
+    },
+    {
+      "case": "daemon-native-session-change-refuses-continuation",
+      "passed": true
+    },
+    {
+      "case": "daemon-mid-chunk-focus-change-is-unknown-without-continuation",
+      "passed": true,
+      "native_key_requests": 1,
+      "field_lengths": {
+        "a": 20,
+        "b": 180
+      }
+    },
+    {
+      "case": "daemon-takeover-during-chunk-is-not-stolen-back-on-completion",
+      "passed": true,
+      "confirmed": 200,
+      "native_key_requests": 1
+    },
+    {
+      "case": "daemon-short-clear-is-one-bound-native-request",
+      "passed": true,
+      "native_requests": 1
+    },
+    {
+      "case": "daemon-short-clear-does-not-mistake-typed-placeholder-text-for-empty",
+      "passed": true
+    },
+    {
+      "case": "daemon-short-newline-refused-before-clearing-single-line-field",
+      "passed": true
+    },
+    {
+      "case": "daemon-short-secure-field-requires-human",
+      "passed": true
+    },
+    {
+      "case": "daemon-short-multiline-textview-newline-readback",
+      "passed": true
+    },
+    {
+      "case": "daemon-short-mid-input-focus-change-is-unknown-without-retry",
+      "passed": true,
+      "native_requests": 1,
+      "field_lengths": {
+        "a": 20,
+        "b": 37
+      }
+    },
+    {
+      "case": "private-hold-blocks-text-and-invalidates-prior-continuation",
+      "passed": true,
+      "additional_native_key_requests": 0,
+      "confirmed_before_hold": 200
+    },
+    {
+      "case": "private-on-off-during-native-typing-stops-after-current-acknowledged-chunk",
+      "passed": true,
+      "fixture_input_event_observed": true,
+      "first_event_count": 1,
+      "native_key_requests": 1,
+      "characters_confirmed": 200,
+      "characters_uncertain": 0
+    },
+    {
+      "case": "fresh-input-after-private-expiry-survives-normal-hold",
+      "passed": true,
+      "final_length": 500
+    },
+    {
+      "case": "single-applied-receipt-withholds-stale-observation",
+      "passed": true,
+      "native_atomic_requests": 1,
+      "ok": true,
+      "observation_omitted": true,
+      "independent_readback": true
+    },
+    {
+      "case": "batch-applied-receipt-withholds-stale-observation",
+      "passed": true,
+      "native_atomic_requests": 1,
+      "ok": true,
+      "observation_omitted": true,
+      "independent_readback": true
+    },
+    {
+      "case": "native-termination-ack-preserved-without-late-relaunch",
+      "passed": true,
+      "native_mutations_confirmed": 1,
+      "native_mutations_uncertain": 0,
+      "later_launch_requests": 0
+    },
+    {
+      "case": "mcp-cancel-notification-stops-after-current-native-chunk",
+      "passed": true,
+      "native_key_requests": 1,
+      "verdict": "unknown",
+      "observed_quiet_after_notification_ms": 4121
+    },
+    {
+      "case": "daemon-visual-failure-fresh-image-preserves-verdict",
+      "passed": true,
+      "pixel_size": [
+        552,
+        1200
+      ],
+      "source": "runner-capture"
+    },
+    {
+      "case": "daemon-private-hold-withholds-failure-image",
+      "passed": true
+    },
+    {
+      "case": "stdio-visual-recovery-one-image-with-original-batch-fate",
+      "passed": true
+    },
+    {
+      "case": "workbuddy-resource-frame-across-two-mcp-processes",
+      "passed": true,
+      "processes": 2,
+      "frame_mime": "image/png",
+      "owner_unchanged": true,
+      "native_key_requests": 0
+    },
+    {
+      "case": "workbuddy-private-capture-clears-frame-and-new-read-resumes",
+      "passed": true,
+      "private_frame": null,
+      "clear_frame": true,
+      "fresh_read_after_unhide": "image/png",
+      "native_key_requests": 0
+    },
+    {
+      "case": "native-h264-runner-daemon-stdio-resource-independent-decode",
+      "passed": true,
+      "packets": 8,
+      "encoded_bytes": 73634,
+      "decoded_pixel_size": [
+        602,
+        1310
+      ],
+      "credentials_in_panel": false,
+      "annexb_sha256": "545ab47ab9d0d9cd52fe4b32476b4de5e9bf6c26fb6d11fa87fb6734c61069fc",
+      "decoded_png_sha256": "a65866e52e998ab5acb8c1b52d0bdde216674bbd53aa7bd2f3a1639e64d3c95f",
+      "native_passthrough_log": true
+    },
+    {
+      "case": "native-h264-private-on-off-clears-old-subscription",
+      "passed": true,
+      "stale_packets_returned": 0,
+      "new_scope": true,
+      "native_key_requests": 0,
+      "owner_unchanged": true
+    },
+    {
+      "case": "native-h264-continuous-view-crosses-http-deadline",
+      "passed": true,
+      "observed_ms": 20140,
+      "automatic_rotations": 1,
+      "packets_received": 132,
+      "png_fallbacks": 0,
+      "native_key_requests": 0
+    },
+    {
+      "case": "native-h264-two-mcp-viewers-independent-and-idle-close",
+      "passed": true,
+      "independent_processes": 2,
+      "other_viewer_reset": false,
+      "final_viewer_count": 0,
+      "native_key_requests": 0,
+      "owner_unchanged": true
+    }
+  ],
+  "observations": [
+    {
+      "case": "tcp-disconnect-during-input",
+      "typing_budget_ms": null,
+      "completed_native_chunks": 1,
+      "observed_quiet_after_disconnect_ms": 4116,
+      "explicit_owner_release_for_cleanup": false,
+      "interpretation": "stop causality is unproven for bounded input; owner-release cleanup is not TCP cancellation"
+    },
+    {
+      "case": "tcp-disconnect-during-input",
+      "typing_budget_ms": 6000,
+      "completed_native_chunks": 1,
+      "observed_quiet_after_disconnect_ms": 4134,
+      "explicit_owner_release_for_cleanup": false,
+      "interpretation": "stop causality is unproven for bounded input; owner-release cleanup is not TCP cancellation"
+    }
+  ],
+  "cleanup_errors": [],
+  "xctestrun_sha256": "b451ce398fa218d683575378eb95649465ac9fa2908bbc95c13c3bad146d2f25",
+  "runner_binary_sha256": "e541e139611061606be49f2dedd8a4c68597d96206fb05ac04cb9eecaa353f9e",
+  "sources": {
+    "scripts/test-input-target-simulator.py": "1209697f563e84f3ecbbef7333184f25c6e8a177dc41ab3dffb72432eb58407e",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerRoutes.swift": "0730178c4c3d7ed563864c6a06ffae08f23d7004d957243efcdea0558c5755d7",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerElements.swift": "0f6716d35c531504148cf75da879a24882dab645f6c0ee2a122cf28a2c92b3c2",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m": "de5c960d294a3092ad45f1848f4502d16848a083b7a9f7ca6a0008e3f255a31a",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerTests.swift": "63b4e08c98732116fd9054fcafb9fa15c5500d98b907fa5f1cceb04339bd02ba",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerH264.swift": "ef1fe1dcfaaa2fbefa0beca2157318335c9ccc121c02dbd0554993908356c0cf",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerMJPEG.swift": "a4b146dc5bb39f52b0b7673fe74586503e2d7c41af42f1b5fdbf381e77c56f6e",
+    "crates/server/src/http.rs": "56993d9f713ce37c02d4752f962350eaf971520023dac348cce80d04b62212b1",
+    "crates/server/src/runner.rs": "ba4d0f1451812929b4766db38994259fef82e762194f3e8203fce4be5f61891f",
+    "crates/server/src/input_continuation.rs": "f7b3a8cb019f6305d339cb38b21f7402f9388ca1514fbb4ac4d5a3e938a29668",
+    "crates/server/src/recovery.rs": "9643520cfab1d1e323138415d3af64507b6d9515fe46ef0fdffaa8f915717694",
+    "crates/server/src/video.rs": "e8e2c86a6ea515be473bd9995752bd933e4c7367e6e9bb42483d48277752e67c",
+    "crates/server/src/observation.rs": "e505a2583e6afd3af93ec0159665788595cb1a8f291c17c8d470d651034d6a73",
+    "crates/server/src/native_scope.rs": "9ac73fd8dbde82a130d99f2d783470b342c1299dd7f5e687a6ee5a9bdc4ab6f4",
+    "crates/server/src/timing.rs": "43fc2c1b37f44c2caf6d69cc8174d1a0469b2dddedfd241208152468f749b9b5",
+    "crates/mcp/src/server.rs": "8a09b13b4ea02d799d0f9c94abbefca21258f579577d3217bb38dce611850158",
+    "crates/mcp/src/client.rs": "48c878f91ee58dbe25207496490d0b3aac7e68163a569c52c4a476520520dc5b",
+    "crates/mcp/src/screen.rs": "8e3de7725846528e72b972bdf6ed268f7ed64f0a4745d490de44badd6c287e0b",
+    "crates/mcp/src/screen.html": "e5e62db4da1c90ac423a5fb230a978fa2bddcdcf909cd3b28538587ec9ac011b",
+    "crates/mcp/src/screen_video.rs": "3d55de064a6b32a474581d11ee790a2a5a1d7a51709866b56b81f795885257f4"
+  },
+  "daemon_binary_sha256": "56df1b81e0853f5905b80d36048bc1b94254d337566d9d5bf8f5e660006bf632",
+  "mcp_binary_sha256": "eaf582bde1da3b95874b374b7ede3c3f4401f83770c95b8f53a4a87b922ef9f7"
+}
