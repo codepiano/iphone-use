@@ -64,6 +64,9 @@ Limits to close before claiming input superiority:
   falls back to another typing implementation. Short literal input does not yet
   carry the same explicit field binding as long/continued input. Separate key
   paths and daemon-level best-effort legacy clear behavior still need review.
+- Router-future cancellation proves the token is consumed without replay; actual
+  TCP-disconnect/host-cancellation stop latency and default long-input pacing
+  still need end-to-end acceptance.
 - No physical-device acceptance or comparative speed result is available yet.
 
 ## Trial protocol

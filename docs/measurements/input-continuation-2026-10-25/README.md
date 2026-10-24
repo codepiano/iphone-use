@@ -98,5 +98,8 @@ model rounds or an entire task. The guarded native postflight detects an observe
 focus/app change; this is not proof of per-character isolation or of detecting a
 rapid away-and-back focus change. Physical phones, old iOS versions, domestic
 host applications and full agent task comparisons still require acceptance.
-Runtime continuation tokens never become replayable flow steps; a draft records
-a review todo for the entire original input and its clear behavior.
+Cancellation coverage drops a router request future after token consumption;
+it does not establish device stop latency after a TCP disconnect or host-side
+cancellation. Those end-to-end stop checks remain open. Runtime continuation
+tokens never become replayable flow steps; a draft records a review todo for
+the entire original input and its clear behavior.
