@@ -16110,9 +16110,14 @@ fn set_screen_private(state: &AppState, private: bool, secs: u64) {
     let until = (private && secs > 0)
         .then(|| Instant::now() + std::time::Duration::from_secs(secs));
     let mut current = recover(state.private_until.lock());
-    let changed = *current != until;
+    let now = Instant::now();
+    // Cleaning up an already expired deadline changes no permission. Fresh
+    // work started after expiry must survive an ordinary keep-awake hold.
+    let was_private = current.is_some_and(|deadline| deadline > now);
+    let will_be_private = until.is_some_and(|deadline| deadline > now);
+    let changed = *current != until && (was_private || will_be_private);
+    *current = until;
     if changed {
-        *current = until;
         state.privacy_epoch
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
     }

@@ -108,8 +108,9 @@ not establish physical/host acceptance or erase data already delivered. [Text pr
 adds queued/session/binding/clear/chunk fences and private-bound continuation. It also
 freezes the authenticated owner incarnation before queue waits, rejects owner
 A-to-B-to-A queued text and avoids renewing the new incarnation from old work.
-The combined Simulator candidate now passes 27 cases, including a hold triggered
-after the fixture observes its first input character. Batch
+The combined Simulator candidate now passes 28 cases, including a hold triggered
+after the fixture observes its first input character and fresh continuation
+after timed expiry plus an ordinary hold. Batch
 and action-observation payloads, other agent actions/keys/set_value, metadata read paths and installed-package
 privacy behavior still require their own full audit.
 
@@ -136,12 +137,16 @@ keep equivalent raw trace and postcondition evidence for the reference.
 ## Current candidate evidence
 
 [First binding validation](../measurements/input-target-2026-10-24/README.md),
-[continuation validation](../measurements/input-continuation-2026-10-25/README.md)
-[atomic short input/cancellation validation](../measurements/short-input-2026-10-25/README.md)
-and [failure recovery validation](../measurements/recovery-image-2026-10-25/README.md)
-record the staged candidates, exact source/binary hashes and earlier failures.
-The latest combined simulator run passes 23 cases through the actual daemon,
-runner and stdio MCP path, including fresh failure images and private-hold
-withholding. Physical acceptance, separate key and
-set_value protection, remaining recovery/host work and comparative task trials
+[continuation validation](../measurements/input-continuation-2026-10-25/README.md),
+[atomic short input/cancellation validation](../measurements/short-input-2026-10-25/README.md),
+[failure recovery](../measurements/recovery-image-2026-10-25/README.md),
+[host adapters](../measurements/host-adapters-2026-10-25/README.md),
+[read/stream privacy](../measurements/privacy-transitions-2026-10-25/README.md)
+and [input privacy](../measurements/input-privacy-2026-10-25/README.md)
+retain exact staged source/binary hashes and earlier failures.
+The latest combined Simulator run passes 28 cases through the actual daemon,
+runner and stdio MCP. It includes private input interruption and valid fresh
+work after expiry, alongside the prior target/cancellation/recovery/host checks.
+Physical acceptance, other action/key/set_value and observation/vault paths,
+remaining recovery/host/video work, distribution and comparative task trials
 remain open. The broader goal is not complete.

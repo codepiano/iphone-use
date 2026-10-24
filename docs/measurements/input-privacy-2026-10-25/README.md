@@ -54,7 +54,7 @@ or credential is stored in the marker, and its disposable Simulator is deleted.
 
 ## Actual runner integration
 
-`simulator-attempt-1.json` records 27 passed cases on a disposable iPhone 17 /
+`simulator-attempt-1.json` records 27 passed cases at checkpoint `ef7d5b3` on a disposable iPhone 17 /
 iOS 27 Simulator using the actual daemon, XCTest runner and stdio MCP binaries.
 All prior 25 cases remain passing. The two added cases verify:
 
@@ -68,6 +68,30 @@ All prior 25 cases remain passing. The two added cases verify:
 Listed source and executable hashes match. Cleanup completed without errors and
 Simulator deletion was independently checked. This is Simulator integration,
 not a physical-device stop-latency or per-character isolation result.
+
+## Expired deadline normalization
+
+Further positive checks found two over-revocations: clearing an already expired
+private deadline invalidated continuation started after expiry, and it dropped
+newer video subscribers. The follow-up normalizes inactive deadlines without a
+new privacy generation, preserving fresh work and caches. Pre-private work stays
+revoked. Subscriptions admitted while still private are counted separately and
+cannot gain capture authority through later expiry. Failed/passing checks and
+the final combined run are retained separately below.
+
+The normalized source passes server library 888/1 ignored and 172 related HTTP
+checks (107 auth/HTTP, 20 batch outcomes, 4 schema, 1 guarded text, 17 continuation,
+6 capture privacy, 4 recovery, 1 overlay, 8 sized screenshot, 4 short input).
+All 22 video unit checks also pass with deterministic expiry setup; actual timed
+expiry is covered independently through HTTP and the Simulator. Exact Clippy
+1.96 workspace checks and rebuilt candidate binaries pass. MCP code is unchanged
+from the preceding 233/1 ignored library and 24 stdio checks.
+
+`simulator-attempt-2.json` passes all 28 cases with the normalized source. It
+retains the 27 previous checks and adds real timed private expiry followed by
+new input, an ordinary hold and continuation to an independently read-back 500
+characters. Listed source/binary hashes match; cleanup and Simulator deletion
+were verified. The first run stays immutable at `ef7d5b3`.
 
 ## Remaining acceptance
 

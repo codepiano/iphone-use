@@ -46,5 +46,51 @@
         "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.39s"
       ]
     }
+  },
+  "normalization_followup": {
+    "logs": {
+      "server_normalized": {
+        "sha256": "fe7b3f062c1c9f93c0ea72bd3bb09ba36771a670ee6d485b52a9728fcb82a430",
+        "summaries": [
+          "test result: ok. 888 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 16.43s",
+          "test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 52.03s",
+          "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.68s",
+          "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.98s",
+          "test result: ok. 107 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.77s",
+          "test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 34.02s",
+          "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.09s",
+          "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.12s",
+          "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.17s",
+          "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.93s",
+          "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.01s"
+        ]
+      },
+      "video_deterministic_expiry": {
+        "sha256": "f27aea1a10b1ba05a6961964fd2908a7e6ddfc1e6a166cc287e56aa9ac69b48f",
+        "summaries": [
+          "test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 867 filtered out; finished in 3.02s"
+        ]
+      },
+      "clippy_normalized": {
+        "sha256": "5a8fc3e82fbb3e26532380c16a7a7fa4b2887617632d9e29bd57ad2b9b94ece8",
+        "summaries": []
+      },
+      "build_normalized": {
+        "sha256": "8c4b055826c533f6f8337e664872a68818131342d6b527b2774ad673fc1f3f01",
+        "summaries": []
+      },
+      "normalization_video_before": {
+        "sha256": "0b7d15d5be606c0a51061e56205c67b43f604b0c5309ed66ded06a61e4e9f8f8",
+        "summaries": [
+          "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 887 filtered out; finished in 0.05s"
+        ]
+      },
+      "normalization_token_before": {
+        "sha256": "293ea63a770e660800f488937487a669b3ca00d4c1382ae29faa2d97bbb98fcb",
+        "summaries": [
+          "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 16 filtered out; finished in 2.50s"
+        ]
+      }
+    }
   }
 }

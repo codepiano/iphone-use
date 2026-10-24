@@ -481,8 +481,12 @@ impl VideoHub {
     pub fn subscribe(self: &Arc<Self>, mode: VideoMode) -> Subscription {
         let (privacy_viewers, visible) = {
             let privacy = self.privacy.lock().unwrap_or_else(|e| e.into_inner());
-            privacy.viewers.fetch_add(1, Ordering::AcqRel);
-            (privacy.viewers.clone(), privacy.permits(privacy.generation))
+            let visible = privacy.permits(privacy.generation);
+            // A subscription refused while private never becomes authority
+            // merely because the deadline later expires.
+            let viewers = if visible {privacy.viewers.clone()} else {Arc::new(AtomicUsize::new(0))};
+            viewers.fetch_add(1, Ordering::AcqRel);
+            (viewers, visible)
         };
         let frames = self.tx.subscribe();
         let quality = (mode == VideoMode::Quality).then(|| {
@@ -832,8 +836,12 @@ impl VideoHub {
     /// `None` lifts it early.
     pub fn hide_until(&self, until: Option<std::time::Instant>) {
         let mut privacy = self.privacy.lock().unwrap_or_else(|e| e.into_inner());
-        if privacy.until != until {
-            privacy.until = until;
+        let now = std::time::Instant::now();
+        let was_private = privacy.until.is_some_and(|deadline| deadline > now);
+        let will_be_private = until.is_some_and(|deadline| deadline > now);
+        let changed = privacy.until != until && (was_private || will_be_private);
+        privacy.until = until;
+        if changed {
             privacy.generation = privacy.generation.wrapping_add(1);
             privacy.viewers = Arc::new(AtomicUsize::new(0));
             *self.latest_jpeg.lock().unwrap_or_else(|e| e.into_inner()) = None;
@@ -2095,6 +2103,46 @@ mod tests {
             drop(fresh);
             hub.hide_until(Some(std::time::Instant::now()+Duration::from_secs(60)));
             source.abort();
+        });
+    }
+
+    #[test]
+    fn expired_privacy_normalization_preserves_newer_video_subscribers() {
+        block_on(async {
+            let hub=VideoHub::new("http://127.0.0.1:1".into());
+            let before=hub.frame_sink(hub.privacy_generation());
+            hub.hide_until(Some(std::time::Instant::now()+Duration::from_secs(60)));
+            // Model time passing without another policy operation. The HTTP
+            // and Simulator checks separately exercise real deadline expiry.
+            hub.privacy.lock().unwrap().until=Some(std::time::Instant::now()-Duration::from_secs(1));
+            let generation=hub.privacy_generation();
+            *hub.running.lock().unwrap()=true;
+            let mut fresh=hub.subscribe(VideoMode::Performance);
+            let after=hub.frame_sink(generation);
+            assert!(hub.remember_live_jpeg(generation,Bytes::from_static(JPEG_A)));
+            hub.hide_until(None);
+            assert_eq!(hub.privacy_generation(),generation,"clearing an expired deadline is not a new private transition");
+            assert!(hub.current_privacy_has_viewers());
+            assert!(hub.live_frame(None).is_some());
+            let frame=H264Frame{data:Bytes::from_static(&[0,0,0,1,0x65]),keyframe:true,pts_micros:1};
+            assert!(!before.send(frame.clone()),"pre-private work must remain revoked");
+            assert!(after.send(frame));
+            assert_eq!(fresh.frames.try_recv().unwrap().pts_micros,1);
+        });
+    }
+
+    #[test]
+    fn subscriptions_admitted_while_private_cannot_revive_after_expiry() {
+        block_on(async {
+            let hub=VideoHub::new("http://127.0.0.1:1".into());
+            hub.hide_until(Some(std::time::Instant::now()+Duration::from_secs(60)));
+            let refused=hub.subscribe(VideoMode::Performance);
+            hub.privacy.lock().unwrap().until=Some(std::time::Instant::now()-Duration::from_secs(1));
+            assert!(!hub.current_privacy_has_viewers(),"a private subscription is not newly authorized by expiry");
+            assert!(!*hub.running.lock().unwrap());
+            hub.hide_until(None);
+            assert!(!hub.current_privacy_has_viewers());
+            drop(refused);
         });
     }
 

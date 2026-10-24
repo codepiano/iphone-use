@@ -152,7 +152,9 @@ the result is partial with `detail.clear_applied:true`, not a safe whole replay.
 A prior `continue_token` expires across a private hold, including when it is
 lifted or expires before reuse. A private interruption issues no replacement
 token; check status and inspect the original field before starting new work.
-Ordinary holds without `private:true` retain continuation. Compatible short
+Ordinary holds without `private:true` retain continuation, including fresh work
+started after a previous private deadline expired; cleaning up that inactive
+deadline is not another private transition. Compatible short
 input keeps its existing failure/deadline behavior and also rechecks between
 active-field lookup, clearing and typing. Other action/key/set_value and
 mutation-observation paths still require separate acceptance.

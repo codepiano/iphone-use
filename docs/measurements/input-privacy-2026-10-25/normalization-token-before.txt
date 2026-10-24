@@ -1,0 +1,37 @@
+
+running 1 test
+test expired_privacy_normalization_preserves_fresh_continuation ... FAILED
+
+failures:
+
+---- expired_privacy_normalization_preserves_fresh_continuation stdout ----
+
+thread 'expired_privacy_normalization_preserves_fresh_continuation' (30662693) panicked at crates/server/tests/input_continuation.rs:853:9:
+assertion `left == right` failed: work started after privacy expired must survive ordinary hold: {"error":"input_continuation_expired","hint":"continuation is expired, consumed or belongs to another owner/session/privacy generation; nothing was typed now. Read the original field before planning any further input","ok":false,"outcome":"not_sent","retry_safe":true}
+  left: 409
+ right: 200
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    expired_privacy_normalization_preserves_fresh_continuation
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 16 filtered out; finished in 2.50s
+
+warning: use of deprecated method `std::sync::atomic::Atomic::<usize>::fetch_update`: renamed to `try_update` for consistency
+   --> crates/server/src/http.rs:882:11
+    |
+882 |         c.fetch_update(
+    |           ^^^^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+    |
+882 -         c.fetch_update(
+882 +         c.try_update(
+    |
+
+warning: `server` (lib) generated 1 warning (run `cargo fix --lib -p server` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.07s
+     Running tests/input_continuation.rs (target/debug/deps/input_continuation-e869a3e383395cc8)
+error: test failed, to rerun pass `-p server --test input_continuation`

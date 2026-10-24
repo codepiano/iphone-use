@@ -838,3 +838,19 @@ fn queued_input_cannot_cross_owner_aba_even_when_the_name_matches_again() {
         }}
     });
 }
+
+#[test]
+fn expired_privacy_normalization_preserves_fresh_continuation() {
+    block(async {
+        let f=Fixture::new(true);
+        let (status,_)=f.call("/agent/hold",Some("a"),Some(json!({"secs":1,"private":true})),false).await;
+        assert_eq!(status,StatusCode::OK);
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+        let token=f.start(false).await;
+        let (status,_)=f.call("/agent/hold",Some("a"),Some(json!({"secs":60})),false).await;
+        assert_eq!(status,StatusCode::OK);
+        let (status,body)=f.call("/agent/input",Some("a"),Some(json!({"type":"text","continue_token":token})),false).await;
+        assert_eq!(status,StatusCode::OK,"work started after privacy expired must survive ordinary hold: {body}");
+        assert_eq!(*f.text.lock().unwrap(),"字".repeat(500));
+    });
+}

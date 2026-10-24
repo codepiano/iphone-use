@@ -641,6 +641,25 @@ def main():
                 reports.append({"case":"private-on-off-during-native-typing-stops-after-current-acknowledged-chunk", "passed":True,
                     "fixture_input_event_observed":True,"first_event_count":first_event_count,
                     "native_key_requests":1,"characters_confirmed":200,"characters_uncertain":0})
+                prepare()
+                status, held = api("/agent/hold",{"secs":1,"private":True})
+                assert status == 200, held
+                wait_for(lambda: api("/agent/status")[1].get("screen_private_secs") == 0,"natural private hold expiry")
+                fresh = begin()
+                status, held = api("/agent/hold",{"secs":60})
+                assert status == 200, held
+                for _ in range(5):
+                    status, fresh = api("/agent/input",{"type":"text","continue_token":fresh["continue_token"]})
+                    if status == 200 and fresh.get("ok") is True:
+                        break
+                    assert status == 502 and fresh.get("continuation_safe") is True, fresh
+                else:
+                    raise RuntimeError("fresh continuation after expiry did not complete")
+                assert call(prefix + f"/element/{first}/attribute/value") == "字"*500
+                status, lifted = api("/agent/hold",{"secs":0})
+                assert status == 200, lifted
+                reports.append({"case":"fresh-input-after-private-expiry-survives-normal-hold", "passed":True,"final_length":500})
+
 
             if mcp_binary:
                 prepare()
@@ -849,7 +868,7 @@ def main():
             manifest["mcp_binary_sha256"] = hashlib.sha256(mcp_binary.read_bytes()).hexdigest()
         (out / "results.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(json.dumps({"cases": reports, "observations": observations, "cleanup_errors": cleanup_errors}))
-    expected = (20 if mcp_binary else 19 if daemon_binary else 6) + ((3 if mcp_binary else 2) if args.recovery else 0) + 2 * int(args.hosts) + 2 * int(args.input_privacy)
+    expected = (20 if mcp_binary else 19 if daemon_binary else 6) + ((3 if mcp_binary else 2) if args.recovery else 0) + 2 * int(args.hosts) + 3 * int(args.input_privacy)
     return 0 if len(reports) == expected and all(r["passed"] for r in reports) and not cleanup_errors else 1
 
 
