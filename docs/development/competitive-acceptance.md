@@ -97,8 +97,10 @@ isolated config installation, GUI proxy reproduction/fix and 24 combined
 Simulator cases. Only protocol/panel-script emulation and backend integration
 are accepted here; WorkBuddy/Doubao applications are not installed on this host.
 Actual trust, skill import, image rendering, panel reuse and complete tasks
-remain open. The panel still has the existing 2 fps PNG ceiling; integrating
-our native video path and matching reference streaming behavior remain open.
+remain open. A subsequent native-video candidate adds bounded H.264 batches over MCP and
+WebCodecs canvas decoding, with the existing 2 fps PNG fallback. Actual host
+rendering and reference streaming comparisons remain open. See
+[native panel video](../measurements/panel-video-2026-10-25/README.md).
 
 Ordinary screenshot/overlay, element/OCR reads, cached images, MJPEG/H.264
 publication and late encoder callbacks now have privacy-generation fences;
@@ -149,11 +151,14 @@ keep equivalent raw trace and postcondition evidence for the reference.
 [action observations](../measurements/observation-scope-2026-10-25/README.md)
 and [native admission](../measurements/native-scope-2026-10-25/README.md)
 retain exact staged source/binary hashes and earlier failures.
-The latest combined Simulator run passes 31 cases through the actual daemon,
+The latest combined Simulator run passes 33 cases through the actual daemon,
 runner and stdio MCP. It includes private input interruption and valid fresh
 work after expiry, alongside the prior target/cancellation/recovery/host checks.
 The native admission case additionally preserves one termination acknowledgement
 while refusing a later relaunch after privacy changes.
+Native H.264 packets also pass through runner/daemon/stdio resources and decode
+independently; private on/off forces a fresh video subscription. Actual browser
+WebCodecs and installed-host presentation remain unverified.
 Physical acceptance, other action/key/set_value and observation/vault paths,
 remaining opaque-action/flow/vault/log, recovery/host/video work, distribution and comparative task trials
 remain open. The broader goal is not complete.

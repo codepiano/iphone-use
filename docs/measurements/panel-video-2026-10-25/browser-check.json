@@ -1,0 +1,13 @@
+{
+  "accepted": false,
+  "scope": "actual Chrome WebCodecs with synthetic MCP host was attempted, not executed",
+  "cli_version": "1.5.265",
+  "transport_responsive": false,
+  "relay_up": false,
+  "connected_profiles": [],
+  "tabs_recorded": 0,
+  "session": "iphone-panel-video",
+  "session_stopped": true,
+  "fixture_server_closed": true,
+  "reason": "No live Chrome relay; no browser rendering result. Node VM decoder remains emulated."
+}

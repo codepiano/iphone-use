@@ -16,6 +16,7 @@ pub mod outputs;
 pub mod registry;
 pub mod schedule;
 pub mod screen;
+pub mod screen_video;
 pub mod server;
 pub mod suite;
 pub mod task;

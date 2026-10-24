@@ -3027,6 +3027,7 @@ async fn agent_status(
     );
     let body = with_pre_rename_status_fields(body);
     let resp = Response::builder()
+        .header("x-ipu-screen-scope", screen_stream_scope(state.privacy_epoch.load(std::sync::atomic::Ordering::Acquire)))
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(body))
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
@@ -17457,6 +17458,18 @@ async fn agent_mjpeg(
     }
 }
 
+/// An opaque process identity plus the privacy incarnation. Not a credential.
+/// Prevents a client from retaining encoded frames across hide/unhide or restart.
+fn screen_stream_scope(generation: u64) -> String {
+    static BOOT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    let boot = BOOT.get_or_init(|| {
+        let mut bytes = [0u8; 16];
+        getrandom::fill(&mut bytes).expect("os randomness");
+        bytes.iter().map(|byte| format!("{byte:02x}")).collect::<String>()
+    });
+    format!("{boot}-{generation}")
+}
+
 /// `GET /agent/h264` — the live screen as H.264, ~10× less bandwidth than
 /// `/agent/mjpeg` (see [`crate::video`] for the wire format). Same auth,
 /// lifecycle gates, viewer accounting and freshness tracking as the MJPEG
@@ -17579,6 +17592,7 @@ async fn agent_h264(
         .header(header::CONTENT_TYPE, "application/octet-stream")
         .header(header::CACHE_CONTROL, "no-store")
         .header("x-video-format", "iphone-use-h264-annexb-v1")
+        .header("x-ipu-screen-scope", screen_stream_scope(privacy_generation))
         .body(Body::from_stream(frames))
         .map(with_security_headers)
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())

@@ -833,6 +833,26 @@ impl DaemonClient {
         Ok(resp.bytes().await?.to_vec())
     }
 
+    /// A bounded native video connection for the panel relay. Credentials remain
+    /// here, never in iframe data or URLs. The global request deadline also
+    /// bounds an abandoned viewer; reconnecting requires a new keyframe.
+    pub async fn screen_video(&self) -> anyhow::Result<reqwest::Response> {
+        let response = self.auth(self.http().get(self.url("/agent/h264?mode=performance")))
+            .timeout(Duration::from_secs(15)).send().await?;
+        check_status(response).await
+    }
+
+    /// Read-only privacy incarnation. Older daemons without this fence must
+    /// use screenshot transport instead of retaining encoded video.
+    pub async fn screen_scope(&self) -> anyhow::Result<String> {
+        let response = check_status(self.auth(self.http().get(self.url("/agent/status")))
+            .timeout(SCREEN_FRAME_TIMEOUT).send().await?).await?;
+        let scope = response.headers().get("x-ipu-screen-scope")
+            .and_then(|value| value.to_str().ok()).filter(|value| !value.is_empty() && value.len() <= 96)
+            .context("daemon does not support scoped panel video")?.to_string();
+        Ok(scope)
+    }
+
     /// The `X-Phone-Owner` this client presents, so a status reader can tell
     /// whether the lease holder is this session.
     pub fn owner(&self) -> &str {

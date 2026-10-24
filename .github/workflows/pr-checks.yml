@@ -217,6 +217,7 @@ jobs:
           bash scripts/test-install-cli-link.sh
           bash scripts/test-install-client-config.sh
           node scripts/test-mcp-screen-hosts.mjs
+          node scripts/test-mcp-screen-video.mjs
           bash scripts/test-install-runner-sources.sh
           bash scripts/test-install-named-swap.sh
           bash scripts/test-install-legacy-plist.sh

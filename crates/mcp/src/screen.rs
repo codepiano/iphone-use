@@ -5,7 +5,8 @@
 //!   `text/html;profile=mcp-app` (a self-contained page, no network);
 //! - `phone_screen` and `phone_status` carry `_meta.ui.resourceUri`, so a host
 //!   that renders apps opens the panel on them;
-//! - the page polls `phone_screen_frame`, which `_meta.ui.visibility: ["app"]`
+//! - the page requests bounded native video batches, with PNG fallback, through
+//!   `phone_screen_frame`, which `_meta.ui.visibility: ["app"]`
 //!   keeps out of the model's tool list in such hosts.
 //!
 //! WorkBuddy uses a read-only resource frame transport selected explicitly by
@@ -33,7 +34,7 @@ const PANEL_TOOLS: [&str; 2] = [SCREEN_TOOL, "phone_status"];
 /// the model opens it.
 const WIDGET_SESSION_ID: &str = "iphone-use-screen";
 /// The panel's frame size when it does not ask: legible in a sidebar, and a
-/// PNG small enough to poll twice a second.
+/// PNG fallback small enough to poll twice a second.
 pub const DEFAULT_FRAME_SIDE: u32 = 600;
 
 /// Explicit host adaptation. Generic clients keep the standard tool transport.
@@ -86,6 +87,16 @@ impl Host {
 /// No control operation is addressable through this resource namespace. The last
 /// component is only a cache nonce for hosts that cache resources by URI.
 pub const FRAME_RESOURCE_PREFIX: &str = "ui://iphone-use/frame-v1/";
+
+pub const VIDEO_RESOURCE_PREFIX: &str = "ui://iphone-use/video-v1/";
+
+pub fn resource_video_reset(host: Host, uri: &str) -> Option<bool> {
+    if host != Host::WorkBuddy {return None;}
+    let (reset,nonce)=uri.strip_prefix(VIDEO_RESOURCE_PREFIX)?.split_once('/')?;
+    if nonce.is_empty() || nonce.len()>20 || !nonce.bytes().all(|v|v.is_ascii_digit()) {return None;}
+    nonce.parse::<u64>().ok()?;
+    match reset {"0"=>Some(false),"1"=>Some(true),_=>None}
+}
 
 pub fn resource_frame_side(host: Host, uri: &str) -> Option<u32> {
     if host != Host::WorkBuddy {
@@ -172,6 +183,7 @@ pub fn html_for(host: Host) -> String {
         .replace("__IU_FRAME_TOOL__", FRAME_TOOL)
         .replace("__IU_RESOURCE_FRAMES__", if host == Host::WorkBuddy { "true" } else { "false" })
         .replace("__IU_FRAME_RESOURCE__", FRAME_RESOURCE_PREFIX)
+        .replace("__IU_VIDEO_RESOURCE__", VIDEO_RESOURCE_PREFIX)
 }
 
 /// `_meta` on the resource and its contents. No `csp`: the host default
@@ -326,6 +338,15 @@ pub fn frame_result(
 mod tests {
     use super::*;
 
+    #[test]
+    fn native_video_resources_are_read_only_and_bounded() {
+        assert_eq!(resource_video_reset(Host::WorkBuddy,"ui://iphone-use/video-v1/1/42"),Some(true));
+        assert_eq!(resource_video_reset(Host::WorkBuddy,"ui://iphone-use/video-v1/0/42"),Some(false));
+        for host in [Host::Generic,Host::Doubao] {assert_eq!(resource_video_reset(host,"ui://iphone-use/video-v1/0/42"),None);}
+        for suffix in ["2/42","0/","0/-1","0/18446744073709551616","0/42/home","0/home","home/42"] {
+            assert_eq!(resource_video_reset(Host::WorkBuddy,&format!("ui://iphone-use/video-v1/{suffix}")),None);
+        }
+    }
     #[test]
     fn a_blocked_phone_says_what_a_person_has_to_do() {
         let status: StatusResponse = serde_json::from_value(json!({

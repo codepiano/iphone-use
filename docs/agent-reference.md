@@ -1419,3 +1419,25 @@ not pixel coordinates or a restore format. Read again after moving an icon and
 resolve live UI elements before sending a gesture. An unavailable service returns
 `503 home_layout_unavailable`, never a successful empty layout. Simulator targets
 are explicitly unsupported. No endpoint changes the saved layout.
+
+### Native video in the screen panel
+
+The panel requests bounded H.264 access-unit batches through the existing
+app-only `phone_screen_frame` tool (`video:true`, `reset:true` to reconnect).
+WorkBuddy uses the read-only `ui://iphone-use/video-v1/{0|1}/{nonce}` resource.
+Credentials and daemon URLs stay in the MCP process; the iframe has no network
+permissions. Hosts with WebCodecs decode Annex-B data into a canvas. Unsupported
+video or a failed stream clears the canvas and falls back to ordinary PNG reads;
+video is retried after 30 seconds. PNG fallback retains its 2 fps ceiling.
+
+The relay checks an opaque daemon-process/privacy incarnation before opening
+and after reading every batch. Scope changes discard buffered packets and
+require a new keyframe. Its parser bounds packet and buffered sizes; reads stop
+after 150 ms or 16 packets. Inactive subscriptions close after two seconds;
+HTTP connections have a 15-second lifetime. A cancelled poll owns and drops its
+transport. Hidden or disposed panels clear decoded pixels and reject late
+decoder callbacks. Acknowledged controls remain separate from viewing.
+
+This transport does not establish a frame-rate, bandwidth or end-to-end latency
+claim. Actual host WebCodecs support, frame presentation and physical-device
+performance still require acceptance.

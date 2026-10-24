@@ -35,7 +35,8 @@
   #screen { position: relative; border-radius: 19px; overflow: hidden; background: #000;
     aspect-ratio: 9 / 19.5; display: flex; align-items: center; justify-content: center; }
   #image { width: 100%; height: 100%; object-fit: contain; display: block; }
-  #image[hidden] { display: none; }
+  #image[hidden], #video[hidden] { display: none; }
+  #video { width:100%; height:100%; object-fit:contain; display:block; }
   #empty { color: #bbbbbb; padding: 16px; text-align: center; }
   #empty[hidden] { display: none; }
   #toolbar[hidden] { display: none; }
@@ -51,6 +52,7 @@
 <div id="app">
   <div id="status"><span id="dot"></span><span id="status-text">connecting…</span></div>
   <div id="device"><div id="screen">
+    <canvas id="video" hidden></canvas>
     <img id="image" alt="iPhone screen" hidden>
     <div id="empty">waiting for the first frame…</div>
   </div></div>
@@ -68,6 +70,7 @@
   const VERSION = "__IU_VERSION__";
   const RESOURCE_FRAMES = __IU_RESOURCE_FRAMES__;
   const FRAME_RESOURCE = "__IU_FRAME_RESOURCE__";
+  const VIDEO_RESOURCE = "__IU_VIDEO_RESOURCE__";
   let frameNonce = Date.now() * 1000;
   const PROTOCOL = "2026-01-26";
   const FRAME_INTERVAL_MS = 500;   // at most 2 frames a second
@@ -127,6 +130,7 @@
 
   const $ = (id) => document.getElementById(id);
   const image = $("image"), empty = $("empty"), dot = $("dot");
+  const videoCanvas = $("video");
   const statusText = $("status-text"), note = $("note");
   const homeButton = $("home"), refreshButton = $("refresh");
   if (RESOURCE_FRAMES) {
@@ -160,7 +164,7 @@
 
   function dispose() {
     disposed = true;
-    stop();
+    stop();clearVideo();
   }
 
   window.addEventListener("message", (event) => {
@@ -222,6 +226,62 @@
     return parts.join(" · ");
   }
 
+  let videoDecoder = null, videoScope = null, videoGeneration = 0;
+  let videoRetryAt = 0;
+  const canVideo = typeof VideoDecoder !== "undefined" && typeof EncodedVideoChunk !== "undefined";
+  function clearVideo() {
+    videoGeneration++;
+    if (videoDecoder) { try { videoDecoder.close(); } catch (_) {} }
+    videoDecoder = null; videoScope = null;
+    videoCanvas.hidden = true; videoCanvas.width = 1; videoCanvas.height = 1;
+  }
+  function codecOf(bytes) {
+    for (let i=0; i+7<bytes.length; i++) {
+      let start = bytes[i]===0 && bytes[i+1]===0 && bytes[i+2]===1 ? i+3
+        : bytes[i]===0 && bytes[i+1]===0 && bytes[i+2]===0 && bytes[i+3]===1 ? i+4 : -1;
+      if (start>=0 && (bytes[start]&31)===7 && start+3<bytes.length)
+        return "avc1." + Array.from(bytes.slice(start+1,start+4),v=>v.toString(16).padStart(2,"0")).join("");
+    }
+    return null;
+  }
+  async function showVideo(video) {
+    if (!video || video.format!=="iphone-use-h264-annexb-v1" || typeof video.scope!=="string" || !Array.isArray(video.packets)) throw new Error("invalid video batch");
+    if (video.reset || videoScope!==video.scope) { clearVideo(); videoScope=video.scope; }
+    const generation=videoGeneration;
+    for (const packet of video.packets) {
+      if (!visible() || generation!==videoGeneration) return;
+      const bytes=Uint8Array.from(atob(packet.data),v=>v.charCodeAt(0));
+      if (packet.keyframe) {
+        const codec=codecOf(bytes);
+        if (!codec) throw new Error("video keyframe has no SPS");
+        {
+          const config={codec,optimizeForLatency:true};
+          const support=await VideoDecoder.isConfigSupported(config);
+          if (!visible() || generation!==videoGeneration) return;
+          if (!support.supported) throw new Error("unsupported video codec");
+          if (videoDecoder) videoDecoder.close();
+          const decoder=new VideoDecoder({
+            output(frame) {
+              try {
+                if (generation!==videoGeneration || videoDecoder!==decoder || !visible()) return;
+                if (videoCanvas.width!==frame.displayWidth || videoCanvas.height!==frame.displayHeight) {
+                  videoCanvas.width=frame.displayWidth; videoCanvas.height=frame.displayHeight;
+                }
+                videoCanvas.getContext("2d").drawImage(frame,0,0,videoCanvas.width,videoCanvas.height);
+                videoCanvas.hidden=false;image.hidden=true;image.removeAttribute("src");empty.hidden=true;
+              } finally { frame.close(); }
+            },
+            error() { if (videoDecoder!==decoder || generation!==videoGeneration) return; clearVideo();videoRetryAt=performance.now()+1000; },
+          });
+          videoDecoder=decoder;videoDecoder.configure(config);
+        }
+      }
+      if (!videoDecoder) continue;
+      if (videoDecoder.decodeQueueSize>6) throw new Error("video decoder fell behind");
+      videoDecoder.decode(new EncodedVideoChunk({type:packet.keyframe?"key":"delta",timestamp:packet.pts_micros,data:bytes}));
+    }
+  }
+
   function show(body) {
     if (!body || typeof body !== "object") throw new Error("empty frame");
     const tone = body.error && !body.frame ? "bad"
@@ -233,6 +293,7 @@
       if (step) text += " — " + step;
     }
     if (body.private_secs || body.clear_frame) {
+      clearVideo();
       setStatus("warn", describe(body));
       image.hidden = true;
       image.removeAttribute("src");
@@ -246,10 +307,11 @@
     const frame = body.frame;
     if (frame && typeof frame.data === "string" && frame.data.length > 0
         && /^image\/(png|jpeg|webp)$/.test(frame.mime_type)) {
+      clearVideo();
       image.src = "data:" + frame.mime_type + ";base64," + frame.data;
       image.hidden = false;
       empty.hidden = true;
-    } else if (image.hidden) {
+    } else if (image.hidden && videoCanvas.hidden) {
       empty.textContent = body.released ? t("phone released — the agent reconnects it when needed")
         : t("no frame yet");
       empty.hidden = false;
@@ -286,23 +348,32 @@
     inFlight = true;
     const started = performance.now();
     let delay = FRAME_INTERVAL_MS;
+    const wantsVideo = canVideo && !fresh && performance.now()>=videoRetryAt;
     try {
       let body;
       if (RESOURCE_FRAMES) {
         if (!ready) await connect();
-        const result = await request("resources/read", { uri: FRAME_RESOURCE + "600/" + (++frameNonce) });
+        const uri=wantsVideo ? VIDEO_RESOURCE + (videoScope?"0/":"1/") + (++frameNonce) : FRAME_RESOURCE + "600/" + (++frameNonce);
+        const result = await request("resources/read", { uri });
         const item = result && result.contents && result.contents.find((item) => typeof item.text === "string");
         if (!item) throw new Error("empty frame");
         body = JSON.parse(item.text);
       } else {
-        const result = await callTool(FRAME_TOOL, fresh ? { fresh: true } : {});
+        const result = await callTool(FRAME_TOOL, wantsVideo ? {video:true,reset:!videoScope} : fresh ? { fresh: true } : {});
         if (result && result.isError) throw new Error("frame tool failed");
         body = result && result.structuredContent;
       }
+      if (!visible()) {clearVideo();return;}
       const live = show(body);
+      if (body.video && !body.private_secs && !body.clear_frame) {
+        await showVideo(body.video);
+        failures=0;delay=0;return;
+      }
+      if (wantsVideo) {clearVideo();videoRetryAt=performance.now()+30000;delay=0;return;}
       failures = 0;
       delay = live ? Math.max(0, FRAME_INTERVAL_MS - (performance.now() - started)) : IDLE_INTERVAL_MS;
     } catch (error) {
+      if (wantsVideo) { clearVideo();videoRetryAt=performance.now()+30000; }
       failures += 1;
       delay = Math.min(5000, 1000 * failures);
       if (failures > 1) setStatus("bad", t("panel cannot reach iphone-use — {error}", { error: t(error.message) }));
@@ -342,9 +413,9 @@
   homeButton.addEventListener("click", home);
   refreshButton.addEventListener("click", refresh);
 
-  function visibilityChanged() { if (visible()) kick(0); else stop(); }
+  function visibilityChanged() { if (visible()) kick(0); else {stop();clearVideo();} }
   document.addEventListener("visibilitychange", visibilityChanged);
-  window.addEventListener("pagehide", () => { onScreen = false; stop(); });
+  window.addEventListener("pagehide", () => { onScreen = false; stop();clearVideo(); });
   window.addEventListener("pageshow", () => { onScreen = true; visibilityChanged(); });
   if ("IntersectionObserver" in window) {
     new IntersectionObserver((entries) => {

@@ -148,6 +148,7 @@ def main():
     parser.add_argument("--input-privacy", action="store_true", help="verify pending and in-flight typing across private holds")
     parser.add_argument("--observation-scope", action="store_true", help="verify applied input keeps its receipt while stale observations are withheld")
     parser.add_argument("--native-scope", action="store_true", help="verify no late relaunch after acknowledged termination")
+    parser.add_argument("--video", action="store_true", help="verify native H.264 via WorkBuddy resources and independent ffmpeg decode (requires --hosts)")
     parser.add_argument("--runtime", default="com.apple.CoreSimulator.SimRuntime.iOS-27-0")
     parser.add_argument("--device-type", default="com.apple.CoreSimulator.SimDeviceType.iPhone-17")
     args = parser.parse_args()
@@ -159,6 +160,8 @@ def main():
     observations = []
     daemon_binary = args.daemon.resolve(strict=True) if args.daemon else None
     mcp_binary = args.mcp.resolve(strict=True) if args.mcp else None
+    if args.video and (not args.hosts or not shutil.which("ffmpeg")):
+        raise RuntimeError("--video requires --hosts and ffmpeg")
     if args.native_scope and not daemon_binary:
         raise RuntimeError("--native-scope requires --daemon")
     if args.observation_scope and not daemon_binary:
@@ -176,10 +179,15 @@ def main():
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
+    video_port = 0
+    if args.video:
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            video_port = listener.getsockname()[1]
     # Never inherit a personal instance, device, runner port or runner token.
     environment = {k: v for k, v in os.environ.items()
                    if not k.startswith(("IPHONE_USE_", "PHONE_REMOTE_", "IPU_", "TEST_RUNNER_IPU_", "SIMCTL_CHILD_"))}
-    environment.update(TEST_RUNNER_IPU_RUNNER_PORT=str(port), TEST_RUNNER_IPU_RUNNER_MJPEG_PORT="0",
+    environment.update(TEST_RUNNER_IPU_RUNNER_PORT=str(port), TEST_RUNNER_IPU_RUNNER_MJPEG_PORT=str(video_port),
                        TEST_RUNNER_IPU_RUNNER_TOKEN=tok, TEST_RUNNER_IPU_DAEMON_PORT="0")
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -317,7 +325,7 @@ def main():
                 IPHONE_USE_INSTANCE="guard-" + udid[:8].lower(), TMPDIR=str(daemon_runtime),
                 IPHONE_USE_STATE_DIR=str(daemon_state), IPHONE_USE_SIMULATOR=udid,
                 IPHONE_USE_RUNNER_URL=f"http://127.0.0.1:{port}",
-                IPHONE_USE_RUNNER_MJPEG_URL=f"http://127.0.0.1:{port}",
+                IPHONE_USE_RUNNER_MJPEG_URL=f"http://127.0.0.1:{video_port or port}",
                 IPHONE_USE_RUNNER_MANAGED="0", IPHONE_USE_AGENT_TOKEN=tok,
                 IPHONE_USE_PASSWORD="fixture-" + tok, IPHONE_USE_AUTO_FOCUS="0",
                 IPHONE_USE_IDLE_RELEASE_SECS="0", IPHONE_USE_FLOWS_NO_AUTO_UPDATE="1")
@@ -888,6 +896,54 @@ def main():
                 reports.append({"case":"workbuddy-private-capture-clears-frame-and-new-read-resumes", "passed":True,
                     "private_frame":None,"clear_frame":True,"fresh_read_after_unhide":"image/png","native_key_requests":0})
 
+            if args.video:
+                status,initial=api("/agent/status")
+                before_keys=native_keys()
+                identifier=100
+                def video_read(reset):
+                    nonlocal identifier
+                    identifier+=1
+                    rpc({"jsonrpc":"2.0","id":identifier,"method":"resources/read","params":{
+                        "uri":f"ui://iphone-use/video-v1/{int(reset)}/{identifier}"}})
+                    result=reply(identifier)
+                    return json.loads(result["result"]["contents"][0]["text"])
+                packets=[]
+                scope=None
+                until=time.monotonic()+15
+                while time.monotonic()<until and len(packets)<3:
+                    frame=video_read(scope is None)
+                    assert not frame.get("video_unavailable"),frame
+                    video=frame.get("video",{})
+                    if video.get("reset"):packets=[]
+                    scope=video.get("scope",scope)
+                    packets.extend(video.get("packets",[]))
+                assert packets and packets[0]["keyframe"],"no native keyframe in bounded reads"
+                raw=b"".join(base64.b64decode(packet["data"],validate=True) for packet in packets)
+                (out/"native-panel.h264").write_bytes(raw)
+                command("ffmpeg","-v","error","-f","h264","-i",out/"native-panel.h264","-frames:v","1",out/"native-panel.png")
+                png=(out/"native-panel.png").read_bytes()
+                assert png.startswith(b"\x89PNG\r\n\x1a\n")
+                size=[int.from_bytes(png[16:20],"big"),int.from_bytes(png[20:24],"big")]
+                assert min(size)>0
+                reports.append({"case":"native-h264-runner-daemon-stdio-resource-independent-decode","passed":True,
+                    "packets":len(packets),"encoded_bytes":len(raw),"decoded_pixel_size":size,"credentials_in_panel":False,
+                    "annexb_sha256":hashlib.sha256(raw).hexdigest(),"decoded_png_sha256":hashlib.sha256(png).hexdigest(),
+                    "native_passthrough_log": "passing the device runner\'s own H.264 through" in (out/"daemon.log").read_text(errors="replace")})
+                keepalive=video_read(False)
+                assert keepalive.get("video",{}).get("scope"),keepalive
+                scope=keepalive["video"]["scope"]
+                assert api("/agent/hold",{"secs":60,"private":True})[0]==200
+                assert api("/agent/hold",{"secs":0})[0]==200
+                stale=video_read(False)
+                assert stale.get("clear_frame") is True and "video" not in stale,stale
+                fresh=video_read(True)
+                assert fresh.get("video",{}).get("scope")!=scope and not fresh.get("video_unavailable"),fresh
+                assert native_keys()==before_keys
+                status,final=api("/agent/status")
+                assert final.get("owner")==initial.get("owner")
+                reports.append({"case":"native-h264-private-on-off-clears-old-subscription","passed":True,
+                    "stale_packets_returned":0,"new_scope":True,"native_key_requests":0,"owner_unchanged":True})
+
     except Exception as error:
         reports.append({"case": "harness-or-current-case", "passed": False, "error": str(error)})
     finally:
@@ -919,10 +975,12 @@ def main():
                  Path("runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerElements.swift"),
                  Path("runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m"),
                  Path("runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerTests.swift")]
+        if args.video:
+            files.extend(map(Path,["runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerH264.swift","runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerMJPEG.swift"]))
         if daemon_binary:
             files.extend(map(Path, ["crates/server/src/http.rs", "crates/server/src/runner.rs", "crates/server/src/input_continuation.rs", "crates/server/src/recovery.rs", "crates/server/src/video.rs", "crates/server/src/observation.rs", "crates/server/src/native_scope.rs", "crates/server/src/timing.rs"]))
         if mcp_binary:
-            files.extend(map(Path, ["crates/mcp/src/server.rs", "crates/mcp/src/client.rs", "crates/mcp/src/screen.rs", "crates/mcp/src/screen.html"]))
+            files.extend(map(Path, ["crates/mcp/src/server.rs", "crates/mcp/src/client.rs", "crates/mcp/src/screen.rs", "crates/mcp/src/screen.html", "crates/mcp/src/screen_video.rs"]))
         manifest = {"scope": "actual XCTest runner on disposable iOS Simulator; not physical-device evidence",
             "simulator": udid, "runtime": args.runtime, "cases": reports, "observations": observations, "cleanup_errors": cleanup_errors,
             "xctestrun_sha256": hashlib.sha256(xctestrun.read_bytes()).hexdigest(),
@@ -934,7 +992,7 @@ def main():
             manifest["mcp_binary_sha256"] = hashlib.sha256(mcp_binary.read_bytes()).hexdigest()
         (out / "results.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(json.dumps({"cases": reports, "observations": observations, "cleanup_errors": cleanup_errors}))
-    expected = (20 if mcp_binary else 19 if daemon_binary else 6) + ((3 if mcp_binary else 2) if args.recovery else 0) + 2 * int(args.hosts) + 3 * int(args.input_privacy) + 2 * int(args.observation_scope) + int(args.native_scope)
+    expected = (20 if mcp_binary else 19 if daemon_binary else 6) + ((3 if mcp_binary else 2) if args.recovery else 0) + 2 * int(args.hosts) + 3 * int(args.input_privacy) + 2 * int(args.observation_scope) + int(args.native_scope) + 2 * int(args.video)
     return 0 if len(reports) == expected and all(r["passed"] for r in reports) and not cleanup_errors else 1
 
 

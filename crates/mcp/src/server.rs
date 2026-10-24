@@ -196,6 +196,12 @@ pub struct ScreenFrameParams {
     /// Capture now instead of reusing the settled or live frame.
     #[serde(default)]
     pub fresh: Option<bool>,
+    /// Request bounded native H.264 access units instead of a PNG.
+    #[serde(default)]
+    pub video: Option<bool>,
+    /// Drop the old encoded subscription and wait for a new keyframe.
+    #[serde(default)]
+    pub reset: Option<bool>,
 }
 
 /// Parameters for [`phone_key`].
@@ -636,6 +642,7 @@ pub struct FlowReportParams {
 pub struct PhoneHandler {
     daemon: DaemonClient,
     host: crate::screen::Host,
+    video: crate::screen_video::Relay,
     /// The most recent failed `phone_flow_run`, kept so `phone_flow_report`
     /// can file an issue with the real failure instead of a retelling.
     last_flow_failure: std::sync::Arc<std::sync::Mutex<Option<crate::contrib::ReportContext>>>,
@@ -862,6 +869,7 @@ impl PhoneHandler {
         Self {
             daemon,
             host: crate::screen::Host::from_env(),
+            video: crate::screen_video::Relay::default(),
             last_flow_failure: std::sync::Arc::new(std::sync::Mutex::new(None)),
             progress: std::sync::Arc::default(),
             profile,
@@ -1402,13 +1410,16 @@ impl PhoneHandler {
         image and phone_elements for text. Returns structuredContent with status, frame (mime_type=image/png \
         and base64 data), ok and error. A private hold returns frame=null; an empty or failed capture is \
         reported rather than invented pixels. max_side is clamped to 200–1000; fresh bypasses the reusable \
-        frame. The panel calls this with visibility app; do not poll it from model turns or use it for \
+        frame. video=true requests bounded native H.264 batches with reset=true for a new keyframe; unavailable video clears old pixels and the panel falls back to PNG. The panel calls this with visibility app; do not poll it from model turns or use it for \
         health checks."
     )]
     async fn phone_screen_frame(
         &self,
-        Parameters(ScreenFrameParams { max_side, fresh }): Parameters<ScreenFrameParams>,
+        Parameters(ScreenFrameParams { max_side, fresh, video, reset }): Parameters<ScreenFrameParams>,
     ) -> CallToolResult {
+        if video == Some(true) {
+            return self.video.frame(&self.daemon, reset.unwrap_or(false)).await;
+        }
         let side = max_side
             .unwrap_or(crate::screen::DEFAULT_FRAME_SIDE)
             .clamp(200, 1000);
@@ -3034,6 +3045,19 @@ impl ServerHandler for PhoneHandler {
         request: rmcp::model::ReadResourceRequestParams,
         context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<rmcp::model::ReadResourceResult, rmcp::ErrorData> {
+        if let Some(reset) = crate::screen::resource_video_reset(self.host, &request.uri) {
+            if self.profile.refusal(crate::screen::FRAME_TOOL).is_some() {
+                return Err(rmcp::ErrorData::resource_not_found("video access is disabled by IPHONE_USE_MCP_TOOLS",None));
+            }
+            let frame = tokio::select! {
+                biased;
+                _ = context.ct.cancelled()=>return Err(rmcp::ErrorData::internal_error("video read cancelled",None)),
+                frame = tokio::time::timeout(std::time::Duration::from_secs(8),self.phone_screen_frame(Parameters(ScreenFrameParams {video:Some(true),reset:Some(reset),..Default::default()})))=>frame.map_err(|_|rmcp::ErrorData::internal_error("video read timed out",None))?,
+            };
+            return Ok(rmcp::model::ReadResourceResult::new(vec![rmcp::model::ResourceContents::TextResourceContents {
+                uri:request.uri,mime_type:Some("application/json".into()),text:frame.structured_content.unwrap_or_else(||serde_json::json!({"ok":false,"clear_frame":true,"video_unavailable":true})).to_string(),meta:None,
+            }]));
+        }
         if let Some(side) = crate::screen::resource_frame_side(self.host, &request.uri) {
             if self.profile.refusal(crate::screen::FRAME_TOOL).is_some() {
                 return Err(rmcp::ErrorData::resource_not_found("frame access is disabled by IPHONE_USE_MCP_TOOLS", None));
@@ -3045,7 +3069,7 @@ impl ServerHandler for PhoneHandler {
                 biased;
                 _ = context.ct.cancelled() => return Err(rmcp::ErrorData::internal_error("frame read cancelled", None)),
                 frame = tokio::time::timeout(std::time::Duration::from_secs(8), self.phone_screen_frame(
-                    Parameters(ScreenFrameParams {max_side:Some(side), fresh:Some(false)}))) => frame
+                    Parameters(ScreenFrameParams {max_side:Some(side), fresh:Some(false), ..Default::default()}))) => frame
                     .map_err(|_| rmcp::ErrorData::internal_error("frame read timed out", None))?,
             };
             return Ok(rmcp::model::ReadResourceResult::new(vec![rmcp::model::ResourceContents::TextResourceContents {
