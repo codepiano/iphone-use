@@ -25,10 +25,15 @@ struct ScriptedDaemon {
     stop: Arc<AtomicBool>,
     thread: Option<std::thread::JoinHandle<()>>,
     requests: Arc<std::sync::Mutex<Vec<String>>>,
+    disconnected: Arc<AtomicBool>,
 }
 
 impl ScriptedDaemon {
     fn start(status: &'static str, body: Vec<u8>) -> Self {
+        Self::delayed(status, body, Duration::ZERO)
+    }
+
+    fn delayed(status: &'static str, body: Vec<u8>, delay: Duration) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         listener.set_nonblocking(true).unwrap();
@@ -36,6 +41,8 @@ impl ScriptedDaemon {
         let thread_stop = stop.clone();
         let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
         let seen = requests.clone();
+        let disconnected = Arc::new(AtomicBool::new(false));
+        let peer_closed = disconnected.clone();
         let thread = std::thread::spawn(move || {
             let deadline = Instant::now() + Duration::from_secs(60);
             while !thread_stop.load(Ordering::Acquire) && Instant::now() < deadline {
@@ -64,6 +71,14 @@ impl ScriptedDaemon {
                             }
                         }
                         seen.lock().unwrap().push(String::from_utf8_lossy(&request).to_string());
+                        let until = Instant::now() + delay;
+                        while Instant::now() < until && !thread_stop.load(Ordering::Acquire) {
+                            stream.set_read_timeout(Some(Duration::from_millis(20))).ok();
+                            if matches!(stream.peek(&mut [0u8;1]), Ok(0)) {
+                                peer_closed.store(true, Ordering::Release);
+                                break;
+                            }
+                        }
                         let head = format!(
                             "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                             body.len()
@@ -83,6 +98,7 @@ impl ScriptedDaemon {
             stop,
             thread: Some(thread),
             requests,
+            disconnected,
         }
     }
 }
@@ -545,7 +561,7 @@ fn text_continuation_schema_and_verdict_survive_real_stdio() {
         assert!(schema["properties"].get("continue_token").is_some(),"{schema}");
         assert!(schema["properties"].get("budget_ms").is_some(),"{schema}");
         assert!(!schema["required"].as_array().is_some_and(|fields|fields.iter().any(|field|field=="text")),"token-only input must be discoverable: {schema}");
-        let first=mcp.call_tool(2,"phone_type",serde_json::json!({"text":"x".repeat(300),"budget_ms":6000,"observe":false}));
+        let first=mcp.call_tool(2,"phone_type",serde_json::json!({"text":"x".repeat(300),"budget_ms":6000,"clear":true,"observe":false}));
         assert_eq!(first["result"]["isError"],true,"{first}");
         assert_eq!(first["result"]["structuredContent"]["continue_token"],token,"{first}");
         let resumed=mcp.call_tool(3,"phone_type",serde_json::json!({"continue_token":token,"observe":false}));
@@ -554,11 +570,41 @@ fn text_continuation_schema_and_verdict_survive_real_stdio() {
         assert_eq!(requests.len(),2);
         let parse=|request:&str| serde_json::from_str::<serde_json::Value>(request.split("\r\n\r\n").nth(1).unwrap()).unwrap();
         assert_eq!(parse(&requests[0])["budget_ms"],6000);
+        assert_eq!(parse(&requests[0])["clear"],true);
         assert_eq!(parse(&requests[1]),serde_json::json!({"type":"text","continue_token":token}));
         let owner=|request:&str| request.lines().find(|line|line.starts_with("x-phone-owner:")).unwrap().to_string();
         assert_eq!(owner(&requests[0]),owner(&requests[1]));
         let mixed=mcp.call_tool(4,"phone_type",serde_json::json!({"continue_token":token,"text":"must not send"}));
         assert_eq!(mixed["result"]["isError"],true,"{mixed}");
         assert_eq!(daemon.requests.lock().unwrap().len(),2,"invalid mix never reaches daemon");
+        let mixed_clear=mcp.call_tool(5,"phone_type",serde_json::json!({"continue_token":token,"clear":false}));
+        assert_eq!(mixed_clear["result"]["isError"],true,"{mixed_clear}");
+        assert_eq!(daemon.requests.lock().unwrap().len(),2,"continuation never repeats clear");
     }
+}
+
+
+#[test]
+fn cancelled_tool_drops_the_foreground_http_request_without_replay() {
+    let daemon=ScriptedDaemon::delayed("200 OK",br#"{"ok":true}"#.to_vec(),Duration::from_secs(5));
+    let mut mcp=McpChild::start(&daemon.url);
+    mcp.send(&serde_json::json!({"jsonrpc":"2.0","id":2,"method":"tools/call", "params":{"name":"phone_type","arguments":{"text":"x".repeat(500),"observe":false}}}));
+    let until=Instant::now()+Duration::from_secs(2);
+    while daemon.requests.lock().unwrap().is_empty() {
+        assert!(Instant::now()<until,"tool never reached the daemon");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let started=Instant::now();
+    mcp.send(&serde_json::json!({"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":2,"reason":"fixture cancellation"}}));
+    let result=mcp.read_reply(2);
+    assert_eq!(result["result"]["isError"],true,"{result}");
+    assert_eq!(result["result"]["structuredContent"]["outcome"],"unknown","{result}");
+    assert_eq!(result["result"]["structuredContent"]["retry_safe"],false,"{result}");
+    assert!(started.elapsed()<Duration::from_secs(2),"cancellation waited for normal completion");
+    let until=Instant::now()+Duration::from_secs(2);
+    while !daemon.disconnected.load(Ordering::Acquire) {
+        assert!(Instant::now()<until,"HTTP request remained open after MCP cancellation");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(daemon.requests.lock().unwrap().len(),1,"cancelled call must not be resent");
 }

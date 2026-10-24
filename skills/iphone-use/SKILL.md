@@ -95,7 +95,7 @@ it off again.
 | Tap a unique label | `tap` + `label` | `phone_tap_label` | `tap_label` |
 | Tap by locator | `tap_locator` + `locator` | `phone_run_steps` step | `tap_locator` |
 | Tap a point | `tap` + `x`,`y` | `phone_tap` | `tap` |
-| Type | `text` (into the focused field; up to 20000 chars — on a safe partial use `continue_token` alone; unknown delivery requires inspecting the original field) | `phone_type` | `type` (`input` names a runtime value) |
+| Type | `text` (`clear:true` explicitly replaces the focused field; up to 20000 chars — on a safe partial use `continue_token` alone; unknown delivery requires inspecting the original field) | `phone_type` | `type` (`input` names a runtime value) |
 | Key | `key` `return`… | `phone_key` | `key` |
 | Home / Spotlight | `shortcut` | `phone_shortcut` | `shortcut` |
 | Scroll | `scroll` `dy` (80 ≈ 15% of a screen, 400 ≈ 75%) | `phone_scroll` (`x`, `y`, `dx`, `dy` required) | `scroll` (`x`, `y`, `dx`, `dy` required in MCP batches) |

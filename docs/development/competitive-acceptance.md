@@ -60,13 +60,18 @@ Limits to close before claiming input superiority:
   away-and-back focus detection or physical-device behavior.
 - Old runners without the capability keep their existing input behavior;
   they must not be described as protected.
-- Short text rechecks ownership after queueing and ambiguous synthesis never
-  falls back to another typing implementation. Short literal input does not yet
-  carry the same explicit field binding as long/continued input. Separate key
-  paths and daemon-level best-effort legacy clear behavior still need review.
-- Router-future cancellation proves the token is consumed without replay; actual
-  TCP-disconnect/host-cancellation stop latency and default long-input pacing
-  still need end-to-end acceptance.
+- Ordinary short text on `ipu:atomicText` binds, optionally clears, types and
+  postflights in one native request. Newlines require a TextView and secure
+  fields refuse input. Older compatible text routes stop on failed clearing,
+  but do not acquire this atomic field contract.
+- Typing binds the focused field at dispatch. An earlier caller snapshot/locator
+  is not an explicit target argument to `phone_type`; separate editing-key and
+  `set_value` paths still need review.
+- Foreground MCP cancellation now observes its request token and drops the HTTP
+  call. Actual stdio + daemon + runner checks observe one current chunk finishing,
+  without later chunks or replay; raw TCP observations are also recorded. This
+  is not a per-character immediate-stop guarantee. Physical transports, real
+  host cancellation and default long-input pacing still need acceptance.
 - No physical-device acceptance or comparative speed result is available yet.
 
 ## Trial protocol
@@ -91,9 +96,11 @@ keep equivalent raw trace and postcondition evidence for the reference.
 
 ## Current candidate evidence
 
-[First binding validation](../measurements/input-target-2026-10-24/README.md)
-records the initial candidate. [Continuation validation](../measurements/input-continuation-2026-10-25/README.md)
-records 13 actual daemon/runner simulator cases, HTTP/MCP entry checks, exact
-source and binary hashes, and earlier failed attempts. Physical acceptance,
-complete short-input/legacy-clear protection, the remaining recovery/host work
-and comparative task trials remain open. The broader goal is not complete.
+[First binding validation](../measurements/input-target-2026-10-24/README.md),
+[continuation validation](../measurements/input-continuation-2026-10-25/README.md)
+and [atomic short input/cancellation validation](../measurements/short-input-2026-10-25/README.md)
+record the staged candidates, exact source/binary hashes and earlier failures.
+The latest combined simulator run passes 20 cases through the actual daemon,
+runner and stdio MCP cancellation path. Physical acceptance, separate key and
+set_value protection, remaining recovery/host work and comparative task trials
+remain open. The broader goal is not complete.

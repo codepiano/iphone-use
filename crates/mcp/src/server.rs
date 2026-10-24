@@ -83,6 +83,8 @@ pub struct TypeParams {
     /// Optional per-call typing budget, 6000..15000 ms. Requires a named owner and a current
     /// native runner. A safe boundary returns continue_token; never resend the whole text.
     pub budget_ms: Option<u64>,
+    /// Explicitly replace the current field before typing. Omit to append; never combine with a continuation.
+    pub clear: Option<bool>,
     /// Default true: return what the screen settled to (as on phone_tap).
     #[serde(default)]
     pub observe: Option<bool>,
@@ -1114,7 +1116,7 @@ impl PhoneHandler {
             open_world_hint = true,
         ),
         description = "Insert literal Unicode text into the currently focused iPhone field. Use phone_tap_element to focus \
-        the intended field first; use phone_key for a navigation or editing key. Requires \
+        the intended field first; clear:true explicitly replaces its contents and must stop if clearing fails. Use phone_key for a navigation or editing key. Requires \
         phone_status.drivable=true. Text can replace a selection or reach the wrong field if focus changed. \
         Long text is chunked. Optional budget_ms (6000..15000) stops at a safe chunk boundary. If a response has continue_token, resume with only that token and optional observe; any other action or owner/session/field change invalidates it. On uncertain input no safe token is issued; inspect characters_confirmed and remaining_text and never \
         resend the whole value blindly. observe defaults on and returns the settled screen change. Verify \
@@ -1122,18 +1124,19 @@ impl PhoneHandler {
     )]
     async fn phone_type(
         &self,
-        Parameters(TypeParams { text, continue_token, budget_ms, observe }): Parameters<TypeParams>,
+        Parameters(TypeParams { text, continue_token, budget_ms, clear, observe }): Parameters<TypeParams>,
     ) -> CallToolResult {
-        let action = match (text, continue_token, budget_ms) {
-            (Some(text), None, budget) if text.chars().count() <= 20000
+        let action = match (text, continue_token, budget_ms, clear) {
+            (Some(text), None, budget, clear) if text.chars().count() <= 20000
                 && budget.is_none_or(|ms| (6000..=15000).contains(&ms)) => {
                     let mut action = serde_json::json!({"type":"text","text":text});
                     if let Some(ms) = budget { action["budget_ms"] = ms.into(); }
+                    if let Some(clear) = clear { action["clear"] = clear.into(); }
                     action
                 }
-            (None, Some(token), None) if token.len()==64 && token.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) =>
+            (None, Some(token), None, None) if token.len()==64 && token.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) =>
                 serde_json::json!({"type":"text","continue_token":token}),
-            _ => return CallToolResult::error(vec![Content::text("Pass text (up to 20000 characters) with optional budget_ms 6000..15000, or continue_token alone; no input was sent")]),
+            _ => return CallToolResult::error(vec![Content::text("Pass text (up to 20000 characters) with optional clear and budget_ms 6000..15000, or continue_token alone; no input was sent")]),
         };
         self.progress_reset();
         let observe = observe.unwrap_or(true);
@@ -2931,8 +2934,22 @@ impl ServerHandler for PhoneHandler {
             .peer
             .peer_info()
             .is_some_and(|info| is_codex_client(&info.client_info.name));
+        let cancellation = context.ct.clone();
+        if cancellation.is_cancelled() {
+            let mut result = CallToolResult::error(vec![Content::text("tool cancelled before dispatch; no action was sent")]);
+            result.structured_content = Some(serde_json::json!({"ok":false,"error":"cancelled_before_dispatch","outcome":"not_sent","retry_safe":true}));
+            return Ok(keep_codex_images(finish_result(&name, result, StructuredMode::from_env()), codex_client));
+        }
+        let router = Self::tool_router();
         let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
-        let result = Self::tool_router().call(tcc).await?;
+        let result = tokio::select! {
+            // Preserve an authoritative result that is already ready. Otherwise dropping this
+            // foreground future closes its HTTP request; never restart it after cancellation.
+            biased;
+            result = router.call(tcc) => result?,
+            _ = cancellation.cancelled() => unknown_action_result("cancelled",
+                "the running tool was cancelled; some input may already have reached the phone. Inspect the original field or receipt before planning further work; no action was retried".into()),
+        };
         Ok(keep_codex_images(
             finish_result(&name, result, StructuredMode::from_env()),
             codex_client,
@@ -4204,6 +4221,7 @@ mod tests {
             text: Some("x".repeat(600)),
             continue_token: None,
             budget_ms: None,
+            clear: None,
             observe: Some(false),
         })));
         task.join().unwrap();

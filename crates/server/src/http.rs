@@ -9658,7 +9658,7 @@ async fn type_text_chunked_bound(
     use std::sync::atomic::Ordering;
     let target = match bound_target {
         Some(target) => Some(target),
-        None => match w.input_target().await {
+        None => match w.input_target_for_text(text).await {
         Ok(target) => target,
         Err(error) => {
             if let Some(runner) = crate::runner::runner_http_error(&error) {
@@ -9684,9 +9684,11 @@ async fn type_text_chunked_bound(
             return runner_failure_outcome(w, actionable, &error, "text", detail);
         }
     } else if clear {
-        // Old runners keep their existing clear semantics.
+        // The compatible route must stop on a failed clear too.
+        let mark = w.last_post();
         if let Err(error) = w.clear_active().await {
-            tracing::warn!("runner clear_active before chunked text: {error:#}");
+            if w.last_post() == mark { return RunnerControlOutcome::NotSent; }
+            return runner_failure_outcome(w, actionable, &error, "text", detail);
         }
     }
     let mut confirmed = 0;
@@ -10146,7 +10148,7 @@ async fn direct_agent_action(
             Some(w.set_picker(column, target).await)
         }
         // Long text goes out in chunks so a failure can say how much landed.
-        // Text up to one chunk takes the paths below, unchanged.
+        // Short text uses an atomic native transaction when advertised.
         "text"
             if value
                 .get("text")
@@ -10165,27 +10167,22 @@ async fn direct_agent_action(
                 .unwrap_or(false);
             return type_text_chunked(w, actionable, text, clear, deadline, detail).await;
         }
-        "text"
-            if value
-                .get("clear")
-                .and_then(serde_json::Value::as_bool)
-                .unwrap_or(false) =>
-        {
+        "text" => {
             let Some(text) = value.get("text").and_then(serde_json::Value::as_str) else {
                 return RunnerControlOutcome::Unsupported;
             };
-            Some(
-                async {
-                    // Clearing and typing are one intentional compound action.
-                    // A clear error is best-effort, but the text insertion is
-                    // still dispatched at most once.
-                    if let Err(error) = w.clear_active().await {
-                        tracing::warn!("runner clear_active before text: {error:#}");
+            let clear = value.get("clear").and_then(serde_json::Value::as_bool).unwrap_or(false);
+            let mark = w.last_post();
+            match w.short_agent_text(text, clear).await {
+                Ok(()) => Some(Ok(())),
+                Err(error) if w.last_post() == mark => {
+                    if let Some(runner) = crate::runner::runner_http_error(&error) {
+                        *detail = Some(serde_json::json!({"runner_error":runner.to_json()}));
                     }
-                    w.keys(text).await
+                    return RunnerControlOutcome::NotSent;
                 }
-                .await,
-            )
+                Err(error) => Some(Err(error)),
+            }
         }
         _ => None,
     };

@@ -332,6 +332,7 @@ enum InputTargetCheck {
                       foregroundPID: Int32, live: Bool) -> String? {
     guard live else { return "input_target_unreadable" }
     guard pid > 0, foregroundPID == pid else { return "input_target_app_changed" }
+    guard type != "XCUIElementTypeSecureTextField" else { return "input_target_secure_field_requires_human" }
     guard ["XCUIElementTypeTextField", "XCUIElementTypeTextView", "XCUIElementTypeSearchField"].contains(type)
     else { return "input_target_not_editable" }
     guard enabled, focused else { return "input_target_focus_changed" }

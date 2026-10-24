@@ -86,6 +86,7 @@ pub struct RunnerClient {
     /// Negotiated per session; old runners retain their existing input path.
     guarded_input: bool,
     continuation_input: bool,
+    atomic_text: bool,
     input_continuation: crate::input_continuation::Store,
     /// Last `GET /window/size` answer and when it was read. Every coordinate
     /// gesture needs the size to map normalized points, and the read costs
@@ -345,6 +346,7 @@ impl RunnerClient {
             session: None,
             guarded_input: false,
             continuation_input: false,
+            atomic_text: false,
             input_continuation: Default::default(),
             window: None,
             posted_at: None,
@@ -712,6 +714,8 @@ impl RunnerClient {
                 == Some(true);
             self.continuation_input = serde_json::from_str::<serde_json::Value>(&text).ok()
                 .and_then(|v| v.pointer("/value/capabilities/ipu:inputContinuation").and_then(serde_json::Value::as_bool)) == Some(true);
+            self.atomic_text = serde_json::from_str::<serde_json::Value>(&text).ok()
+                .and_then(|v| v.pointer("/value/capabilities/ipu:atomicText").and_then(serde_json::Value::as_bool)) == Some(true);
             self.window = None;
             self.no_alert_at = None;
             self.device_settle = None;
@@ -1864,6 +1868,21 @@ impl RunnerClient {
         Ok(())
     }
 
+    /// A current runner binds and verifies short input inside one native request. An older
+    /// runner keeps its compatible routes, but failed clearing never falls through to typing.
+    pub(crate) async fn short_agent_text(&mut self, text: &str, clear: bool) -> Result<()> {
+        let sid = self.ensure_session().await?.to_string();
+        if self.atomic_text {
+            let response = self.post_req(format!("{}/session/{}/ipu/text", self.base, sid))
+                .json(&serde_json::json!({"text":text,"clear":clear}))
+                .send_signed(&self.auth).await.context("POST /ipu/text")?;
+            ensure_runner_success(response, "POST /ipu/text").await?;
+            return Ok(());
+        }
+        if clear { self.clear_active().await?; }
+        self.keys(text).await
+    }
+
     pub(crate) fn save_input_continuation(&mut self, scope: crate::input_continuation::Scope,
         target: String, remaining: String, budget_ms: u64) -> Option<String> {
         if !self.continuation_input { return None; }
@@ -1880,13 +1899,18 @@ impl RunnerClient {
     /// Bind a long text to the live focused field on a supporting runner. Once advertised,
     /// failure to bind is an error, never permission to fall back to unguarded typing.
     pub async fn input_target(&mut self) -> Result<Option<String>> {
+        self.input_target_for_text("").await
+    }
+
+    pub(crate) async fn input_target_for_text(&mut self, text: &str) -> Result<Option<String>> {
         let sid = self.ensure_session().await?.to_string();
         if !self.guarded_input {
             return Ok(None);
         }
         let response = self
             .http
-            .get(format!("{}/session/{}/wda/input-target", self.base, sid))
+            .get(format!("{}/session/{}/wda/input-target{}", self.base, sid,
+                if self.atomic_text && (text.contains('\n') || text.contains('\r')) { "?multiline=1" } else { "" }))
             .send_signed(&self.auth)
             .await
             .context("GET /wda/input-target")?;
@@ -2545,6 +2569,7 @@ impl RunnerClient {
         self.session = None;
         self.guarded_input = false;
         self.continuation_input = false;
+        self.atomic_text = false;
         self.window = None;
         self.no_alert_at = None;
         self.last_tree = None;

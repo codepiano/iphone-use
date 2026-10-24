@@ -360,6 +360,27 @@ hovering at an edge to flip a folder page. Use coordinates observed on the
 current screen, then verify the end screen. Flow drafts preserve all points and
 dwells. `supported.drag_path` in `/agent/capabilities` advertises this format.
 
+**Short text and replacement.** A runner advertising `ipu:atomicText` handles
+up to 200 Unicode scalars in one native request: bind the focused nonsecure
+field, optionally clear it, type, then recheck the same field and app. No
+separate host-side field lookup is needed. `phone_type` also accepts explicit
+`clear:true`; omit it to append. A failed clear stops new text, including on
+older compatible `text` routes. A changed target after clearing is an unknown
+compound outcome, never safe to replay. This binding captures the field at
+dispatch; it does not assert that a caller's earlier screen snapshot is current.
+On current runners, newlines require a TextView and are checked before clearing;
+use an explicit key for submission. Secure fields require the person to act.
+Older runners without the capability retain their ordinary keyboard route and
+must not be described as providing the atomic field contract.
+
+**Cancelling a foreground MCP call.** `notifications/cancelled` is connected
+to the tool request's cancellation token. Before dispatch it reports `not_sent`;
+after dispatch it reports `unknown` and closes the foreground HTTP request,
+without replaying it. A device-side chunk already sent may still finish;
+this is not an immediate per-character stop guarantee. Background task tools
+have their own task cancellation API. Stop latency still needs per-transport
+and physical-device acceptance.
+
 **Long text.** Text over 200 characters is typed in chunks of about 200 (never
 splitting an emoji, flag, or combining mark), roughly 60 characters a second;
 the request's deadline grows with the text. If typing stops part-way the answer

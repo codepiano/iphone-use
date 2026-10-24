@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import platform
 import secrets
+import select
 import shutil
 import signal
 import socket
@@ -36,6 +37,7 @@ import UIKit
   private weak var secondField: UITextField?
   private var shifted = false
   @objc private func shiftFocusIfRequested(_ field: UITextField) {
+    if field.text?.isEmpty != false { shifted = false }
     if !shifted, let text = field.text, text.hasPrefix("shift-focus-test-"), text.count >= 20 {
       shifted = true
       secondField?.becomeFirstResponder()
@@ -45,8 +47,19 @@ import UIKit
     guard let scene = scene as? UIWindowScene else { return }
     let controller = UIViewController()
     controller.view.backgroundColor = .systemBackground
+    let title = UILabel()
+    title.text = "Input guard fixture"
+    title.font = .systemFont(ofSize: 22, weight: .semibold)
+    title.accessibilityIdentifier = "fixture-title"
+    title.translatesAutoresizingMaskIntoConstraints = false
+    controller.view.addSubview(title)
+    NSLayoutConstraint.activate([
+      title.topAnchor.constraint(equalTo: controller.view.safeAreaLayoutGuide.topAnchor, constant: 16),
+      title.leadingAnchor.constraint(equalTo: controller.view.leadingAnchor, constant: 24),
+    ])
     let first = UITextField(), second = UITextField()
     secondField = second
+    first.placeholder = "Draft placeholder"
     first.addTarget(self, action: #selector(shiftFocusIfRequested(_:)), for: .editingChanged)
     for (field, id) in [(first, "field-a"), (second, "field-b")] {
       field.borderStyle = .roundedRect
@@ -56,7 +69,18 @@ import UIKit
       field.spellCheckingType = .no
       field.autocapitalizationType = .none
     }
-    let stack = UIStackView(arrangedSubviews: [first, second])
+    let multiline = UITextView(), secure = UITextField()
+    multiline.accessibilityIdentifier = "field-multiline"
+    multiline.accessibilityLabel = "Multiline draft"
+    multiline.autocorrectionType = .no
+    multiline.spellCheckingType = .no
+    multiline.autocapitalizationType = .none
+    multiline.layer.borderWidth = 1
+    secure.accessibilityIdentifier = "field-secure"
+    secure.accessibilityLabel = "Secure draft"
+    secure.isSecureTextEntry = true
+    secure.borderStyle = .roundedRect
+    let stack = UIStackView(arrangedSubviews: [first, second, multiline, secure])
     stack.axis = .vertical; stack.spacing = 30
     stack.translatesAutoresizingMaskIntoConstraints = false
     controller.view.addSubview(stack)
@@ -65,6 +89,7 @@ import UIKit
       stack.leadingAnchor.constraint(equalTo: controller.view.leadingAnchor, constant: 24),
       stack.trailingAnchor.constraint(equalTo: controller.view.trailingAnchor, constant: -24),
       first.heightAnchor.constraint(equalToConstant: 50), second.heightAnchor.constraint(equalToConstant: 50),
+      multiline.heightAnchor.constraint(equalToConstant: 90), secure.heightAnchor.constraint(equalToConstant: 50),
     ])
     window = UIWindow(windowScene: scene)
     window?.rootViewController = controller; window?.makeKeyAndVisible()
@@ -110,6 +135,7 @@ def main():
     parser.add_argument("--xctestrun", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--daemon", type=Path, help="also verify cross-call continuation through this candidate daemon")
+    parser.add_argument("--mcp", type=Path, help="observe MCP cancellation through this candidate stdio binary (requires --daemon)")
     parser.add_argument("--runtime", default="com.apple.CoreSimulator.SimRuntime.iOS-27-0")
     parser.add_argument("--device-type", default="com.apple.CoreSimulator.SimDeviceType.iPhone-17")
     args = parser.parse_args()
@@ -117,8 +143,12 @@ def main():
     out = args.out.resolve()
     out.mkdir(mode=0o700, parents=True, exist_ok=False)
     tok = secrets.token_hex(32)
-    reports, cleanup_errors, udid, runner, daemon = [], [], None, None, None
+    reports, cleanup_errors, udid, runner, daemon, mcp = [], [], None, None, None, None
+    observations = []
     daemon_binary = args.daemon.resolve(strict=True) if args.daemon else None
+    mcp_binary = args.mcp.resolve(strict=True) if args.mcp else None
+    if mcp_binary and not daemon_binary:
+        raise RuntimeError("--mcp requires --daemon")
     daemon_state = out / "daemon-state"
     daemon_runtime = out / "daemon-runtime"
     with socket.socket() as listener:
@@ -187,6 +217,17 @@ def main():
         command("xcrun", "simctl", "launch", udid, BUNDLE)
         wait_for(lambda: call(prefix + "/wda/activeAppInfo").get("bundleId") == BUNDLE, "fixture foreground")
 
+        def settle_fixture():
+            until = time.monotonic() + 15
+            while True:
+                observed = call(prefix + "/wda/settle?budget_ms=1000&quiet_ms=150&min_ms=500")
+                if observed.get("stable") is True and observed.get("blank") is not True:
+                    return
+                if time.monotonic() >= until:
+                    raise RuntimeError("fixture did not render a stable nonblank scene: " + str(observed))
+
+        settle_fixture()
+
         def find(identifier):
             return call(prefix + "/element", {"using": "accessibility id", "value": identifier})["ELEMENT"]
 
@@ -217,6 +258,7 @@ def main():
         assert refusal["message"].endswith("nothing was sent")
         call(prefix + "/wda/apps/launch", {"bundleId": BUNDLE})
         wait_for(lambda: call(prefix + "/wda/activeAppInfo").get("bundleId") == BUNDLE, "fixture resumed")
+        settle_fixture()
         # App transitions invalidate assumptions about the old element handles. Resolve the
         # fields from the fresh hierarchy before choosing the next focus target.
         first, second = find("field-a"), find("field-b")
@@ -291,6 +333,10 @@ def main():
 
             def prepare():
                 nonlocal first, second
+                # A previous unknown result may have invalidated the daemon's client session.
+                # Establish it before issuing raw element handles; this sends no text.
+                status, ready = api("/agent/input", {"type": "text", "text": ""})
+                assert status == 200 and ready.get("ok") is True, ready
                 first, second = find("field-a"), find("field-b")
                 call(prefix + f"/element/{first}/click", {})
                 wait_for(lambda: call(prefix + f"/element/{first}/attribute/focused") is True, "first field focus")
@@ -397,10 +443,221 @@ def main():
             assert call(prefix + f"/element/{first}/attribute/value") == "字" * 200
             reports.append({"case": "daemon-takeover-during-chunk-is-not-stolen-back-on-completion",
                             "passed": True, "confirmed": 200, "native_key_requests": 1})
+
+            status, released = api("/agent/owner", {"release": True}, owner="other-fixture-owner")
+            assert status == 200, released
+            first, second = find("field-a"), find("field-b")
+            call(prefix + f"/element/{first}/click", {})
+            wait_for(lambda: call(prefix + f"/element/{first}/attribute/focused") is True, "short input focus")
+            route_count = lambda route: log_path.read_text(errors="replace").count(f"POST {prefix}{route} ->")
+            before_atomic, before_keys = route_count("/ipu/text"), native_keys()
+            before_targets = log_path.read_text(errors="replace").count(f"GET {prefix}/wda/input-target ->")
+            status, result = api("/agent/input", {"type": "text", "text": "short replacement", "clear": True})
+            assert status == 200 and result.get("ok") is True, result
+            assert call(prefix + f"/element/{first}/attribute/value") == "short replacement"
+            assert route_count("/ipu/text") - before_atomic == 1
+            assert native_keys() == before_keys
+            assert log_path.read_text(errors="replace").count(f"GET {prefix}/wda/input-target ->") == before_targets
+            reports.append({"case": "daemon-short-clear-is-one-bound-native-request", "passed": True, "native_requests": 1})
+
+            status, result = api("/agent/input", {"type": "text", "text": "Draft placeholder", "clear": True})
+            assert status == 200 and result.get("ok") is True, result
+            assert call(prefix + f"/element/{first}/attribute/value") == "Draft placeholder"
+            status, result = api("/agent/input", {"type": "text", "text": "short replacement", "clear": True})
+            assert status == 200 and result.get("ok") is True, result
+            assert call(prefix + f"/element/{first}/attribute/value") == "short replacement"
+            reports.append({"case": "daemon-short-clear-does-not-mistake-typed-placeholder-text-for-empty", "passed": True})
+
+            status, result = api("/agent/input", {"type": "text", "text": "must not\nsubmit", "clear": True})
+            assert status == 422 and result.get("outcome") == "not_sent", result
+            assert "newline_requires_multiline_field" in result.get("runner_error", {}).get("message", ""), result
+            assert call(prefix + f"/element/{first}/attribute/value") == "short replacement"
+            reports.append({"case": "daemon-short-newline-refused-before-clearing-single-line-field", "passed": True})
+
+            secure = find("field-secure")
+            call(prefix + f"/element/{secure}/click", {})
+            wait_for(lambda: call(prefix + f"/element/{secure}/attribute/focused") is True, "secure field focus")
+            status, result = api("/agent/input", {"type": "text", "text": "must-not-type"})
+            assert status == 422 and result.get("outcome") == "not_sent", result
+            assert "secure_field_requires_human" in result.get("runner_error", {}).get("message", ""), result
+            assert call(prefix + f"/element/{secure}/attribute/value") in (None, "")
+            reports.append({"case": "daemon-short-secure-field-requires-human", "passed": True})
+
+            multiline = find("field-multiline")
+            call(prefix + f"/element/{multiline}/click", {})
+            wait_for(lambda: call(prefix + f"/element/{multiline}/attribute/focused") is True, "multiline field focus")
+            status, result = api("/agent/input", {"type": "text", "text": "one\ntwo", "clear": True})
+            assert status == 200 and result.get("ok") is True, result
+            assert call(prefix + f"/element/{multiline}/attribute/value") == "one\ntwo"
+            reports.append({"case": "daemon-short-multiline-textview-newline-readback", "passed": True})
+
+            second = find("field-b")
+            call(prefix + f"/element/{second}/click", {})
+            wait_for(lambda: call(prefix + f"/element/{second}/attribute/focused") is True, "second field setup focus")
+            second_target = call(prefix + "/wda/input-target")["token"]
+            call(prefix + f"/element/{second_target}/clear", {"inputTarget": second_target})
+            prepare()
+            draft = "shift-focus-test-" + "字" * 40
+            before_atomic = route_count("/ipu/text")
+            status, result = api("/agent/input", {"type": "text", "text": draft})
+            assert status == 502 and result.get("outcome") == "unknown" and result.get("retry_safe") is False, result
+            assert "continue_token" not in result
+            assert route_count("/ipu/text") - before_atomic == 1
+            wait_for(lambda: api("/agent/status")[1].get("drivable") is True, "daemon recovery after unknown")
+            # Read the receiver in one fresh AX snapshot. A health probe can replace the
+            # native session after unknown input and invalidate handles between two lookups.
+            tree = call(prefix + "/source?format=json")
+            values = {}
+            pending_nodes = [tree]
+            while pending_nodes:
+                node = pending_nodes.pop()
+                if node.get("rawIdentifier") in ("field-a", "field-b"):
+                    values[node["rawIdentifier"]] = node.get("value") or ""
+                pending_nodes.extend(node.get("children", []))
+            assert set(values) == {"field-a", "field-b"}, values
+            a, b = values["field-a"], values["field-b"]
+            assert a + b == draft, {"a": a, "b": b}
+            reports.append({"case": "daemon-short-mid-input-focus-change-is-unknown-without-retry",
+                            "passed": True, "native_requests": 1, "field_lengths": {"a": len(a), "b": len(b)}})
+
+            # Observe actual TCP disconnection separately from the acceptance verdicts above.
+            # If default input continues, explicitly release this fixture's owner to stop it;
+            # that is cleanup, not evidence that disconnect itself cancelled the device.
+            for typing_budget in [None, 6000]:
+                prepare()
+                before_calls = native_keys()
+                payload = {"type": "text", "text": "字" * 2000}
+                if typing_budget is not None:
+                    payload["budget_ms"] = typing_budget
+                data = json.dumps(payload).encode()
+                head = (f"POST /agent/input HTTP/1.1\r\nHost: 127.0.0.1:{daemon_port}\r\n"
+                        f"Authorization: Bearer {tok}\r\nX-Phone-Control: 1\r\n"
+                        f"X-Phone-Owner: input-continuation-fixture\r\nContent-Type: application/json\r\n"
+                        f"Content-Length: {len(data)}\r\n\r\n").encode()
+                connection = socket.create_connection(("127.0.0.1", daemon_port), timeout=10)
+                try:
+                    connection.sendall(head + data)
+                    until = time.monotonic() + 10
+                    while True:
+                        live = call("/status")
+                        if live.get("busy") is True and live.get("busyMs", 0) >= 200:
+                            break
+                        if time.monotonic() >= until:
+                            raise RuntimeError("disconnect observation did not reach an active native request")
+                        time.sleep(0.02)
+                    closed_at = time.monotonic()
+                    connection.shutdown(socket.SHUT_RDWR)
+                finally:
+                    connection.close()
+                quiet_since = None
+                released_for_cleanup = False
+                observed_stop = None
+                until = time.monotonic() + 15
+                while time.monotonic() < until:
+                    completed = native_keys() - before_calls
+                    if completed >= 2 and not released_for_cleanup:
+                        status, released = api("/agent/owner", {"release": True})
+                        assert status == 200, released
+                        released_for_cleanup = True
+                    live = call("/status")
+                    if completed >= 1 and live.get("busy") is not True:
+                        if quiet_since is None:
+                            quiet_since = time.monotonic()
+                        elif time.monotonic() - quiet_since >= 0.75:
+                            observed_stop = round((time.monotonic() - closed_at) * 1000)
+                            break
+                    else:
+                        quiet_since = None
+                    time.sleep(0.02)
+                if observed_stop is None and not released_for_cleanup:
+                    status, released = api("/agent/owner", {"release": True})
+                    assert status == 200, released
+                    released_for_cleanup = True
+                observations.append({"case": "tcp-disconnect-during-input", "typing_budget_ms": typing_budget,
+                    "completed_native_chunks": native_keys() - before_calls,
+                    "observed_quiet_after_disconnect_ms": observed_stop,
+                    "explicit_owner_release_for_cleanup": released_for_cleanup,
+                    "interpretation": "stop causality is unproven for bounded input; owner-release cleanup is not TCP cancellation"})
+
+
+            if mcp_binary:
+                prepare()
+                env = dict(environment)
+                env.update(IPHONE_USE_URL=f"http://127.0.0.1:{daemon_port}", IPHONE_USE_TOKEN=tok,
+                    IPHONE_USE_OWNER="input-continuation-fixture", IPHONE_USE_MCP_TOOLS="phone_type",
+                    IPHONE_USE_MCP_STRUCTURED="full")
+                with (out / "mcp.log").open("w") as log:
+                    mcp = subprocess.Popen([str(mcp_binary)], env=env, stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE, stderr=log, start_new_session=True)
+                reply_buffer = b""
+
+                def rpc(message):
+                    mcp.stdin.write((json.dumps(message) + "\n").encode())
+                    mcp.stdin.flush()
+
+                def reply(identifier, timeout=10):
+                    nonlocal reply_buffer
+                    until = time.monotonic() + timeout
+                    while time.monotonic() < until:
+                        while b"\n" in reply_buffer:
+                            line, reply_buffer = reply_buffer.split(b"\n", 1)
+                            result = json.loads(line)
+                            if result.get("id") == identifier:
+                                return result
+                        readable, _, _ = select.select([mcp.stdout], [], [], max(0, until - time.monotonic()))
+                        if readable:
+                            data = os.read(mcp.stdout.fileno(), 65536)
+                            if not data:
+                                raise RuntimeError("MCP exited before its reply")
+                            reply_buffer += data
+                    raise RuntimeError("MCP reply deadline")
+
+                rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+                    "protocolVersion": "2025-06-18", "capabilities": {},
+                    "clientInfo": {"name": "input-cancel-fixture", "version": "1"}}})
+                assert "result" in reply(1)
+                rpc({"jsonrpc": "2.0", "method": "notifications/initialized"})
+                before_calls = native_keys()
+                rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+                    "name": "phone_type", "arguments": {"text": "字" * 2000, "observe": False}}})
+                until = time.monotonic() + 10
+                while True:
+                    live = call("/status")
+                    if live.get("busy") is True and live.get("busyMs", 0) >= 200:
+                        break
+                    if mcp.poll() is not None or time.monotonic() >= until:
+                        raise RuntimeError("MCP input did not enter an active native request")
+                    time.sleep(0.02)
+                cancelled_at = time.monotonic()
+                rpc({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {
+                    "requestId": 2, "reason": "input fixture cancellation"}})
+                cancelled = reply(2)
+                verdict = cancelled.get("result", {}).get("structuredContent", {})
+                assert verdict.get("outcome") == "unknown" and verdict.get("retry_safe") is False, cancelled
+                quiet_since = None
+                observed_stop = None
+                until = time.monotonic() + 10
+                while time.monotonic() < until:
+                    completed = native_keys() - before_calls
+                    assert completed <= 1, "MCP cancellation dispatched a later chunk"
+                    live = call("/status")
+                    if completed == 1 and live.get("busy") is not True:
+                        if quiet_since is None:
+                            quiet_since = time.monotonic()
+                        elif time.monotonic() - quiet_since >= 0.75:
+                            observed_stop = round((time.monotonic() - cancelled_at) * 1000)
+                            break
+                    else:
+                        quiet_since = None
+                    time.sleep(0.02)
+                assert observed_stop is not None, "native input did not become quiet after MCP cancellation"
+                reports.append({"case": "mcp-cancel-notification-stops-after-current-native-chunk",
+                    "passed": True, "native_key_requests": 1, "verdict": "unknown",
+                    "observed_quiet_after_notification_ms": observed_stop})
     except Exception as error:
         reports.append({"case": "harness-or-current-case", "passed": False, "error": str(error)})
     finally:
-        for process in [daemon, runner]:
+        for process in [mcp, daemon, runner]:
             if process and process.poll() is None:
                 try:
                     os.killpg(process.pid, signal.SIGTERM)
@@ -420,7 +677,7 @@ def main():
                     command("xcrun", "simctl", operation, udid)
                 except Exception as error:
                     cleanup_errors.append(str(error))
-        for name in ["runner.log", "daemon.log"]:
+        for name in ["runner.log", "daemon.log", "mcp.log"]:
             log = out / name
             if log.exists():
                 log.write_text(log.read_text(errors="replace").replace(tok, "[redacted fixture token]"))
@@ -430,16 +687,20 @@ def main():
                  Path("runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerTests.swift")]
         if daemon_binary:
             files.extend(map(Path, ["crates/server/src/http.rs", "crates/server/src/runner.rs", "crates/server/src/input_continuation.rs"]))
+        if mcp_binary:
+            files.extend(map(Path, ["crates/mcp/src/server.rs", "crates/mcp/src/client.rs"]))
         manifest = {"scope": "actual XCTest runner on disposable iOS Simulator; not physical-device evidence",
-            "simulator": udid, "runtime": args.runtime, "cases": reports, "cleanup_errors": cleanup_errors,
+            "simulator": udid, "runtime": args.runtime, "cases": reports, "observations": observations, "cleanup_errors": cleanup_errors,
             "xctestrun_sha256": hashlib.sha256(xctestrun.read_bytes()).hexdigest(),
             "runner_binary_sha256": hashlib.sha256((xctestrun.parent / "Debug-iphonesimulator/iPhoneUse-Runner.app/PlugIns/iPhoneUse.xctest/iPhoneUse").read_bytes()).hexdigest(),
             "sources": {str(path): hashlib.sha256((ROOT / path).read_bytes()).hexdigest() for path in files}}
         if daemon_binary:
             manifest["daemon_binary_sha256"] = hashlib.sha256(daemon_binary.read_bytes()).hexdigest()
+        if mcp_binary:
+            manifest["mcp_binary_sha256"] = hashlib.sha256(mcp_binary.read_bytes()).hexdigest()
         (out / "results.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    print(json.dumps({"cases": reports, "cleanup_errors": cleanup_errors}))
-    return 0 if len(reports) == (13 if daemon_binary else 6) and all(r["passed"] for r in reports) and not cleanup_errors else 1
+    print(json.dumps({"cases": reports, "observations": observations, "cleanup_errors": cleanup_errors}))
+    return 0 if len(reports) == (20 if mcp_binary else 19 if daemon_binary else 6) and all(r["passed"] for r in reports) and not cleanup_errors else 1
 
 
 if __name__ == "__main__":

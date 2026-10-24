@@ -1,0 +1,133 @@
+{
+  "scope": "actual XCTest runner on disposable iOS Simulator; not physical-device evidence",
+  "simulator": "63F7D209-F9F8-4054-876A-3BE03A844093",
+  "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+  "cases": [
+    {
+      "case": "bound-input-readback",
+      "passed": true
+    },
+    {
+      "case": "bound-clear-and-append",
+      "passed": true
+    },
+    {
+      "case": "same-label-field-switch-refused",
+      "passed": true,
+      "refusal": {
+        "error": "invalid argument",
+        "message": "input_target_focus_changed; nothing was sent"
+      }
+    },
+    {
+      "case": "foreground-app-switch-refused",
+      "passed": true,
+      "refusal": {
+        "error": "invalid argument",
+        "message": "input_target_app_changed; nothing was sent"
+      }
+    },
+    {
+      "case": "session-replacement-refused",
+      "passed": true,
+      "refusal": {
+        "message": "input_target_expired_or_unreadable; nothing was sent",
+        "error": "invalid argument"
+      }
+    },
+    {
+      "case": "external-native-command-invalidates-binding",
+      "passed": true,
+      "refusal": {
+        "error": "invalid argument",
+        "message": "input_target_invalidated_by_another_command; nothing was sent"
+      }
+    },
+    {
+      "case": "daemon-continuation-500-character-readback",
+      "passed": true,
+      "confirmed_partial_portions": [
+        200,
+        200
+      ],
+      "final_length": 500
+    },
+    {
+      "case": "native-clear-after-mid-field-click",
+      "passed": true,
+      "before_length": 500,
+      "after_length": 0
+    },
+    {
+      "case": "daemon-owner-release-invalidates-continuation",
+      "passed": true
+    },
+    {
+      "case": "daemon-native-focus-change-refuses-continuation",
+      "passed": true
+    },
+    {
+      "case": "daemon-native-session-change-refuses-continuation",
+      "passed": true
+    },
+    {
+      "case": "daemon-mid-chunk-focus-change-is-unknown-without-continuation",
+      "passed": true,
+      "native_key_requests": 1,
+      "field_lengths": {
+        "a": 20,
+        "b": 180
+      }
+    },
+    {
+      "case": "daemon-takeover-during-chunk-is-not-stolen-back-on-completion",
+      "passed": true,
+      "confirmed": 200,
+      "native_key_requests": 1
+    },
+    {
+      "case": "daemon-short-clear-is-one-bound-native-request",
+      "passed": true,
+      "native_requests": 1
+    },
+    {
+      "case": "daemon-short-clear-does-not-mistake-typed-placeholder-text-for-empty",
+      "passed": true
+    },
+    {
+      "case": "daemon-short-newline-refused-before-clearing-single-line-field",
+      "passed": true
+    },
+    {
+      "case": "daemon-short-secure-field-requires-human",
+      "passed": true
+    },
+    {
+      "case": "daemon-short-multiline-textview-newline-readback",
+      "passed": true
+    },
+    {
+      "case": "harness-or-current-case",
+      "passed": false,
+      "error": "GET /session/9699BAF4-15C1-4E99-814E-09B731D4A47E/element/85E6706A-C78A-4F1A-BB32-55D6B218E329/attribute/value: expected 200, got 404: {'value': {'message': 'The previously found element 85E6706A-C78A-4F1A-BB32-55D6B218E329 is not present in the current view anymore', 'error': 'stale element reference'}}"
+    }
+  ],
+  "observations": [],
+  "cleanup_errors": [],
+  "xctestrun_sha256": "b451ce398fa218d683575378eb95649465ac9fa2908bbc95c13c3bad146d2f25",
+  "runner_binary_sha256": "e541e139611061606be49f2dedd8a4c68597d96206fb05ac04cb9eecaa353f9e",
+  "sources": {
+    "scripts/test-input-target-simulator.py": "89f4b0bfdd45f872efe7133d4518ce593a63d76d69273e1497aa5e16ff554f33",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerRoutes.swift": "0730178c4c3d7ed563864c6a06ffae08f23d7004d957243efcdea0558c5755d7",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerElements.swift": "0f6716d35c531504148cf75da879a24882dab645f6c0ee2a122cf28a2c92b3c2",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m": "de5c960d294a3092ad45f1848f4502d16848a083b7a9f7ca6a0008e3f255a31a",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerTests.swift": "63b4e08c98732116fd9054fcafb9fa15c5500d98b907fa5f1cceb04339bd02ba",
+    "crates/server/src/http.rs": "6eb7da11626d165205770b0fd3fdc051fe4aff52772483deb4996b586bf90f47",
+    "crates/server/src/runner.rs": "cd4b08c7dd96ce3b2b3d7d56e889665e816953fe0ee758f7a77c5d4205612c24",
+    "crates/server/src/input_continuation.rs": "1fa8bb7bcfe52c345f23c193a8b8d05aa21a14210429838502cd446fb48b29e1",
+    "crates/mcp/src/server.rs": "735add20cb02aa4c5a1daa6aa33fd03667889595b520aa70e07da723b2f89200",
+    "crates/mcp/src/client.rs": "47a2b3953d04ffa6b6c2b522d9f061d9f7622d91e6ed8e6225d7f86a86e66d91"
+  },
+  "daemon_binary_sha256": "08af9406ee64336af4e4cbf66d4e6e7806e46e1a7dccabde11cbfc6d72bbdde7",
+  "mcp_binary_sha256": "8726dce565aba70fceb84178a57c8d37a53bc3cf547148c6f73cf9c9c1c012a7"
+}

@@ -73,7 +73,7 @@ extension RunnerTests {
       if match(parts, "wda/settle") != nil { return settleScreen(request) }
       if match(parts, "wda/apps/list") != nil { return appsList() }
       if match(parts, "wda/activeAppInfo") != nil { return activeAppInfo() }
-      if match(parts, "wda/input-target") != nil { return try inputTarget() }
+      if match(parts, "wda/input-target") != nil { return try inputTarget(request) }
       if match(parts, "element/active") != nil { return try activeElement() }
       if match(parts, "alert/text") != nil { return try alertText() }
       if match(parts, "wda/alert/buttons") != nil { return try alertButtons() }
@@ -113,6 +113,7 @@ extension RunnerTests {
         return try launchApp(request)
       }
       if match(parts, "wda/apps/terminate") != nil { return try terminateApp(request) }
+      if match(parts, "ipu/text") != nil { return try atomicText(request) }
       if match(parts, "wda/keys") != nil { return try runnerKeys(request) }
       if match(parts, "wda/keyboard/dismiss") != nil { return try dismissKeyboard(request) }
       if match(parts, "url") != nil { return try openURL(request) }
@@ -139,6 +140,7 @@ extension RunnerTests {
       "ipu:timedDragPath": true,
       "ipu:guardedInput": true,
       "ipu:inputContinuation": true,
+      "ipu:atomicText": true,
       "browserName": NSNull(),
       "CFBundleIdentifier": NSNull(),
     ]
@@ -291,7 +293,11 @@ extension RunnerTests {
 
   /// Capture once per text action; each chunk checks this same live element, never reselects a
   /// field by label and never taps to restore focus. Tokens expire with the element registry.
-  private func inputTarget() throws -> HTTPResponse {
+  private func inputTarget(_ request: HTTPRequest) throws -> HTTPResponse {
+    .value(["token": try bindFocusedInputTarget(multiline: request.query["multiline"] == "1")])
+  }
+
+  private func bindFocusedInputTarget(multiline: Bool = false) throws -> String {
     let root = try foregroundTree()
     let focused = root.descendants().filter { $0.isFocused &&
       ["XCUIElementTypeTextField", "XCUIElementTypeSecureTextField", "XCUIElementTypeTextView",
@@ -300,9 +306,12 @@ extension RunnerTests {
       throw RunnerError.invalidArgument("input_target_ambiguous_or_missing; nothing was sent")
     }
     try checkInputTarget(node)
+    if multiline && node.type != "XCUIElementTypeTextView" {
+      throw RunnerError.invalidArgument("newline_requires_multiline_field; use an explicit key to submit; nothing was sent")
+    }
     let token = elements.register(node)
     inputBinding = token
-    return .value(["token": token])
+    return token
   }
 
   private func checkInputTarget(_ node: UINode) throws {
@@ -573,7 +582,7 @@ extension RunnerTests {
   /// Any uncertain selection/deletion stops, without retrying a different input path.
   private func clearBoundInput(_ token: String) throws -> HTTPResponse {
     let node = try checkedInputTarget(token)
-    if Self.clearableCount(node) == 0 {
+    if (node.value ?? "").isEmpty {
       elements.renew(token, node: node)
       return .value(NSNull())
     }
@@ -596,7 +605,7 @@ extension RunnerTests {
     }
     _ = try typeIntoFocus(XCUIKeyboardKey.delete.rawValue, frequency: 120, targetPID: node.pid)
     IPURBridge.invalidateRequestCache()
-    guard let after = try? checkedInputTarget(token), Self.clearableCount(after) == 0 else {
+    guard let after = try? checkedInputTarget(token), (after.value ?? "").isEmpty else {
       inputBinding = nil
       throw RunnerError.failed("guarded clear incomplete or target changed; inspect the original field")
     }
@@ -987,21 +996,58 @@ extension RunnerTests {
       guard let token = body["inputTarget"] as? String, !token.isEmpty else {
         throw RunnerError.invalidArgument("invalid inputTarget; nothing was sent")
       }
-      let node = try checkedInputTarget(token)
-      let path = try typeIntoFocus(text, frequency: frequency, targetPID: node.pid)
-      // Focus can change while a chunk is in flight. A postflight refusal must never use the
-      // pre-dispatch "nothing was sent" envelope: some or all text may have landed elsewhere.
-      let after: UINode
-      do { after = try checkedInputTarget(token) }
-      catch {
-        inputBinding = nil
-        throw RunnerError.failed("input target changed or became unreadable during typing; text outcome unknown")
-      }
-      elements.renew(token, node: after)
-      return .value(NSNull(), headers: ["X-IPU-Gesture": path])
+      return try boundKeys(text, token: token, frequency: frequency)
     }
     let path = try typeIntoFocus(text, frequency: frequency)
     return .value(NSNull(), headers: ["X-IPU-Gesture": path])
+  }
+
+  private func boundKeys(_ text: String, token: String, frequency: UInt) throws -> HTTPResponse {
+    let node = try checkedInputTarget(token)
+    if (text.contains("\n") || text.contains("\r")) && node.type != "XCUIElementTypeTextView" {
+      throw RunnerError.invalidArgument("newline_requires_multiline_field; use an explicit key to submit; nothing was sent")
+    }
+    let path = try typeIntoFocus(text, frequency: frequency, targetPID: node.pid)
+    // Focus can change while a chunk is in flight. A postflight refusal must never use the
+    // pre-dispatch "nothing was sent" envelope: some or all text may have landed elsewhere.
+    let after: UINode
+    do { after = try checkedInputTarget(token) }
+    catch {
+      inputBinding = nil
+      throw RunnerError.failed("input target changed or became unreadable during typing; text outcome unknown")
+    }
+    elements.renew(token, node: after)
+    return .value(NSNull(), headers: ["X-IPU-Gesture": path])
+  }
+
+  /// One device-side transaction for short agent input. The raw keyboard route remains usable
+  /// by human controllers; this agent route never changes focus or falls back after uncertainty.
+  private func atomicText(_ request: HTTPRequest) throws -> HTTPResponse {
+    let body = try request.jsonObject()
+    guard let text = body["text"] as? String, text.unicodeScalars.count <= 200,
+          body["clear"] == nil || body["clear"] is Bool else {
+      throw RunnerError.invalidArgument("text needs at most 200 Unicode scalars and optional bool clear; nothing was sent")
+    }
+    let clear = body["clear"] as? Bool ?? false
+    if text.isEmpty && !clear { return .value(NSNull()) }
+    let token: String
+    do { token = try bindFocusedInputTarget() }
+    catch let error as RunnerError where error.status == 400 { throw error }
+    catch { throw RunnerError.invalidArgument("input_target_unreadable; nothing was sent") }
+    let node = try checkedInputTarget(token)
+    if (text.contains("\n") || text.contains("\r")) && node.type != "XCUIElementTypeTextView" {
+      throw RunnerError.invalidArgument("newline_requires_multiline_field; use an explicit key to submit; nothing was sent")
+    }
+    let clearedContents = clear
+    if clear { _ = try clearBoundInput(token) }
+    do { return try boundKeys(text, token: token, frequency: 60) }
+    catch {
+      if clearedContents {
+        inputBinding = nil
+        throw RunnerError.failed("field was cleared but text input could not be confirmed; outcome unknown")
+      }
+      throw error
+    }
   }
 
   private func dismissKeyboard(_ request: HTTPRequest) throws -> HTTPResponse {

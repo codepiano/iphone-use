@@ -1,0 +1,84 @@
+{
+  "scope": "candidate software and simulator checks; not physical-device or competitive task acceptance",
+  "checks": {
+    "server_lib_and_http": {
+      "log_sha256": "b407a1edf02d04913337c513eca71208970f2b8171b90c4b736a23c437bb6f7e",
+      "results": [
+        {
+          "passed": 883,
+          "failed": 0,
+          "ignored": 1
+        },
+        {
+          "passed": 20,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 9,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        }
+      ]
+    },
+    "mcp_lib_and_stdio": {
+      "log_sha256": "bab3354f654751d4ca3f2e1945f0b2cc977e3d5f325b5ca4cb6b7f1f99807c75",
+      "results": [
+        {
+          "passed": 232,
+          "failed": 0,
+          "ignored": 1
+        },
+        {
+          "passed": 16,
+          "failed": 0,
+          "ignored": 0
+        }
+      ]
+    },
+    "default_thread_server_lib": {
+      "log_sha256": "bc6c290c14397bbb40f93ded7248ae9a718ed7e78d3909cac014d4b337fae7fe",
+      "results": [
+        {
+          "passed": 883,
+          "failed": 0,
+          "ignored": 1
+        }
+      ]
+    }
+  },
+  "base_revision": "a3938de5bff9d8af71d78159e925266549ec48b6",
+  "swift_checks": 278,
+  "device_target_compile": "unsigned build passed; no physical device install or acceptance",
+  "xcode_version": [
+    "Xcode 27.0",
+    "Build version 27A266a"
+  ],
+  "final_simulator_cases": 20,
+  "source_hashes": {
+    "crates/server/src/http.rs": "6eb7da11626d165205770b0fd3fdc051fe4aff52772483deb4996b586bf90f47",
+    "crates/server/src/runner.rs": "cd4b08c7dd96ce3b2b3d7d56e889665e816953fe0ee758f7a77c5d4205612c24",
+    "crates/mcp/src/server.rs": "735add20cb02aa4c5a1daa6aa33fd03667889595b520aa70e07da723b2f89200",
+    "crates/mcp/tests/observe_over_stdio.rs": "8e16b407e06fdeecfee344ef971f5e12eea98d336ef0b64287c268632e7c19b2",
+    "crates/server/tests/short_text.rs": "762875425032aa4ed7b465e207273d3b333bb40b3dd4f35bb3c004da1e1f70ce",
+    "docs/agent-reference.md": "621a446315bc955c48adfeccb21a8bc6b806f8ebbf7d80a2c6d38a37f795f353",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerRoutes.swift": "0730178c4c3d7ed563864c6a06ffae08f23d7004d957243efcdea0558c5755d7",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerElements.swift": "0f6716d35c531504148cf75da879a24882dab645f6c0ee2a122cf28a2c92b3c2",
+    "scripts/test-input-target-simulator.py": "d42db542d866c21e8ab462853a528f1a9091af99d8092720576c1dde89555964"
+  }
+}
