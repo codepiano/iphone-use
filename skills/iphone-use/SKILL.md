@@ -234,7 +234,9 @@ reference: *Flows*.
    `phone_hold(secs, private=true)` so nothing reads the screen meanwhile, ask the
    user with the host's question tool (plain text if there is none or it is
    unavailable right now) and wait, then clear the hold and re-read the screen. → reference:
-   *When the person has to sign in*
+   *When the person has to sign in*. A private hold stops later text chunks and
+   invalidates earlier continuation tokens even after it ends; never reuse that
+   token or replay the original input.
 7. **Saving and publishing are the user's call.** Ask before saving a flow, and
    ask again before publishing it or filing an issue. Both use their GitHub
    account.

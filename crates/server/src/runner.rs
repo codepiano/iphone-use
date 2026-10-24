@@ -1678,6 +1678,12 @@ impl RunnerClient {
     /// `POST /element/:id/clear`). Lets `text` REPLACE a field's contents
     /// instead of appending to stale text (the "ClaudeClaude" search-box bug).
     pub async fn clear_active(&mut self) -> Result<()> {
+        self.clear_active_checked(|| true).await.map(|_| ())
+    }
+
+    /// The focused-element lookup is read-only; an agent may revoke the
+    /// compound clear before its first mutation, after that lookup completes.
+    pub(crate) async fn clear_active_checked(&mut self, allowed: impl Fn() -> bool) -> Result<bool> {
         let sid = self.ensure_session().await?.to_string();
         let body = self
             .http
@@ -1691,6 +1697,7 @@ impl RunnerClient {
             .await
             .context("/element/active body")?;
         let id = parse_element_id(&body)?;
+        if !allowed() { return Ok(false); }
         let response = self
             .post_req(format!(
                 "{}/session/{}/element/{}/clear",
@@ -1702,7 +1709,7 @@ impl RunnerClient {
             .await
             .context("POST /element/clear")?;
         ensure_runner_success(response, "POST /element/clear").await?;
-        Ok(())
+        Ok(true)
     }
 
     /// Tune runner's built-in MJPEG screen stream (`POST /appium/settings`). The
@@ -1892,6 +1899,10 @@ impl RunnerClient {
     }
 
     pub(crate) fn supports_input_continuation(&self) -> bool { self.continuation_input }
+    pub(crate) fn supports_atomic_text(&self) -> bool { self.atomic_text }
+
+    pub(crate) fn discard_input_continuation(&mut self) { self.input_continuation.clear(); }
+
 
     pub(crate) fn take_input_continuation(&mut self, token: &str, scope: &crate::input_continuation::Scope)
         -> Option<crate::input_continuation::Pending> {

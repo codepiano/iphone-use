@@ -10,7 +10,17 @@ use std::time::Duration;
 use support::{block, build_state_with_runner, mock_runner, MockRunner};
 use tower::ServiceExt;
 
+#[derive(Default)]
+struct PrivacyHooks {
+    key_started: tokio::sync::Notify,
+    target_started: tokio::sync::Notify,
+    clear_started: tokio::sync::Notify,
+    session_started: tokio::sync::Notify,
+    delay: Mutex<Option<&'static str>>,
+    atomic: std::sync::atomic::AtomicBool,
+}
 struct Fixture {
+    hooks: Arc<PrivacyHooks>,
     _runner: MockRunner,
     state: Arc<server::http::AppState>,
     calls: Arc<Mutex<Vec<String>>>,
@@ -25,13 +35,30 @@ impl Fixture {
         let calls = Arc::new(Mutex::new(Vec::new()));
         let text = Arc::new(Mutex::new(String::new()));
         let failure = Arc::new(Mutex::new(None));
+        let hooks=Arc::new(PrivacyHooks::default());
+        let hook=hooks.clone();
         let (seen, typed, fail) = (calls.clone(), text.clone(), failure.clone());
         let runner = mock_runner(move |request, _| {
             seen.lock().unwrap().push(request.to_string());
             let response = if request.starts_with("POST /session ") {
-                json!({"value":{"sessionId":"SESSION","capabilities":{"ipu:guardedInput":guarded,"ipu:inputContinuation":continuation}}})
+                hook.session_started.notify_one();
+                let body=json!({"value":{"sessionId":"SESSION","capabilities":{"ipu:guardedInput":guarded,"ipu:inputContinuation":continuation,"ipu:atomicText":hook.atomic.load(std::sync::atomic::Ordering::Acquire)}}});
+                return Some((if *hook.delay.lock().unwrap()==Some("session") {Duration::from_millis(500)}else{Duration::ZERO},body.to_string()));
             } else if request.contains("/wda/input-target") {
-                json!({"value":{"token":"bound-field"}})
+                hook.target_started.notify_one();
+                return Some((if *hook.delay.lock().unwrap()==Some("target") {Duration::from_millis(500)}else{Duration::ZERO},json!({"value":{"token":"bound-field"}}).to_string()));
+            } else if request.contains("/element/active") {
+                hook.target_started.notify_one();
+                return Some((if *hook.delay.lock().unwrap()==Some("legacy-active") {Duration::from_millis(500)}else{Duration::ZERO},json!({"value":{"ELEMENT":"bound-field"}}).to_string()));
+            } else if request.contains("/element/bound-field/clear") {
+                typed.lock().unwrap().clear();
+                hook.clear_started.notify_one();
+                return Some((if *hook.delay.lock().unwrap()==Some("clear") {Duration::from_millis(500)}else{Duration::ZERO},json!({"value":null}).to_string()));
+            } else if request.contains("/ipu/text") {
+                let body:Value=serde_json::from_str(request.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+                if body["clear"]==true {typed.lock().unwrap().clear();}
+                typed.lock().unwrap().push_str(body["text"].as_str().unwrap());
+                json!({"value":null})
             } else if request.contains("/wda/keys") {
                 let body: Value =
                     serde_json::from_str(request.split("\r\n\r\n").nth(1).unwrap()).unwrap();
@@ -48,6 +75,7 @@ impl Fixture {
                     .lock()
                     .unwrap()
                     .push_str(body["value"][0].as_str().unwrap());
+                hook.key_started.notify_one();
                 return Some((
                     Duration::from_millis(250),
                     json!({"value":null}).to_string(),
@@ -65,6 +93,7 @@ impl Fixture {
         });
         let state = build_state_with_runner(runner.url());
         Self {
+            hooks,
             _runner: runner,
             state,
             calls,
@@ -630,5 +659,182 @@ fn completing_input_only_renews_its_existing_lease_and_never_reclaims_ownership(
                 _ => unreachable!(),
             }
         }
+    });
+}
+
+
+async fn private_hold(f:&Fixture, private:bool) {
+    let (status,body)=f.call("/agent/hold",Some("a"),Some(json!({"secs":if private{60}else{0},"private":private})),false).await;
+    assert_eq!(status,StatusCode::OK,"{body}");
+}
+fn input_payload(batch:bool, action:Value)->Value {
+    if batch {json!({"observe":false,"steps":[{"kind":"action","action":action},{"kind":"action","action":{"type":"home"}}]})} else {action}
+}
+fn input_path(batch:bool)->&'static str {if batch {"/agent/actions"}else{"/agent/input"}}
+
+#[test]
+fn privacy_transition_invalidates_saved_continuation_without_native_input() {
+    block(async {
+        for batch in [false,true] {for expire in [false,true] {
+            let f=Fixture::new(true);let token=f.start(false).await;
+            if expire {
+                let (status,_)=f.call("/agent/hold",Some("a"),Some(json!({"secs":1,"private":true})),false).await;
+                assert_eq!(status,StatusCode::OK);
+                tokio::time::sleep(Duration::from_millis(1100)).await;
+            } else {private_hold(&f,true).await;private_hold(&f,false).await;}
+            let before=f.calls.lock().unwrap().len();
+            let (status,body)=f.call(input_path(batch),Some("a"),Some(input_payload(batch,json!({"type":"text","continue_token":token}))),false).await;
+            assert_eq!(status,StatusCode::CONFLICT,"{body}");
+            assert_eq!(body["error"],"input_continuation_expired","{body}");
+            assert_eq!(f.calls.lock().unwrap().len(),before,"an invalid token must send no runner request");
+            assert_eq!(*f.text.lock().unwrap(),"字".repeat(200));
+        }}
+    });
+}
+
+#[test]
+fn privacy_transition_stops_long_input_after_the_current_acknowledged_chunk() {
+    block(async {
+        for batch in [false,true] {for lift in [false,true] {
+            let f=Arc::new(Fixture::new(true));let caller=f.clone();
+            let pending=tokio::spawn(async move {caller.call(input_path(batch),Some("a"),Some(input_payload(batch,json!({"type":"text","text":"字".repeat(800)}))),false).await});
+            tokio::time::timeout(Duration::from_secs(3),f.hooks.key_started.notified()).await.unwrap();
+            private_hold(&f,true).await;if lift{private_hold(&f,false).await;}
+            let (status,body)=pending.await.unwrap();
+            assert_eq!(status,StatusCode::BAD_GATEWAY,"{body}");
+            assert_eq!(body["characters_confirmed"],200,"{body}");
+            assert_eq!(body["characters_uncertain"],0,"{body}");
+            assert_eq!(body["detail"]["input_error"],"input_privacy_changed","{body}");
+            assert!(body.get("continue_token").is_none());
+            assert_eq!(f.count("/wda/keys"),1);
+            assert_eq!(f.count("/wda/homescreen"),0);
+        }}
+    });
+}
+
+#[test]
+fn privacy_transition_while_queued_refuses_short_input_before_any_runner_request() {
+    block(async {
+        for batch in [false,true] {
+            let f=Arc::new(Fixture::new(true));f.hooks.atomic.store(true,std::sync::atomic::Ordering::Release);
+            let guard=f.state.runner.as_ref().unwrap().lock().await;
+            let caller=f.clone();
+            let pending=tokio::spawn(async move {caller.call(input_path(batch),Some("a"),Some(input_payload(batch,json!({"type":"text","text":"x"}))),false).await});
+            tokio::time::timeout(Duration::from_secs(3),async {loop {
+                if f.state.owner.lock().unwrap().as_ref().is_some_and(|owner|owner.name=="a") {break;}
+                tokio::task::yield_now().await;
+            }}).await.unwrap();
+            private_hold(&f,true).await;private_hold(&f,false).await;drop(guard);
+            let (status,body)=pending.await.unwrap();
+            assert_eq!(status,StatusCode::CONFLICT,"{body}");
+            assert_eq!(body["error"],"input_privacy_changed","{body}");
+            assert_eq!(body["outcome"],"not_sent");
+            assert!(f.calls.lock().unwrap().is_empty(),"queued input must be refused before session/binding/typing");
+        }
+    });
+}
+
+#[test]
+fn privacy_transition_during_session_binding_or_clear_never_dispatches_later_text() {
+    block(async {
+        for batch in [false,true] {for phase in ["session","target","clear","legacy-active"] {
+            let f=Arc::new(Fixture::with_capabilities(phase!="legacy-active",phase!="legacy-active"));*f.hooks.delay.lock().unwrap()=Some(phase);
+            f.hooks.atomic.store(phase=="session",std::sync::atomic::Ordering::Release);
+            let caller=f.clone();
+            let action=if phase=="session" || phase=="legacy-active" {json!({"type":"text","text":"x","clear":true})}else{json!({"type":"text","text":"字".repeat(500),"clear":true})};
+            let pending=tokio::spawn(async move {caller.call(input_path(batch),Some("a"),Some(input_payload(batch,action)),false).await});
+            let signal=match phase {"session"=>&f.hooks.session_started,"target"|"legacy-active"=>&f.hooks.target_started,_=>&f.hooks.clear_started};
+            tokio::time::timeout(Duration::from_secs(3),signal.notified()).await.unwrap();
+            private_hold(&f,true).await;private_hold(&f,false).await;
+            let (status,body)=pending.await.unwrap();
+            if phase=="clear" {
+                assert_eq!(status,StatusCode::BAD_GATEWAY,"{body}");
+                assert_eq!(body["characters_confirmed"],0);
+                assert_eq!(body["characters_uncertain"],0);
+                assert_eq!(body["retry_safe"],false);
+                assert_eq!(body["detail"]["input_error"],"input_privacy_changed");
+                assert_eq!(body["detail"]["clear_applied"],true);
+                if batch {assert_eq!(body["batch_outcome"],"partially_applied");}
+            } else {
+                assert_eq!(status,StatusCode::CONFLICT,"{body}");
+                assert_eq!(body["error"],"input_privacy_changed");
+            }
+            assert!(body.get("continue_token").is_none());
+            assert_eq!(f.count("/wda/keys"),0);
+            assert_eq!(f.count("/ipu/text"),0);
+            assert_eq!(f.count("/wda/homescreen"),0);
+            assert_eq!(f.count("/clear"),usize::from(phase=="clear"));
+        }}
+    });
+}
+
+#[test]
+fn private_hold_refuses_unobserved_text_and_nonprivate_hold_preserves_continuation() {
+    block(async {
+        for batch in [false,true] {
+            let f=Fixture::new(true);f.hooks.atomic.store(true,std::sync::atomic::Ordering::Release);private_hold(&f,true).await;
+            let (status,body)=f.call(input_path(batch),Some("a"),Some(input_payload(batch,json!({"type":"text","text":"x"}))),false).await;
+            assert_eq!(status,StatusCode::CONFLICT,"{body}");
+            assert_eq!(body["error"],"input_privacy_changed");
+            assert!(f.calls.lock().unwrap().is_empty());
+        }
+        let f=Fixture::new(true);let token=f.start(false).await;
+        let (status,_)=f.call("/agent/hold",Some("a"),Some(json!({"secs":60})),false).await;
+        assert_eq!(status,StatusCode::OK);
+        let (status,body)=f.call("/agent/input",Some("a"),Some(json!({"type":"text","continue_token":token})),false).await;
+        assert_eq!(status,StatusCode::OK,"{body}");
+        assert_eq!(*f.text.lock().unwrap(),"字".repeat(500));
+    });
+}
+
+#[test]
+fn privacy_transition_during_resumed_input_preserves_acknowledged_delivery_only() {
+    block(async {
+        for batch in [false,true] {
+            let f=Arc::new(Fixture::new(true));let token=f.start(false).await;
+            f.hooks.key_started.notified().await; // consume the initial request's signal
+            let caller=f.clone();let resume=token.clone();
+            let pending=tokio::spawn(async move {caller.call(input_path(batch),Some("a"),Some(input_payload(batch,json!({"type":"text","continue_token":resume}))),false).await});
+            tokio::time::timeout(Duration::from_secs(3),f.hooks.key_started.notified()).await.unwrap();
+            private_hold(&f,true).await;private_hold(&f,false).await;
+            let (status,body)=pending.await.unwrap();
+            assert_eq!(status,StatusCode::BAD_GATEWAY,"{body}");
+            assert_eq!(body["characters_confirmed"],200);
+            assert_eq!(body["characters_uncertain"],0);
+            assert_eq!(body["remaining_text"],"字".repeat(100));
+            assert_eq!(*f.text.lock().unwrap(),"字".repeat(400));
+            assert!(body.get("continue_token").is_none());
+            assert_eq!(f.count("/wda/input-target"),1);
+            assert_eq!(f.count("/wda/keys"),2);
+            let before=f.calls.lock().unwrap().len();
+            let (status,body)=f.call("/agent/input",Some("a"),Some(json!({"type":"text","continue_token":token})),false).await;
+            assert_eq!(status,StatusCode::CONFLICT,"{body}");
+            assert_eq!(f.calls.lock().unwrap().len(),before);
+        }
+    });
+}
+
+#[test]
+fn queued_input_cannot_cross_owner_aba_even_when_the_name_matches_again() {
+    block(async {
+        for batch in [false,true] {for length in [1,500] {
+            let f=Arc::new(Fixture::new(true));f.hooks.atomic.store(true,std::sync::atomic::Ordering::Release);
+            let guard=f.state.runner.as_ref().unwrap().lock().await;let caller=f.clone();
+            let pending=tokio::spawn(async move {caller.call(input_path(batch),Some("a"),Some(input_payload(batch,json!({"type":"text","text":"x".repeat(length)}))),false).await});
+            tokio::time::timeout(Duration::from_secs(3),async {loop {
+                if f.state.owner.lock().unwrap().as_ref().is_some_and(|owner|owner.name=="a") {break;}
+                tokio::task::yield_now().await;
+            }}).await.unwrap();
+            for owner in ["b","a"] {
+                let (status,_)=f.call("/agent/input",Some(owner),Some(json!({"type":"text","text":"invalid","budget_ms":1})),true).await;
+                assert_eq!(status,StatusCode::BAD_REQUEST);
+            }
+            let last_seen=f.state.owner.lock().unwrap().as_ref().unwrap().last_seen;
+            drop(guard);let (status,body)=pending.await.unwrap();
+            assert_eq!(status,StatusCode::CONFLICT,"{body}");
+            assert_eq!(body["error"],"input_owner_changed");
+            assert_eq!(f.state.owner.lock().unwrap().as_ref().unwrap().last_seen,last_seen,"an old request cannot renew the restored owner incarnation");
+            assert!(f.calls.lock().unwrap().is_empty(),"a restored owner name must not authorize an old queued request");
+        }}
     });
 }

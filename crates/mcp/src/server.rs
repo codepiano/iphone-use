@@ -1120,7 +1120,7 @@ impl PhoneHandler {
         description = "Insert literal Unicode text into the currently focused iPhone field. Use phone_tap_element to focus \
         the intended field first; clear:true explicitly replaces its contents and must stop if clearing fails. Use phone_key for a navigation or editing key. Requires \
         phone_status.drivable=true. Text can replace a selection or reach the wrong field if focus changed. \
-        Long text is chunked. Optional budget_ms (6000..15000) stops at a safe chunk boundary. If a response has continue_token, resume with only that token and optional observe; any other action or owner/session/field change invalidates it. On uncertain input no safe token is issued; inspect characters_confirmed and remaining_text and never \
+        Long text is chunked. Optional budget_ms (6000..15000) stops at a safe chunk boundary. If a response has continue_token, resume with only that token and optional observe; any other action, private hold, or owner/session/field change invalidates it. Private holds stop later chunks; an already dispatched native chunk may finish. On uncertain input no safe token is issued; inspect characters_confirmed and remaining_text and never \
         resend the whole value blindly. observe defaults on and returns the settled screen change. Verify \
         the resulting field before submitting; an unknown outcome is not evidence that nothing was typed."
     )]

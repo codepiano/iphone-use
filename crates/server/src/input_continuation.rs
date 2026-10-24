@@ -1,11 +1,12 @@
 //! One in-memory, single-use continuation per phone. Text never goes to disk; a mutation,
-//! session replacement, owner incarnation change or expiry invalidates the pending work.
+//! session replacement, owner incarnation/privacy change or expiry invalidates the pending work.
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Scope {
     pub owner: String,
     pub epoch: u64,
+    pub privacy_epoch: u64,
 }
 
 pub struct Pending {
@@ -84,6 +85,7 @@ mod tests {
         Scope {
             owner: owner.into(),
             epoch,
+            privacy_epoch: 0,
         }
     }
     fn issue(store: &mut Store, now: Instant) -> String {
@@ -113,7 +115,7 @@ mod tests {
     }
     #[test]
     fn expiry_session_owner_incarnation_and_mutation_invalidate() {
-        for reason in 0..4 {
+        for reason in 0..5 {
             let mut store = Store::default();
             let now = Instant::now();
             let token = issue(&mut store, now);
@@ -123,7 +125,7 @@ mod tests {
             assert!(store
                 .take(
                     &token,
-                    &scope("a", if reason == 1 { 2 } else { 1 }),
+                    &Scope { privacy_epoch: u64::from(reason == 4), ..scope("a", if reason == 1 { 2 } else { 1 }) },
                     if reason == 2 { "other" } else { "s" },
                     if reason == 0 {
                         now + Duration::from_secs(60)

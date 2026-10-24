@@ -813,3 +813,26 @@ fn capture_privacy_refusal_clears_a_panel_even_when_status_still_says_open() {
         }
     }
 }
+
+#[test]
+fn privacy_stop_after_clear_stays_partial_and_never_becomes_retry_safe() {
+    for mode in ["full","slim","off"] {
+        let body=serde_json::json!({"ok":false,"error":"text_partially_typed","outcome":"partial","retry_safe":false,
+            "characters_confirmed":0,"characters_uncertain":0,"characters_total":500,"remaining_text":"字".repeat(500),
+            "detail":{"input_error":"input_privacy_changed","clear_applied":true}});
+        let daemon=ScriptedDaemon::start("502 Bad Gateway",body.to_string().into_bytes());
+        let mut child=McpChild::start_with(&daemon.url,mode);
+        let response=child.call_tool(2,"phone_type",serde_json::json!({"text":"字".repeat(500),"clear":true,"observe":false}));
+        let result=&response["result"];
+        assert_eq!(result["isError"],true,"{response}");
+        let text=result["content"].as_array().unwrap().iter().filter_map(|block|block["text"].as_str()).collect::<Vec<_>>().join("\n");
+        assert!(text.contains("input_privacy_changed")&&text.contains("clear_applied"),"{response}");
+        assert!(text.contains("\"retry_safe\":false"),"{response}");
+        if mode!="off" {
+            assert_eq!(result["structuredContent"]["outcome"],"partial");
+            assert_eq!(result["structuredContent"]["retry_safe"],false);
+        }
+        assert!(!response.to_string().contains("continue_token"));
+        assert_eq!(daemon.requests.lock().unwrap().len(),1,"no replay after a private interruption");
+    }
+}

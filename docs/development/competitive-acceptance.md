@@ -104,8 +104,13 @@ Ordinary screenshot/overlay, element/OCR reads, cached images, MJPEG/H.264
 publication and late encoder callbacks now have privacy-generation fences;
 [privacy evidence](../measurements/privacy-transitions-2026-10-25/README.md)
 records the reproduced failures and regressions. Backend concurrency checks do
-not establish physical/host acceptance or erase data already delivered. Batch
-and action-observation payloads, other metadata read paths and installed-package
+not establish physical/host acceptance or erase data already delivered. [Text privacy evidence](../measurements/input-privacy-2026-10-25/README.md)
+adds queued/session/binding/clear/chunk fences and private-bound continuation. It also
+freezes the authenticated owner incarnation before queue waits, rejects owner
+A-to-B-to-A queued text and avoids renewing the new incarnation from old work.
+The combined Simulator candidate now passes 27 cases, including a hold triggered
+after the fixture observes its first input character. Batch
+and action-observation payloads, other agent actions/keys/set_value, metadata read paths and installed-package
 privacy behavior still require their own full audit.
 
 ## Trial protocol

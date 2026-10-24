@@ -38,7 +38,13 @@ import UIKit
   private weak var secondField: UITextField?
   private var shifted = false
   @objc private func shiftFocusIfRequested(_ field: UITextField) {
-    if field.text?.isEmpty != false { shifted = false }
+    let marker = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("input-started.count")
+    if field.text?.isEmpty != false {
+      shifted = false
+      try? FileManager.default.removeItem(at: marker)
+    } else if !FileManager.default.fileExists(atPath: marker.path) {
+      try? String(field.text?.count ?? 0).write(to: marker, atomically: true, encoding: .utf8)
+    }
     if !shifted, let text = field.text, text.hasPrefix("shift-focus-test-"), text.count >= 20 {
       shifted = true
       secondField?.becomeFirstResponder()
@@ -139,6 +145,7 @@ def main():
     parser.add_argument("--mcp", type=Path, help="observe MCP cancellation through this candidate stdio binary (requires --daemon)")
     parser.add_argument("--recovery", action="store_true", help="also verify fresh failure images and privacy withholding")
     parser.add_argument("--hosts", action="store_true", help="verify WorkBuddy resource frames through restarted stdio processes")
+    parser.add_argument("--input-privacy", action="store_true", help="verify pending and in-flight typing across private holds")
     parser.add_argument("--runtime", default="com.apple.CoreSimulator.SimRuntime.iOS-27-0")
     parser.add_argument("--device-type", default="com.apple.CoreSimulator.SimDeviceType.iPhone-17")
     args = parser.parse_args()
@@ -150,6 +157,8 @@ def main():
     observations = []
     daemon_binary = args.daemon.resolve(strict=True) if args.daemon else None
     mcp_binary = args.mcp.resolve(strict=True) if args.mcp else None
+    if args.input_privacy and not daemon_binary:
+        raise RuntimeError("--input-privacy requires --daemon")
     if args.hosts and not mcp_binary:
         raise RuntimeError("--hosts requires --mcp and --daemon")
     if args.recovery and not daemon_binary:
@@ -587,6 +596,52 @@ def main():
                     "interpretation": "stop causality is unproven for bounded input; owner-release cleanup is not TCP cancellation"})
 
 
+            if args.input_privacy:
+                prepare()
+                saved = begin()
+                token = saved["continue_token"]
+                before = call(prefix + f"/element/{first}/attribute/value")
+                before_calls = native_keys()
+                status, held = api("/agent/hold", {"secs":60,"private":True})
+                assert status == 200, held
+                status, blocked = api("/agent/input", {"type":"text","text":"x"})
+                assert status == 409 and blocked.get("error") == "input_privacy_changed", blocked
+                status, lifted = api("/agent/hold", {"secs":0})
+                assert status == 200, lifted
+                status, refused = api("/agent/input", {"type":"text","continue_token":token})
+                assert status == 409 and refused.get("error") == "input_continuation_expired", refused
+                assert native_keys() == before_calls
+                assert call(prefix + f"/element/{first}/attribute/value") == before
+                reports.append({"case":"private-hold-blocks-text-and-invalidates-prior-continuation", "passed":True,
+                    "additional_native_key_requests":0,"confirmed_before_hold":saved["characters_confirmed"]})
+
+                prepare()
+                marker = Path(command("xcrun","simctl","get_app_container",udid,BUNDLE,"data")) / "Documents/input-started.count"
+                marker.unlink(missing_ok=True)
+                before_calls = native_keys()
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    pending = pool.submit(api,"/agent/input",{"type":"text","text":"字"*800})
+                    until = time.monotonic()+10
+                    while not marker.exists():
+                        if pending.done() or time.monotonic() >= until:
+                            raise RuntimeError("fixture never observed the first input event before privacy hold")
+                        time.sleep(0.02)
+                    first_event_count = int(marker.read_text())
+                    assert first_event_count > 0
+                    status, held = api("/agent/hold",{"secs":60,"private":True})
+                    assert status == 200, held
+                    status, lifted = api("/agent/hold",{"secs":0})
+                    assert status == 200, lifted
+                    status, partial = pending.result(timeout=30)
+                assert status == 502 and partial.get("characters_confirmed") == 200, partial
+                assert partial.get("characters_uncertain") == 0 and "continue_token" not in partial, partial
+                assert partial.get("detail",{}).get("input_error") == "input_privacy_changed", partial
+                assert native_keys()-before_calls == 1
+                assert call(prefix + f"/element/{first}/attribute/value") == "字"*200
+                reports.append({"case":"private-on-off-during-native-typing-stops-after-current-acknowledged-chunk", "passed":True,
+                    "fixture_input_event_observed":True,"first_event_count":first_event_count,
+                    "native_key_requests":1,"characters_confirmed":200,"characters_uncertain":0})
+
             if mcp_binary:
                 prepare()
                 env = dict(environment)
@@ -794,7 +849,7 @@ def main():
             manifest["mcp_binary_sha256"] = hashlib.sha256(mcp_binary.read_bytes()).hexdigest()
         (out / "results.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(json.dumps({"cases": reports, "observations": observations, "cleanup_errors": cleanup_errors}))
-    expected = (20 if mcp_binary else 19 if daemon_binary else 6) + ((3 if mcp_binary else 2) if args.recovery else 0) + 2 * int(args.hosts)
+    expected = (20 if mcp_binary else 19 if daemon_binary else 6) + ((3 if mcp_binary else 2) if args.recovery else 0) + 2 * int(args.hosts) + 2 * int(args.input_privacy)
     return 0 if len(reports) == expected and all(r["passed"] for r in reports) and not cleanup_errors else 1
 
 

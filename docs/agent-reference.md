@@ -139,6 +139,24 @@ screenshots, `/agent/elements` and live video answer `423 screen_private`, open
 streams end, and status shows `screen_private_secs`. A later hold without
 `private` lifts it.
 
+**Text across private holds.** Agent `text` requests retain the privacy generation
+and authenticated owner incarnation from entry, before waiting for the runner.
+An owner name returning to the same name after handoff does not revive queued
+input or let its completion renew the new incarnation's lease. An active private hold or a change
+while queued, discovering the session, binding or clearing refuses new text with
+`input_privacy_changed`. No later native text chunk is dispatched. A chunk or
+atomic short request already dispatched can finish; its acknowledgement remains
+authoritative. Confirmed characters stay confirmed. If clearing already applied,
+the result is partial with `detail.clear_applied:true`, not a safe whole replay.
+
+A prior `continue_token` expires across a private hold, including when it is
+lifted or expires before reuse. A private interruption issues no replacement
+token; check status and inspect the original field before starting new work.
+Ordinary holds without `private:true` retain continuation. Compatible short
+input keeps its existing failure/deadline behavior and also rechecks between
+active-field lookup, clearing and typing. Other action/key/set_value and
+mutation-observation paths still require separate acceptance.
+
 **Pre-warm.** A released phone may already be coming back when you look:
 `warming:true` means the daemon started the bring-up ahead of time. MCP startup
 and status only request pre-warming with `IPHONE_USE_MCP_PREWARM=1` (off by

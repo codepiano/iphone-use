@@ -1,0 +1,50 @@
+{
+  "scope": "candidate source tests and synthetic fixtures; not physical-device acceptance",
+  "logs": {
+    "server": {
+      "sha256": "6f842ea7dec073d473cad65c4820f236fd1dce8e24c89c7b7090c5d615e96d0c",
+      "summaries": [
+        "test result: ok. 886 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 16.82s",
+        "test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 52.59s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.96s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.11s",
+        "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 33.07s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.04s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.38s"
+      ]
+    },
+    "owner_aba_extended": {
+      "sha256": "ef7344877ad107184444a3597d6778b902bb764a21d5eb771e9b38feea76774d",
+      "summaries": [
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.75s"
+      ]
+    },
+    "mcp": {
+      "sha256": "1f1c10afd5870b04557e609fd988f992bcba310f6b37d7947dc64d0dbbf16181",
+      "summaries": [
+        "test result: ok. 233 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 34.29s",
+        "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.32s"
+      ]
+    },
+    "clippy": {
+      "sha256": "0699ddeb7a09f1f37f0ac4ce7b2bfe5e21a67925ce0e6ce6fa34ed1f2428994f",
+      "summaries": []
+    },
+    "build": {
+      "sha256": "d8b2507ae72425f58f9976dcc1762e119be400c9ff42424d5331d75a10f4a098",
+      "summaries": []
+    },
+    "privacy_before": {
+      "sha256": "3fff60ace8c8b932bfee2988e300004c1cc0f24c85e43fe0a89a5d7cf1fe6fdb",
+      "summaries": [
+        "test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 10 filtered out; finished in 4.52s"
+      ]
+    },
+    "owner_aba_before": {
+      "sha256": "e495ba53b74018301129f1c04151b40acb2f6ce1ee618ed8aea5144ae7a16c4e",
+      "summaries": [
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.39s"
+      ]
+    }
+  }
+}
