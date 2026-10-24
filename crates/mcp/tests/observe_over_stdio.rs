@@ -836,3 +836,17 @@ fn privacy_stop_after_clear_stays_partial_and_never_becomes_retry_safe() {
         assert_eq!(daemon.requests.lock().unwrap().len(),1,"no replay after a private interruption");
     }
 }
+
+#[test]
+fn omitted_ui_after_scope_change_keeps_success_and_notice_in_every_output_mode() {
+    for mode in ["full","slim","off"] {for observe in [false,true] {
+        let daemon=ScriptedDaemon::start("200 OK",serde_json::json!({"ok":true,"transport":"runner","scope_changed":"input_privacy_changed","observation_omitted":true}).to_string().into_bytes());
+        let mut child=McpChild::start_with(&daemon.url,mode);
+        let response=child.call_tool(2,"phone_tap",serde_json::json!({"x":0.5,"y":0.5,"observe":observe}));
+        let result=&response["result"];assert_ne!(result["isError"],true,"the mutation was confirmed: {response}");
+        let text=result["content"].as_array().unwrap().iter().filter_map(|c|c["text"].as_str()).collect::<Vec<_>>().join("\n");
+        assert!(text.contains("withheld")&&text.contains("phone_status"),"{response}");
+        if mode!="off" {assert_eq!(result["structuredContent"]["ok"],true);assert_eq!(result["structuredContent"]["observation_omitted"],true);}
+        assert_eq!(daemon.requests.lock().unwrap().len(),1,"no replay or surprise extra observation");
+    }}
+}

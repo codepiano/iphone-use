@@ -146,6 +146,7 @@ def main():
     parser.add_argument("--recovery", action="store_true", help="also verify fresh failure images and privacy withholding")
     parser.add_argument("--hosts", action="store_true", help="verify WorkBuddy resource frames through restarted stdio processes")
     parser.add_argument("--input-privacy", action="store_true", help="verify pending and in-flight typing across private holds")
+    parser.add_argument("--observation-scope", action="store_true", help="verify applied input keeps its receipt while stale observations are withheld")
     parser.add_argument("--runtime", default="com.apple.CoreSimulator.SimRuntime.iOS-27-0")
     parser.add_argument("--device-type", default="com.apple.CoreSimulator.SimDeviceType.iPhone-17")
     args = parser.parse_args()
@@ -157,6 +158,8 @@ def main():
     observations = []
     daemon_binary = args.daemon.resolve(strict=True) if args.daemon else None
     mcp_binary = args.mcp.resolve(strict=True) if args.mcp else None
+    if args.observation_scope and not daemon_binary:
+        raise RuntimeError("--observation-scope requires --daemon")
     if args.input_privacy and not daemon_binary:
         raise RuntimeError("--input-privacy requires --daemon")
     if args.hosts and not mcp_binary:
@@ -661,6 +664,37 @@ def main():
                 reports.append({"case":"fresh-input-after-private-expiry-survives-normal-hold", "passed":True,"final_length":500})
 
 
+            if args.observation_scope:
+                marker = Path(command("xcrun","simctl","get_app_container",udid,BUNDLE,"data")) / "Documents/input-started.count"
+                for batch in [False,True]:
+                    prepare()
+                    marker.unlink(missing_ok=True)
+                    before_atomic, before_keys = route_count("/ipu/text"), native_keys()
+                    action = {"type":"text","text":"observation-probe"}
+                    path = "/agent/actions" if batch else "/agent/input?return=delta&settle_ms=2500"
+                    payload = {"observe":True,"steps":[{"kind":"action","action":action}]} if batch else action
+                    with ThreadPoolExecutor(max_workers=1) as pool:
+                        pending = pool.submit(api,path,payload)
+                        until = time.monotonic()+10
+                        while not marker.exists():
+                            if pending.done() or time.monotonic()>=until:
+                                raise RuntimeError("no fixture input event before scoped observation test")
+                            time.sleep(0.01)
+                        assert int(marker.read_text())>0
+                        status, held = api("/agent/hold",{"secs":60,"private":True})
+                        assert status==200,held
+                        status, lifted = api("/agent/hold",{"secs":0})
+                        assert status==200,lifted
+                        status, receipt = pending.result(timeout=30)
+                    assert status==200 and receipt.get("ok") is True,receipt
+                    assert receipt.get("observation_omitted") is True and receipt.get("scope_changed")=="input_privacy_changed",receipt
+                    assert all(key not in receipt for key in ["elements","delta","snapshot","alert","image"]),receipt
+                    if batch: assert receipt.get("completed")==1 and receipt.get("applied_actions")==1,receipt
+                    assert route_count("/ipu/text")-before_atomic==1 and native_keys()==before_keys
+                    assert call(prefix+f"/element/{first}/attribute/value")=="observation-probe"
+                    reports.append({"case":"batch-applied-receipt-withholds-stale-observation" if batch else "single-applied-receipt-withholds-stale-observation",
+                        "passed":True,"native_atomic_requests":1,"ok":True,"observation_omitted":True,"independent_readback":True})
+
             if mcp_binary:
                 prepare()
                 env = dict(environment)
@@ -750,7 +784,7 @@ def main():
                 status, held = api("/agent/hold", {"secs": 60, "private": True})
                 assert status == 200, held
                 status, result = api("/agent/input", {"type": "tap_locator", "locator": {"label": "__missing_fixture_target__"}})
-                assert status in (422, 423) and "image" not in result, result
+                assert status == 409 and result.get("error") == "input_privacy_changed" and "image" not in result, result
                 reports.append({"case": "daemon-private-hold-withholds-failure-image", "passed": True})
                 status, released = api("/agent/hold", {"secs": 0})
                 assert status == 200, released
@@ -854,7 +888,7 @@ def main():
                  Path("runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m"),
                  Path("runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerTests.swift")]
         if daemon_binary:
-            files.extend(map(Path, ["crates/server/src/http.rs", "crates/server/src/runner.rs", "crates/server/src/input_continuation.rs", "crates/server/src/recovery.rs", "crates/server/src/video.rs"]))
+            files.extend(map(Path, ["crates/server/src/http.rs", "crates/server/src/runner.rs", "crates/server/src/input_continuation.rs", "crates/server/src/recovery.rs", "crates/server/src/video.rs", "crates/server/src/observation.rs"]))
         if mcp_binary:
             files.extend(map(Path, ["crates/mcp/src/server.rs", "crates/mcp/src/client.rs", "crates/mcp/src/screen.rs", "crates/mcp/src/screen.html"]))
         manifest = {"scope": "actual XCTest runner on disposable iOS Simulator; not physical-device evidence",
@@ -868,7 +902,7 @@ def main():
             manifest["mcp_binary_sha256"] = hashlib.sha256(mcp_binary.read_bytes()).hexdigest()
         (out / "results.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(json.dumps({"cases": reports, "observations": observations, "cleanup_errors": cleanup_errors}))
-    expected = (20 if mcp_binary else 19 if daemon_binary else 6) + ((3 if mcp_binary else 2) if args.recovery else 0) + 2 * int(args.hosts) + 3 * int(args.input_privacy)
+    expected = (20 if mcp_binary else 19 if daemon_binary else 6) + ((3 if mcp_binary else 2) if args.recovery else 0) + 2 * int(args.hosts) + 3 * int(args.input_privacy) + 2 * int(args.observation_scope)
     return 0 if len(reports) == expected and all(r["passed"] for r in reports) and not cleanup_errors else 1
 
 

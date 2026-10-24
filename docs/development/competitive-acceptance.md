@@ -108,11 +108,12 @@ not establish physical/host acceptance or erase data already delivered. [Text pr
 adds queued/session/binding/clear/chunk fences and private-bound continuation. It also
 freezes the authenticated owner incarnation before queue waits, rejects owner
 A-to-B-to-A queued text and avoids renewing the new incarnation from old work.
-The combined Simulator candidate now passes 28 cases, including a hold triggered
+The combined Simulator input-privacy checkpoint passes 28 cases, including a hold triggered
 after the fixture observes its first input character and fresh continuation
-after timed expiry plus an ordinary hold. Batch
-and action-observation payloads, other agent actions/keys/set_value, metadata read paths and installed-package
-privacy behavior still require their own full audit.
+after timed expiry plus an ordinary hold. [Action observation evidence](../measurements/observation-scope-2026-10-25/README.md)
+adds per-request final/wait/publication filtering while keeping mutation receipts.
+Opaque action internals, cross-request flows/suites, vault/intent/metadata and
+log retention, installed packages and physical modes still require audit.
 
 ## Trial protocol
 
@@ -142,11 +143,12 @@ keep equivalent raw trace and postcondition evidence for the reference.
 [failure recovery](../measurements/recovery-image-2026-10-25/README.md),
 [host adapters](../measurements/host-adapters-2026-10-25/README.md),
 [read/stream privacy](../measurements/privacy-transitions-2026-10-25/README.md)
-and [input privacy](../measurements/input-privacy-2026-10-25/README.md)
+[input privacy](../measurements/input-privacy-2026-10-25/README.md)
+and [action observations](../measurements/observation-scope-2026-10-25/README.md)
 retain exact staged source/binary hashes and earlier failures.
-The latest combined Simulator run passes 28 cases through the actual daemon,
+The latest combined Simulator run passes 30 cases through the actual daemon,
 runner and stdio MCP. It includes private input interruption and valid fresh
 work after expiry, alongside the prior target/cancellation/recovery/host checks.
 Physical acceptance, other action/key/set_value and observation/vault paths,
-remaining recovery/host/video work, distribution and comparative task trials
+remaining opaque-action/flow/vault/log, recovery/host/video work, distribution and comparative task trials
 remain open. The broader goal is not complete.

@@ -139,6 +139,18 @@ screenshots, `/agent/elements` and live video answer `423 screen_private`, open
 streams end, and status shows `screen_private_secs`. A later hold without
 `private` lifts it.
 
+**Action observations across handoff/privacy.** Input/actions requests retain
+entry owner/privacy scope for final observations, semantic waits and publication.
+A completed mutation keeps its original acknowledgement when its observation is
+withheld (`observation_omitted:true`, `scope_changed`). No screen absence or goal
+completion follows from the missing view. A wait or pacing step interrupted
+before completion stops later steps while retaining prior applied counts and
+retry safety. Check status and coordinate with the current owner before new
+work; never replay already-applied or uncertain steps. UI-derived diagnostics,
+prior wait results and queued observation bodies are omitted after scope loss.
+This is per API request; separate flow/suite requests and opaque action internals
+need their own scope acceptance.
+
 **Text across private holds.** Agent `text` requests retain the privacy generation
 and authenticated owner incarnation from entry, before waiting for the runner.
 An owner name returning to the same name after handoff does not revive queued

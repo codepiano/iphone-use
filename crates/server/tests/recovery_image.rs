@@ -189,7 +189,10 @@ fn opt_out_privacy_and_ownership_handoff_withhold_images() {
                     Some(Instant::now() + Duration::from_millis(500));
             }
             let (status, body) = call(state, false, mode == "off").await;
-            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+            // Private agent input is now refused before even resolving a
+            // locator. Later handoff/capture races keep the original 422.
+            assert_eq!(status, if mode=="private" {StatusCode::CONFLICT} else {StatusCode::UNPROCESSABLE_ENTITY}, "{body}");
+            if mode=="private" {assert_eq!(body["error"],"input_privacy_changed");}
             assert!(body.get("image").is_none());
             assert_eq!(body["outcome"], "not_sent");
             assert_eq!(

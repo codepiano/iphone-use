@@ -2681,6 +2681,10 @@ fn finish_result(tool: &str, mut result: CallToolResult, mode: StructuredMode) -
     if tool == crate::screen::FRAME_TOOL {
         return result;
     }
+    if result.structured_content.as_ref().is_some_and(|json|json.get("observation_omitted")==Some(&serde_json::Value::Bool(true)) && json.get("scope_changed").is_some()) {
+        result.content.push(Content::text("UI observation withheld after an owner/privacy scope change. The original action delivery verdict is unchanged. Check phone_status and coordinate with the current owner before new work; never replay already applied or uncertain steps"));
+    }
+
     let payload = result
         .structured_content
         .as_mut()

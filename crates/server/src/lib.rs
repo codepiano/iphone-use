@@ -31,6 +31,7 @@ pub mod phone_daemon;
 pub mod prewarm;
 pub mod protocol;
 pub mod recording;
+pub mod observation;
 pub mod recovery;
 pub mod redaction;
 pub mod runner_token;

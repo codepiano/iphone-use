@@ -9659,6 +9659,34 @@ fn capture_input_scope(state: &AppState, headers: &HeaderMap, privacy_epoch: u64
     })
 }
 
+fn request_scope_refusal(state: &AppState, scope: Option<&crate::input_continuation::Scope>) -> Option<(&'static str,&'static str)> {
+    let Some(scope)=scope else{return Some(("input_owner_changed","ownership changed before dispatch; no further input was sent"));};
+    InputContext{scope,owner_epoch:&state.owner_epoch,privacy_epoch:&state.privacy_epoch,private_until:&state.private_until}.refusal()
+}
+
+async fn in_request_scope<T>(state:&AppState, scope:Option<&crate::input_continuation::Scope>, work:impl std::future::Future<Output=T>)->Option<T>{
+    let scope=scope?;
+    in_input_context(InputContext{scope,owner_epoch:&state.owner_epoch,privacy_epoch:&state.privacy_epoch,private_until:&state.private_until},work).await
+}
+async fn in_input_context<T>(context:InputContext<'_>,work:impl std::future::Future<Output=T>)->Option<T>{
+    tokio::pin!(work);
+    loop {
+        if context.refusal().is_some(){return None;}
+        if let Ok(value)=tokio::time::timeout(std::time::Duration::from_millis(250),&mut work).await{
+            return context.refusal().is_none().then_some(value);
+        }
+    }
+}
+
+fn batch_scope_refusal(state:&AppState,scope:Option<&crate::input_continuation::Scope>,index:usize,completed:usize,applied:usize,steps:&[serde_json::Value])->Response {
+    let (reason,_)=request_scope_refusal(state,scope).unwrap_or(("input_privacy_changed","observation permission changed"));
+    let body=agent_actions_failure_body(index,completed,applied,reason,"not_sent",applied==0,steps,None);
+    agent_actions_json(StatusCode::CONFLICT,crate::observation::redact(body,reason))
+}
+
+#[derive(Clone)]
+struct MutationObservationFence {state:Arc<AppState>,scope:Option<crate::input_continuation::Scope>}
+
 /// The request's privacy generation is fixed before waiting for the runner;
 /// never refresh it merely because the same owner still holds the phone.
 #[derive(Clone, Copy)]
@@ -9879,11 +9907,8 @@ async fn owned_agent_action(
     let resume = is_input_continuation(action);
     let text = action.get("text").and_then(serde_json::Value::as_str).unwrap_or("");
     let budget = action.get("budget_ms").and_then(serde_json::Value::as_u64);
-    if action.get("type").and_then(serde_json::Value::as_str)!=Some("text") {
-        return (direct_agent_action(w, &state.runner_actionable, action, detail, deadline).await, None);
-    }
     let scope = request_scope;
-    if named_owner(headers).is_none() && (resume || budget.is_some()) {
+    if action.get("type").and_then(serde_json::Value::as_str)==Some("text") && named_owner(headers).is_none() && (resume || budget.is_some()) {
         return (RunnerControlOutcome::Refused("input_owner_required", "bounded input and continuation require the same named X-Phone-Owner"), None);
     }
     if scope.is_none() {
@@ -9892,6 +9917,9 @@ async fn owned_agent_action(
     let context = InputContext { scope:scope.unwrap(), owner_epoch:&state.owner_epoch,
         privacy_epoch:&state.privacy_epoch, private_until:&state.private_until };
     if let Some((error,hint)) = context.refusal() { return (RunnerControlOutcome::Refused(error,hint),None); }
+    if action.get("type").and_then(serde_json::Value::as_str)!=Some("text") {
+        return (direct_agent_action(w, &state.runner_actionable, action, detail, deadline).await, None);
+    }
     if !resume && budget.is_none() && text.chars().count() <= crate::text_input::CHUNK_CHARS {
         // Capability discovery may await a new session. Recheck before sending
         // the atomic transaction; a cached session adds no native round trip.
@@ -11870,7 +11898,9 @@ async fn agent_actions_inner(
     }
     let scope = capture_recovery_scope(&state, &headers);
     let text_scope = capture_input_scope(&state, &headers, privacy_generation, scope.as_ref());
+    let fence=MutationObservationFence{state:state.clone(),scope:text_scope.clone()};
     let mut response = agent_actions_claimed(State(state), headers, body, text_scope).await;
+    response.extensions_mut().insert(fence);
     if let Some(scope) = scope {
         response.extensions_mut().insert(scope);
     }
@@ -11961,6 +11991,7 @@ async fn agent_actions_claimed(
         }
     }
 
+    if request_scope_refusal(&state,request_scope.as_ref()).is_some(){return batch_scope_refusal(&state,request_scope.as_ref(),0,0,0,&[]);}
     state.touch_activity();
     state.cancel_settled_frame_prefetch();
     // Do Not Disturb at a quiet moment; a batch that opens with launch_app
@@ -12010,6 +12041,7 @@ async fn agent_actions_claimed(
     let mut applied_actions = 0_usize;
     let mut step_results = Vec::with_capacity(request.steps.len());
     for (index, step) in request.steps.iter().enumerate() {
+        if request_scope_refusal(&state,request_scope.as_ref()).is_some(){return batch_scope_refusal(&state,request_scope.as_ref(),index,completed,applied_actions,&step_results);}
         if observes_screen && state.screen_private_secs() > 0 {
             return private_batch_refusal(index, completed, applied_actions);
         }
@@ -12291,25 +12323,16 @@ async fn agent_actions_claimed(
                 }
                 applied_actions += 1;
                 record_activity(&state, &headers, action);
-                if *after_ms > 0
-                    && tokio::time::timeout_at(
-                        batch_deadline,
-                        tokio::time::sleep(std::time::Duration::from_millis(*after_ms)),
-                    )
-                    .await
-                    .is_err()
-                {
-                    return agent_actions_failure(
-                        StatusCode::GATEWAY_TIMEOUT,
-                        index,
-                        completed,
-                        applied_actions,
-                        "batch_deadline_after_action",
-                        "applied",
-                        false,
-                        &step_results,
-                        None,
-                    );
+                if *after_ms > 0 {
+                    match in_request_scope(&state,request_scope.as_ref(),tokio::time::timeout_at(batch_deadline,
+                        tokio::time::sleep(std::time::Duration::from_millis(*after_ms)))).await {
+                        Some(Ok(()))=>{},
+                        None=>{
+                            let (reason,_)=request_scope_refusal(&state,request_scope.as_ref()).unwrap_or(("input_privacy_changed","scope changed"));
+                            return agent_actions_json(StatusCode::CONFLICT,crate::observation::redact(agent_actions_failure_body(index,completed,applied_actions,reason,"applied",false,&step_results,None),reason));
+                        },
+                        Some(Err(_))=>return agent_actions_failure(StatusCode::GATEWAY_TIMEOUT,index,completed,applied_actions,"batch_deadline_after_action","applied",false,&step_results,None),
+                    }
                 }
                 step_results.push(serde_json::json!({
                     "index": index,
@@ -12318,24 +12341,11 @@ async fn agent_actions_claimed(
                 }));
             }
             AgentActionStep::Pause { ms } => {
-                if tokio::time::timeout_at(
-                    batch_deadline,
-                    tokio::time::sleep(std::time::Duration::from_millis(*ms)),
-                )
-                .await
-                .is_err()
-                {
-                    return agent_actions_failure(
-                        StatusCode::GATEWAY_TIMEOUT,
-                        index,
-                        completed,
-                        applied_actions,
-                        "batch_deadline",
-                        "not_sent",
-                        applied_actions == 0,
-                        &step_results,
-                        None,
-                    );
+                match in_request_scope(&state,request_scope.as_ref(),tokio::time::timeout_at(batch_deadline,
+                    tokio::time::sleep(std::time::Duration::from_millis(*ms)))).await {
+                    None=>return batch_scope_refusal(&state,request_scope.as_ref(),index,completed,applied_actions,&step_results),
+                    Some(Err(_))=>return agent_actions_failure(StatusCode::GATEWAY_TIMEOUT,index,completed,applied_actions,"batch_deadline","not_sent",applied_actions==0,&step_results,None),
+                    Some(Ok(()))=>{},
                 }
                 step_results.push(serde_json::json!({
                     "index": index,
@@ -12371,6 +12381,7 @@ async fn agent_actions_claimed(
                 let probes = if alert_only { None } else { wait_probe_predicates(expect) };
                 let mut probe_misses = 0_u64;
                 loop {
+                    if request_scope_refusal(&state,request_scope.as_ref()).is_some(){return batch_scope_refusal(&state,request_scope.as_ref(),index,completed,applied_actions,&step_results);}
                     if state.screen_private_secs() > 0 {
                         return private_batch_refusal(index, completed, applied_actions);
                     }
@@ -12382,7 +12393,10 @@ async fn agent_actions_claimed(
                     if let Some(probes) = &probes {
                         let poll = std::time::Duration::from_millis(*poll_ms);
                         if tokio::time::Instant::now() + poll < probe_deadline
-                            && wait_probe_missed(&mut w, probes, probe_deadline).await
+                            && match in_request_scope(&state,request_scope.as_ref(),wait_probe_missed(&mut w, probes, probe_deadline)).await {
+                                Some(missed)=>missed,
+                                None=>return batch_scope_refusal(&state,request_scope.as_ref(),index,completed,applied_actions,&step_results),
+                            }
                         {
                             probe_misses += 1;
                             let remaining = probe_deadline
@@ -12391,11 +12405,9 @@ async fn agent_actions_claimed(
                             continue;
                         }
                     }
-                    let read = if alert_only {
-                        agent_wait_alert(&mut w, wait_deadline).await
-                    } else {
-                        agent_wait_elements(&mut w, wait_deadline).await
-                    };
+                    let Some(read)=in_request_scope(&state,request_scope.as_ref(),async {
+                        if alert_only {agent_wait_alert(&mut w,wait_deadline).await} else {agent_wait_elements(&mut w,wait_deadline).await}
+                    }).await else {return batch_scope_refusal(&state,request_scope.as_ref(),index,completed,applied_actions,&step_results);};
                     if state.screen_private_secs() > 0 {
                         return private_batch_refusal(index, completed, applied_actions);
                     }
@@ -12530,9 +12542,7 @@ async fn agent_actions_claimed(
         completed += 1;
     }
 
-    if observes_screen && state.screen_private_secs() > 0 {
-        return private_batch_refusal(completed, completed, applied_actions);
-    }
+
     state.touch_activity();
     // A read-only wait (including /alert/text) proves no input capability.
     if applied_actions > 0 {
@@ -12549,11 +12559,11 @@ async fn agent_actions_claimed(
     if request.observe {
         // Observation only: the batch's verdict is already fixed above.
         let budget = std::time::Duration::from_millis(AGENT_INPUT_SETTLE_DEFAULT_MS);
-        let (observed, report) =
-            settle_and_read_elements(&mut w, budget, DEVICE_SETTLE_DEFAULT_CAP).await;
-        if state.screen_private_secs() > 0 {
-            return private_batch_refusal(completed, completed, applied_actions);
-        }
+        if let Some(((observed,report),observed_alert))=in_request_scope(&state,request_scope.as_ref(),async {
+            let data=settle_and_read_elements(&mut w,budget,DEVICE_SETTLE_DEFAULT_CAP).await;
+            let observed_alert=probe_alert(&mut w).await;
+            (data,observed_alert)
+        }).await {
         if let Some((snapshot, rows)) = observed {
             let rows = Arc::new(rows);
             remember_element_snapshot(&state, &snapshot, &rows);
@@ -12587,21 +12597,16 @@ async fn agent_actions_claimed(
             }
         }
         result["settle"] = report.to_json();
-        if let Some(alert) = alert_json(probe_alert(&mut w).await) {
-            result["alert"] = alert;
+        if let Some(alert) = alert_json(observed_alert) {result["alert"]=alert;}
         }
     }
-    for (key, block) in flow_after_actions(&state, &headers, &recorded_body) {
-        result[key] = block;
-    }
-    if let Some(block) = recover(state.agent_focus.lock()).take_notice() {
-        result["agent_focus"] = block;
+    if request_scope_refusal(&state,request_scope.as_ref()).is_none(){
+        for (key,block) in flow_after_actions(&state,&headers,&recorded_body){result[key]=block;}
+        if let Some(block)=recover(state.agent_focus.lock()).take_notice(){result["agent_focus"]=block;}
     }
     // A person can start a private hold while a read is in flight. Discard
     // every observation, including earlier step text, before returning it.
-    if observes_screen && state.screen_private_secs() > 0 {
-        return private_batch_refusal(completed, completed, applied_actions);
-    }
+
     agent_actions_json(StatusCode::OK, result)
 }
 
@@ -13403,7 +13408,11 @@ fn capture_settled_frame_later(
     state: &AppState,
     runner: Arc<tokio::sync::Mutex<crate::runner::RunnerClient>>,
     post_mark: Option<std::time::Instant>,
+    scope: Option<&crate::input_continuation::Scope>,
 ) {
+    let Some(scope)=scope.cloned() else{return;};
+    if request_scope_refusal(state,Some(&scope)).is_some(){return;}
+    let owner_epoch=state.owner_epoch.clone();
     let mut slot = recover(state.settled_frame_prefetch.lock());
     if let Some(previous) = slot.take() {
         previous.abort();
@@ -13411,9 +13420,11 @@ fn capture_settled_frame_later(
     if screen_private_now(&state.private_until) { return; }
     let privacy_epoch = state.privacy_epoch.clone();
     let private_until = state.private_until.clone();
-    let generation = privacy_epoch.load(std::sync::atomic::Ordering::Acquire);
+    let generation = scope.privacy_epoch;
     let task = tokio::spawn(async move {
+        let context=InputContext{scope:&scope,owner_epoch:&owner_epoch,privacy_epoch:&privacy_epoch,private_until:&private_until};
         let mut w = runner.lock().await;
+        if context.refusal().is_some(){return;}
         if privacy_epoch.load(std::sync::atomic::Ordering::Acquire) != generation || screen_private_now(&private_until) { return; }
         w.fence_settled_frame(generation);
         if w.last_post() != post_mark || w.settled_frame(SETTLED_FRAME_MAX_AGE).is_some() {
@@ -13424,9 +13435,9 @@ fn capture_settled_frame_later(
         // is megabytes the 3 s budget may not carry.
         let shot = crate::runner::ShotRequest::jpeg(Some(SETTLED_FRAME_MAX_SIDE));
         let budget = std::time::Duration::from_secs(3);
-        if let Ok(Ok(frame)) = tokio::time::timeout(budget, w.screenshot_sized(shot, budget)).await
+        if let Some(Ok(Ok(frame))) = in_input_context(context,tokio::time::timeout(budget, w.screenshot_sized(shot, budget))).await
         {
-            if w.last_post() == post_mark && is_valid_capture(&frame)
+            if context.refusal().is_none() && w.last_post() == post_mark && is_valid_capture(&frame)
                 && privacy_epoch.load(std::sync::atomic::Ordering::Acquire) == generation && !screen_private_now(&private_until) {
                 w.remember_settled_frame(frame);
             }
@@ -13932,7 +13943,9 @@ async fn agent_input_inner(
     }
     let scope = capture_recovery_scope(&state, &headers);
     let text_scope = capture_input_scope(&state, &headers, privacy_generation, scope.as_ref());
+    let fence=MutationObservationFence{state:state.clone(),scope:text_scope.clone()};
     let mut response = agent_input_claimed(State(state), Query(query), headers, body, text_scope).await;
+    response.extensions_mut().insert(fence);
     if let Some(scope) = scope {
         response.extensions_mut().insert(scope);
     }
@@ -14211,6 +14224,9 @@ async fn agent_input_claimed(
         {
             return None;
         }
+        if let Some((error,hint))=request_scope_refusal(&state,request_scope.as_ref()) {
+            return Some((client,RunnerControlOutcome::Refused(error,hint),None,None));
+        }
         if value.get("type").and_then(serde_json::Value::as_str) != Some("text") { unlock_before_action(&state, &mut client, agent_runner_deadline).await; }
         *recover(dispatch_marker.lock()) = Some(client.last_post());
         let mut detail = None;
@@ -14253,27 +14269,24 @@ async fn agent_input_claimed(
         } else {
             DEVICE_SETTLE_DEFAULT_CAP
         };
-        let (observed, report) = settle_and_read_elements(&mut client, budget, device_cap).await;
-        settled = Some((
-            observed.map(|(snapshot, rows)| (snapshot, Arc::new(rows))),
-            report,
-        ));
-        // A system alert is the one thing the settled tree may not show;
-        // report it alongside so the agent never has to screenshot for it.
-        // Bounded by its own hard 1.5s cap (see `probe_alert`), which is
-        // what the client's timeout budgets for on top of the action
-        // deadline and the observation budget.
-        alert = probe_alert(&mut client).await;
+        if let Some(((observed,report),observed_alert))=in_request_scope(&state,request_scope.as_ref(),async {
+            let data=settle_and_read_elements(&mut client,budget,device_cap).await;
+            let observed_alert=probe_alert(&mut client).await;
+            (data,observed_alert)
+        }).await {
+            settled=Some((observed.map(|(snapshot,rows)|(snapshot,Arc::new(rows))),report));
+            alert=observed_alert;
+        }
     }
     // The settled screen is ready for a screenshot request without a capture:
     // the settle check kept its frame, or — when it judged by the tree (a
     // focused text field, a screen that kept moving) — one is taken now, after
     // the response is on its way, while the agent reads it.
-    let frame_needed = settled.is_some() && client.settled_frame(SETTLED_FRAME_MAX_AGE).is_none();
+    let frame_needed = request_scope_refusal(&state,request_scope.as_ref()).is_none() && settled.is_some() && client.settled_frame(SETTLED_FRAME_MAX_AGE).is_none();
     let post_mark = client.last_post();
     drop(client);
     if frame_needed {
-        capture_settled_frame_later(&state, Arc::clone(runner), post_mark);
+        capture_settled_frame_later(&state, Arc::clone(runner), post_mark, request_scope.as_ref());
     }
     match outcome {
         RunnerControlOutcome::Applied => {
@@ -14357,9 +14370,10 @@ async fn agent_input_claimed(
                 }
             };
             let body = attach_alert(body, alert);
-            let mut blocks = flow_after_input(&state, &headers, &value);
-            if let Some(block) = recover(state.agent_focus.lock()).take_notice() {
-                blocks.push(("agent_focus", block));
+            let mut blocks=Vec::new();
+            if request_scope_refusal(&state,request_scope.as_ref()).is_none(){
+                blocks=flow_after_input(&state,&headers,&value);
+                if let Some(block)=recover(state.agent_focus.lock()).take_notice(){blocks.push(("agent_focus",block));}
             }
             let body = attach_flow_blocks(body, blocks);
             with_security_headers(
@@ -16057,6 +16071,25 @@ struct ReadPrivacyFence {
 /// fence or lose its fixed-size timing/metrics enrichment before it is installed.
 async fn privacy_read_body_layer(request: axum::extract::Request, next: axum::middleware::Next) -> Response {
     let response = next.run(request).await;
+    if let Some(fence)=response.extensions().get::<MutationObservationFence>().cloned(){
+        let is_json=response.headers().get(header::CONTENT_TYPE).and_then(|v|v.to_str().ok()).is_some_and(|v|v.starts_with("application/json"));
+        if is_json && axum::body::HttpBody::size_hint(response.body()).exact().is_some(){
+            let (mut parts,body)=response.into_parts();
+            let bytes=match axum::body::to_bytes(body,usize::MAX).await{Ok(bytes)=>bytes,Err(_)=>return Response::from_parts(parts,Body::from(crate::timing::UNKNOWN_BODY))};
+            parts.headers.remove(header::CONTENT_LENGTH);
+            let deferred=futures_util::stream::once(async move {
+                let output=if let Some((reason,_))=request_scope_refusal(&fence.state,fence.scope.as_ref()){
+                    recover(fence.state.element_snapshots.lock()).clear();
+                    recover(fence.state.owner_snapshots.lock()).clear();
+                    let value=serde_json::from_slice::<serde_json::Value>(&bytes).unwrap_or(serde_json::Value::Null);
+                    bytes::Bytes::from(serde_json::to_vec(&crate::observation::redact(value,reason)).unwrap_or_else(|_|crate::timing::UNKNOWN_BODY.as_bytes().to_vec()))
+                }else{bytes};
+                Ok::<_,std::io::Error>(output)
+            });
+            return Response::from_parts(parts,Body::from_stream(deferred));
+        }
+        return response;
+    }
     let Some(fence) = response.extensions().get::<ReadPrivacyFence>().cloned() else { return response; };
     // The response can sit queued before the HTTP writer first polls its body.
     use futures_util::StreamExt;

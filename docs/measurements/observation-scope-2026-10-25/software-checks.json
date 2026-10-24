@@ -1,0 +1,49 @@
+{
+  "scope": "candidate backend and wire checks, not physical-host acceptance",
+  "logs": {
+    "server": {
+      "sha256": "1ba97f7e7c94d726936af9ee7546b5a85d7c4b77e851be13f594ba0918d4c1b0",
+      "summaries": [
+        "test result: ok. 890 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 16.18s",
+        "test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 52.87s",
+        "test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 62.50s",
+        "test result: ok. 107 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.76s",
+        "test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 37.44s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.89s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.08s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.99s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.06s"
+      ]
+    },
+    "mcp": {
+      "sha256": "6482096d591a37b0a66daf482016d50baa5ea7612cc6e76fe5208286bbc51cbb",
+      "summaries": [
+        "test result: ok. 233 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 34.53s",
+        "test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.75s"
+      ]
+    },
+    "clippy": {
+      "sha256": "6588a70f3bc93a02ccc5a1b65861e5d95c5d7f06aecdd5a0a169835e1cc3de71",
+      "summaries": []
+    },
+    "before": {
+      "sha256": "ce4385cb3901547c51be1fa6b8aa9d554d79e18a7564ab34008b54fb3fdec5d6",
+      "summaries": [
+        "test result: FAILED. 0 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.88s"
+      ]
+    },
+    "private_preflight_contract_checkpoint": {
+      "sha256": "d90fda1db9c35217da25c04390d74fdd53722d15567f95120e105da9efdafc50",
+      "summaries": [
+        "test result: ok. 889 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 16.55s",
+        "test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 53.97s",
+        "test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 59.69s",
+        "test result: ok. 107 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.77s",
+        "test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 32.79s",
+        "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.87s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.30s",
+        "test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.58s"
+      ]
+    }
+  }
+}
