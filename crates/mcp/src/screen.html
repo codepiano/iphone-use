@@ -103,6 +103,7 @@
     "frame tool failed": "截图工具出错",
     "empty frame": "没有收到画面",
     "Control the phone through the conversation.": "通过对话操作手机。",
+    "Waiting for a new permitted frame.": "正在等待允许显示的新画面。",
   };
   const ZH = (() => {
     const first = (navigator.languages && navigator.languages[0]) || navigator.language || "en";
@@ -231,11 +232,13 @@
       const step = (ZH && body.next_step_zh) || body.next_step || body.hint;
       if (step) text += " — " + step;
     }
-    if (body.private_secs) {
+    if (body.private_secs || body.clear_frame) {
       setStatus("warn", describe(body));
       image.hidden = true;
       image.removeAttribute("src");
-      empty.textContent = t("Someone is signing in on the phone. The screen stays hidden until the agent continues.");
+      empty.textContent = body.private_secs
+        ? t("Someone is signing in on the phone. The screen stays hidden until the agent continues.")
+        : t("Waiting for a new permitted frame.");
       empty.hidden = false;
       return false;
     }

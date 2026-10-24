@@ -86,8 +86,9 @@ impl ScriptedDaemon {
                         let body = if request.starts_with(b"GET /agent/status ") {
                             status_body.as_ref().unwrap_or(&body)
                         } else { &body };
+                        let response_status = if request.starts_with(b"GET /agent/status ") && status_body.is_some() { "200 OK" } else { status };
                         let head = format!(
-                            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                            "HTTP/1.1 {response_status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                             body.len()
                         );
                         let _ = stream.write_all(head.as_bytes());
@@ -790,4 +791,25 @@ fn local_daemon_frames_ignore_gui_proxy_environment() {
     assert_eq!(body["ok"],true,"{body}");
     assert!(body["frame"]["data"].is_string(),"{body}");
     assert_eq!(daemon.requests.lock().unwrap().len(),2);
+}
+
+#[test]
+fn capture_privacy_refusal_clears_a_panel_even_when_status_still_says_open() {
+    for resource in [false,true] {
+        for code in ["screen_private","screen_privacy_changed"] {
+            let daemon=ScriptedDaemon::routed("423 Locked",serde_json::json!({"ok":false,"error":code}).to_string().into_bytes(),Duration::ZERO,
+                Some(br#"{"ok":true,"drivable":true,"screen_private_secs":0}"#.to_vec()));
+            let mut child=McpChild::start_options(&daemon.url,"off",&[("IPHONE_USE_MCP_HOST","workbuddy")]);
+            let body=if resource {
+                child.send(&serde_json::json!({"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"ui://iphone-use/frame-v1/600/1"}}));
+                let response=child.read_reply(2);
+                serde_json::from_str(response["result"]["contents"][0]["text"].as_str().unwrap()).unwrap()
+            } else {
+                child.call_tool(2,"phone_screen_frame",serde_json::json!({}))["result"]["structuredContent"].clone()
+            };
+            assert!(body["private_secs"].is_null(),"status intentionally raced before the private hold");
+            assert!(body["frame"].is_null());
+            assert_eq!(body["clear_frame"],true,"{body}");
+        }
+    }
 }

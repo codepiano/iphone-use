@@ -16,8 +16,8 @@ for (const resources of [false, true]) {
     return elements.get(id);
   }
   const events = new Map(), documentEvents = new Map(), messages = [], timers = new Map();
-  let timerId = 0, privateFrame = false;
-  const body = () => ({drivable:true, private_secs:privateFrame ? 60 : null,
+  let timerId = 0, privateFrame = false, clearFrame = false;
+  const body = () => ({drivable:true, clear_frame:clearFrame, private_secs:privateFrame ? 60 : null,
     frame:privateFrame ? null : {mime_type:"image/png",data:"fixture"}});
   const window = {
     addEventListener(name, handler) { events.set(name,handler); }, innerWidth:320,
@@ -63,7 +63,10 @@ for (const resources of [false, true]) {
   assert.equal(messages.filter(m=>m.method==="tools/call").length,resources ? 0 : 1);
   await element("home").click();await flush();
   assert.equal(messages.filter(m=>m.params?.name==="phone_shortcut").length,resources ? 0 : 1);
-  privateFrame=true;await poll();
+  clearFrame=true;await poll();
+  assert.equal(element("image").hidden,true,"a capture privacy refusal must clear even when status still says open");
+  assert.equal(element("image").src,undefined);
+  clearFrame=false;privateFrame=true;await poll();
   assert.equal(element("image").hidden,true,"a private hold must clear the previous frame");
   assert.equal(element("image").src,undefined);
   if(resources) {

@@ -42,4 +42,6 @@ curl -fsSL https://raw.githubusercontent.com/leeguooooo/iphone-use/main/install.
 
 配置中的命令必须是绝对路径；GUI 的 PATH 不保证包含 shell 里的工具目录。MCP 桥接本身是原生二进制，不需要 Node 或 Python 启动。该候选版本对回环 daemon 直接连接，不受 GUI 的 HTTP 代理变量影响；远程 daemon 保留代理设置，且需要显式配置自己的认证。
 
+截图返回隐私拒绝时，面板会清除上一张画面；即使并行的状态读取还显示画面开放，也以截图拒绝为准。
+
 本分支验证包含：隔离安装器、真实 stdio 请求、禁止面板工具调用的模拟宿主、MCP 进程重启、隐私画面清除和工具白名单限制。实际宿主信任、面板复用、显示帧率及完整任务完成率仍需单独验收，不能由这些回归替代。

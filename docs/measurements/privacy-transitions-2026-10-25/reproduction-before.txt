@@ -1,0 +1,56 @@
+
+running 3 tests
+test a_private_transition_invalidates_the_settled_frame_cache ... FAILED
+test in_flight_screen_reads_are_discarded_even_after_private_hold_is_lifted ... FAILED
+test in_flight_screen_reads_are_discarded_when_a_private_hold_begins ... FAILED
+
+failures:
+
+---- a_private_transition_invalidates_the_settled_frame_cache stdout ----
+
+thread 'a_private_transition_invalidates_the_settled_frame_cache' (30143064) panicked at crates/server/tests/privacy_capture.rs:72:9:
+assertion `left == right` failed: a private transition must not reuse the previous settled frame
+  left: [137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 16, 0, 0, 0, 16, 8, 6, 0, 0, 0, 31, 243, 255, 97, 0, 0, 1, 45, 73, 68, 65, 84, 120, 156, 21, 204, 193, 128, 4, 32, 0, 0, 192, 53, 56, 131, 12, 50, 200, 32, 131, 12, 50, 200, 32, 131, 12, 50, 200, 32, 131, 150, 32, 146, 189, 233, 49, 223, 249, 124, 63, 159, 223, 247, 143, 64, 36, 145, 41, 84, 26, 157, 193, 100, 177, 57, 220, 207, 239, 243, 253, 252, 9, 8, 68, 18, 153, 66, 165, 209, 25, 76, 22, 155, 195, 253, 123, 65, 16, 16, 136, 36, 50, 133, 74, 163, 51, 152, 44, 54, 135, 27, 94, 16, 5, 4, 34, 137, 76, 161, 210, 232, 12, 38, 139, 205, 225, 198, 23, 36, 1, 129, 72, 34, 83, 168, 52, 58, 131, 201, 98, 115, 184, 233, 5, 89, 64, 32, 146, 200, 20, 42, 141, 206, 96, 178, 216, 28, 110, 126, 65, 17, 16, 136, 36, 50, 133, 74, 163, 51, 152, 44, 54, 135, 91, 94, 80, 5, 4, 34, 137, 76, 161, 210, 232, 12, 38, 139, 205, 225, 214, 23, 52, 1, 129, 72, 34, 83, 168, 52, 58, 131, 201, 98, 115, 184, 237, 5, 93, 64, 32, 146, 200, 20, 42, 141, 206, 96, 178, 216, 28, 110, 127, 193, 16, 16, 136, 36, 50, 133, 74, 163, 51, 152, 44, 54, 135, 59, 94, 48, 5, 4, 34, 137, 76, 161, 210, 232, 12, 38, 139, 205, 225, 206, 23, 44, 1, 129, 72, 34, 83, 168, 52, 58, 131, 201, 98, 115, 184, 235, 5, 91, 64, 32, 146, 200, 20, 42, 141, 206, 96, 178, 216, 28, 238, 126, 193, 17, 16, 136, 36, 50, 133, 74, 163, 51, 152, 44, 54, 135, 123, 94, 112, 5, 4, 34, 137, 76, 161, 210, 232, 12, 38, 139, 205, 225, 222, 223, 63, 189, 123, 179, 31, 22, 147, 65, 108, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130]
+ right: [137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 16, 0, 0, 0, 16, 8, 6, 0, 0, 0, 31, 243, 255, 97, 0, 0, 1, 42, 73, 68, 65, 84, 120, 156, 21, 204, 193, 160, 109, 33, 0, 0, 192, 99, 112, 13, 218, 253, 101, 6, 25, 100, 144, 65, 6, 25, 100, 144, 65, 6, 25, 100, 144, 65, 36, 239, 79, 139, 217, 206, 247, 125, 255, 254, 126, 4, 34, 137, 76, 161, 210, 232, 12, 38, 139, 205, 225, 242, 125, 63, 1, 129, 72, 34, 83, 168, 52, 58, 131, 201, 98, 115, 184, 191, 23, 4, 1, 129, 72, 34, 83, 168, 52, 58, 131, 201, 98, 115, 184, 225, 5, 81, 64, 32, 146, 200, 20, 42, 141, 206, 96, 178, 216, 28, 110, 124, 65, 18, 16, 136, 36, 50, 133, 74, 163, 51, 152, 44, 54, 135, 155, 94, 144, 5, 4, 34, 137, 76, 161, 210, 232, 12, 38, 139, 205, 225, 230, 23, 20, 1, 129, 72, 34, 83, 168, 52, 58, 131, 201, 98, 115, 184, 229, 5, 85, 64, 32, 146, 200, 20, 42, 141, 206, 96, 178, 216, 28, 110, 125, 65, 19, 16, 136, 36, 50, 133, 74, 163, 51, 152, 44, 54, 135, 219, 94, 208, 5, 4, 34, 137, 76, 161, 210, 232, 12, 38, 139, 205, 225, 246, 23, 12, 1, 129, 72, 34, 83, 168, 52, 58, 131, 201, 98, 115, 184, 227, 5, 83, 64, 32, 146, 200, 20, 42, 141, 206, 96, 178, 216, 28, 238, 124, 193, 18, 16, 136, 36, 50, 133, 74, 163, 51, 152, 44, 54, 135, 187, 94, 176, 5, 4, 34, 137, 76, 161, 210, 232, 12, 38, 139, 205, 225, 238, 23, 28, 1, 129, 72, 34, 83, 168, 52, 58, 131, 201, 98, 115, 184, 231, 5, 87, 64, 32, 146, 200, 20, 42, 141, 206, 96, 178, 216, 28, 46, 255, 1, 202, 189, 5, 31, 77, 26, 100, 74, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- in_flight_screen_reads_are_discarded_even_after_private_hold_is_lifted stdout ----
+
+thread 'in_flight_screen_reads_are_discarded_even_after_private_hold_is_lifted' (30143065) panicked at crates/server/tests/privacy_capture.rs:45:9:
+assertion `left == right` failed: /agent/screenshot?raw=1, clear=true: privacy transition must discard the completed screen read
+  left: 200
+ right: 423
+
+---- in_flight_screen_reads_are_discarded_when_a_private_hold_begins stdout ----
+
+thread 'in_flight_screen_reads_are_discarded_when_a_private_hold_begins' (30143076) panicked at crates/server/tests/privacy_capture.rs:45:9:
+assertion `left == right` failed: /agent/screenshot?raw=1, clear=false: privacy transition must discard the completed screen read
+  left: 200
+ right: 423
+
+
+failures:
+    a_private_transition_invalidates_the_settled_frame_cache
+    in_flight_screen_reads_are_discarded_even_after_private_hold_is_lifted
+    in_flight_screen_reads_are_discarded_when_a_private_hold_begins
+
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.99s
+
+warning: use of deprecated method `std::sync::atomic::Atomic::<usize>::fetch_update`: renamed to `try_update` for consistency
+   --> crates/server/src/http.rs:882:11
+    |
+882 |         c.fetch_update(
+    |           ^^^^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+    |
+882 -         c.fetch_update(
+882 +         c.try_update(
+    |
+
+warning: `server` (lib) generated 1 warning (run `cargo fix --lib -p server` to apply 1 suggestion)
+   Compiling server v0.23.0 (/private/tmp/iphone-use-runner-input-target-guard/crates/server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.16s
+     Running tests/privacy_capture.rs (target/debug/deps/privacy_capture-859df7c90156b4b3)
+error: test failed, to rerun pass `-p server --test privacy_capture`

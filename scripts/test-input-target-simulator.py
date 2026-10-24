@@ -729,6 +729,24 @@ def main():
                 assert native_keys() == before_calls, "resource frame path sent keyboard input"
                 reports.append({"case":"workbuddy-resource-frame-across-two-mcp-processes", "passed":True,
                     "processes":2, "frame_mime":"image/png", "owner_unchanged":True, "native_key_requests":0})
+                status, held = api("/agent/hold", {"secs":60,"private":True})
+                assert status == 200, held
+                rpc({"jsonrpc":"2.0","id":3,"method":"resources/read","params":{
+                    "uri":"ui://iphone-use/frame-v1/600/3"}})
+                resource = reply(3)
+                hidden = json.loads(resource["result"]["contents"][0]["text"])
+                assert hidden["frame"] is None and hidden.get("clear_frame") is True, hidden
+                assert hidden.get("private_secs",0) > 0, hidden
+                status, lifted = api("/agent/hold", {"secs":0})
+                assert status == 200, lifted
+                rpc({"jsonrpc":"2.0","id":4,"method":"resources/read","params":{
+                    "uri":"ui://iphone-use/frame-v1/600/4"}})
+                resource = reply(4)
+                visible = json.loads(resource["result"]["contents"][0]["text"])
+                assert base64.b64decode(visible["frame"]["data"],validate=True).startswith(b"\x89PNG\r\n\x1a\n")
+                assert native_keys() == before_calls
+                reports.append({"case":"workbuddy-private-capture-clears-frame-and-new-read-resumes", "passed":True,
+                    "private_frame":None,"clear_frame":True,"fresh_read_after_unhide":"image/png","native_key_requests":0})
 
     except Exception as error:
         reports.append({"case": "harness-or-current-case", "passed": False, "error": str(error)})
@@ -762,7 +780,7 @@ def main():
                  Path("runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m"),
                  Path("runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerTests.swift")]
         if daemon_binary:
-            files.extend(map(Path, ["crates/server/src/http.rs", "crates/server/src/runner.rs", "crates/server/src/input_continuation.rs", "crates/server/src/recovery.rs"]))
+            files.extend(map(Path, ["crates/server/src/http.rs", "crates/server/src/runner.rs", "crates/server/src/input_continuation.rs", "crates/server/src/recovery.rs", "crates/server/src/video.rs"]))
         if mcp_binary:
             files.extend(map(Path, ["crates/mcp/src/server.rs", "crates/mcp/src/client.rs", "crates/mcp/src/screen.rs", "crates/mcp/src/screen.html"]))
         manifest = {"scope": "actual XCTest runner on disposable iOS Simulator; not physical-device evidence",
@@ -776,7 +794,7 @@ def main():
             manifest["mcp_binary_sha256"] = hashlib.sha256(mcp_binary.read_bytes()).hexdigest()
         (out / "results.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(json.dumps({"cases": reports, "observations": observations, "cleanup_errors": cleanup_errors}))
-    expected = (20 if mcp_binary else 19 if daemon_binary else 6) + ((3 if mcp_binary else 2) if args.recovery else 0) + int(args.hosts)
+    expected = (20 if mcp_binary else 19 if daemon_binary else 6) + ((3 if mcp_binary else 2) if args.recovery else 0) + 2 * int(args.hosts)
     return 0 if len(reports) == expected and all(r["passed"] for r in reports) and not cleanup_errors else 1
 
 

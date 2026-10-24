@@ -1226,6 +1226,25 @@ on the wrong app.
 
 ## Screens hidden from capture
 
+**Privacy transitions.** A screenshot (including overlay/re-encoding) and an
+element/OCR response are discarded if a private hold starts or changes during
+that read, even if it is lifted before completion. Before response commitment,
+active privacy returns `423 screen_private`; a completed on/off transition returns
+`423 screen_privacy_changed`. A body queued after headers is fenced again when
+published and closes with a read error if privacy changed. In-flight work is
+cancelled without retry; a native capture already sent may still finish.
+Check status before requesting a new observation;
+these refusals never authorize replay of a mutation. Snapshot baselines and
+settled image caches are invalidated across the transition.
+
+An existing MJPEG/H.264 feed ends across a privacy generation change. A new
+viewer after unhide uses a new producer generation; delayed native packets,
+VideoToolbox callbacks and stale subscribers cannot publish into it or keep
+capture running. Data already delivered before the transition cannot be
+withdrawn. MCP panels clear their last image when capture returns 423, including
+when a concurrent status request still reported the screen open.
+
+
 Payment and bank apps (PayPay, wallets) mark content as protected; every
 capture path gets a blank area. `GET /agent/screenshot` detects it and returns
 `X-Capture-Redacted: 1` with a **wireframe** of the accessibility tree (blue

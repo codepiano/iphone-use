@@ -1416,12 +1416,21 @@ impl PhoneHandler {
             self.daemon.status(),
             self.daemon.screen_frame(side, fresh.unwrap_or(false))
         );
-        crate::screen::frame_result(
+        // Status and pixels are read concurrently. A privacy refusal from the
+        // capture wins over a status response that still said the screen was open.
+        let clear_frame = frame.as_ref().err()
+            .and_then(|error| error.downcast_ref::<crate::client::DaemonHttpError>())
+            .is_some_and(|error| error.status == reqwest::StatusCode::LOCKED);
+        let mut result = crate::screen::frame_result(
             status
                 .map(|s| crate::screen::status_summary(&s, self.daemon.owner()))
                 .map_err(|e| format!("status failed: {e:#}")),
             frame.map_err(|e| format!("{e:#}")),
-        )
+        );
+        if clear_frame {
+            if let Some(body) = result.structured_content.as_mut() { body["clear_frame"] = true.into(); }
+        }
+        result
     }
 
     // -----------------------------------------------------------------------

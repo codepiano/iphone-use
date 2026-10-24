@@ -100,11 +100,13 @@ Actual trust, skill import, image rendering, panel reuse and complete tasks
 remain open. The panel still has the existing 2 fps PNG ceiling; integrating
 our native video path and matching reference streaming behavior remain open.
 
-Ordinary screenshot/overlay and live-stream privacy transitions also need a
-separate race audit: recovery responses already fence their own image by the
-privacy generation, while general captures currently check private state at
-entry and stream waits sample it. Static private-hold tests do not prove that
-a hold starting and ending during capture/re-encoding cannot race delivery.
+Ordinary screenshot/overlay, element/OCR reads, cached images, MJPEG/H.264
+publication and late encoder callbacks now have privacy-generation fences;
+[privacy evidence](../measurements/privacy-transitions-2026-10-25/README.md)
+records the reproduced failures and regressions. Backend concurrency checks do
+not establish physical/host acceptance or erase data already delivered. Batch
+and action-observation payloads, other metadata read paths and installed-package
+privacy behavior still require their own full audit.
 
 ## Trial protocol
 
