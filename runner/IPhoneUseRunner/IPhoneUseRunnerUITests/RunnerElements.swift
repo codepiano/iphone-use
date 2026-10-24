@@ -310,6 +310,21 @@ struct ClassChain {
   }
 }
 
+/// Guarded text is deliberately stricter than ordinary element reads: stale stored snapshots,
+/// non-editable nodes and unreported focus cannot authorize typing. Geometry and labels are not
+/// identities. The caller re-snapshots the retained live AX element on each chunk.
+enum InputTargetCheck {
+  static func refusal(type: String, focused: Bool, enabled: Bool, pid: Int32,
+                      foregroundPID: Int32, live: Bool) -> String? {
+    guard live else { return "input_target_unreadable" }
+    guard pid > 0, foregroundPID == pid else { return "input_target_app_changed" }
+    guard ["XCUIElementTypeTextField", "XCUIElementTypeTextView", "XCUIElementTypeSearchField"].contains(type)
+    else { return "input_target_not_editable" }
+    guard enabled, focused else { return "input_target_focus_changed" }
+    return nil
+  }
+}
+
 // MARK: - Registry
 
 /// Element ids handed out by the find routes, runner style. Entries keep the node they were found
@@ -328,6 +343,11 @@ final class ElementRegistry {
 
   var count: Int { entries.count }
 
+  func removeAll() {
+    entries.removeAll()
+    order.removeAll()
+  }
+
   func register(_ node: UINode, now: Date = Date()) -> String {
     let id = UUID().uuidString
     entries[id] = (node, now)
@@ -341,6 +361,16 @@ final class ElementRegistry {
   }
 
   func node(_ id: String) -> UINode? { entries[id]?.node }
+
+  /// Keep an actively used input binding alive, without creating a new identity. Move it to the
+  /// tail as prune relies on timestamp order; do not resurrect an expired/evicted binding.
+  func renew(_ id: String, node: UINode, now: Date = Date()) {
+    guard entries[id] != nil else { return }
+    entries[id] = (node, now)
+    order.removeAll { $0 == id }
+    order.append(id)
+  }
+
 
   /// Drops ids registered more than `maxAgeSeconds` before `now` (order is registration order).
   func prune(now: Date = Date()) {

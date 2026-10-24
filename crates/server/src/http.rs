@@ -9623,14 +9623,30 @@ async fn type_text_chunked(
     text: &str,
     clear: bool,
     deadline: tokio::time::Instant,
+    detail: &mut Option<serde_json::Value>,
 ) -> RunnerControlOutcome {
     use crate::text_input::{char_count, chunk_timeout, split, typing_time, CHUNK_CHARS};
     use std::sync::atomic::Ordering;
     let deadline = deadline
         .checked_sub(TEXT_CHUNK_DEADLINE_MARGIN)
         .unwrap_or(deadline);
-    if clear {
-        // As for short text: the clear is best-effort, the text is sent once.
+    let target = match w.input_target().await {
+        Ok(target) => target,
+        Err(error) => {
+            if let Some(runner) = crate::runner::runner_http_error(&error) {
+                *detail = Some(serde_json::json!({"runner_error":runner.to_json()}));
+                if runner.nothing_sent() { return RunnerControlOutcome::RunnerRejected; }
+            }
+            tracing::warn!("long text target binding failed before dispatch: {error:#}");
+            return RunnerControlOutcome::NotSent;
+        }
+    };
+    if clear && target.is_some() {
+        if let Err(error) = w.clear_input_target(target.as_deref().unwrap()).await {
+            return runner_failure_outcome(w, actionable, &error, "text", detail);
+        }
+    } else if clear {
+        // Old runners keep their existing clear semantics.
         if let Err(error) = w.clear_active().await {
             tracing::warn!("runner clear_active before chunked text: {error:#}");
         }
@@ -9650,7 +9666,26 @@ async fn type_text_chunked(
                 uncertain: 0,
             };
         }
-        if let Err(error) = w.keys_with_timeout(piece, chunk_timeout(n).min(left)).await {
+        let result = if let Some(token) = target.as_deref() {
+            w.keys_to_target(piece, token, chunk_timeout(n).min(left))
+                .await
+        } else {
+            w.keys_with_timeout(piece, chunk_timeout(n).min(left)).await
+        };
+        if let Err(error) = result {
+            if let Some(runner) = crate::runner::runner_http_error(&error) {
+                *detail = Some(serde_json::json!({"runner_error":runner.to_json()}));
+                if runner.nothing_sent() {
+                    // Earlier chunks (and a clear) may have landed. The rejected chunk did not.
+                    if confirmed == 0 && !clear {
+                        return RunnerControlOutcome::RunnerRejected;
+                    }
+                    return RunnerControlOutcome::TextPartial {
+                        confirmed,
+                        uncertain: 0,
+                    };
+                }
+            }
             actionable.store(false, Ordering::Release);
             w.invalidate_session();
             tracing::warn!("chunked text failed after {confirmed} characters: {error:#}");
@@ -9687,7 +9722,7 @@ fn text_partial_body(
         "characters_total": crate::text_input::char_count(text),
         "remaining_text": remaining,
         "hint": if uncertain == 0 {
-            "the deadline stopped typing between chunks: the first characters_confirmed characters are typed, nothing after them was sent. Send remaining_text as a new text action with clear=false; never resend the whole text"
+            "typing stopped between chunks: the first characters_confirmed characters are typed, nothing after them was sent. Locate the original intended field and confirm its current text and focus before appending remaining_text with clear=false; never resend the whole text"
         } else {
             "typing failed part-way: the first characters_confirmed characters are typed; the next characters_uncertain may be partly on screen. Read the field's value, then send only what is missing (from remaining_text) with clear=false; never resend the whole text"
         },
@@ -9983,7 +10018,7 @@ async fn direct_agent_action(
                 .get("clear")
                 .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false);
-            return type_text_chunked(w, actionable, text, clear, deadline).await;
+            return type_text_chunked(w, actionable, text, clear, deadline, detail).await;
         }
         "text"
             if value
@@ -11895,6 +11930,7 @@ async fn agent_actions_inner(
                     ] {
                         body[key] = partial[key].clone();
                     }
+                    if let Some(detail) = step_detail.as_ref() { body["detail"] = detail.clone(); }
                     return agent_actions_json(StatusCode::BAD_GATEWAY, body);
                 }
                 if outcome != RunnerControlOutcome::Applied {
@@ -13953,7 +13989,11 @@ async fn agent_input_inner(
             with_security_headers(
                 (
                     StatusCode::BAD_GATEWAY,
-                    axum::Json(text_partial_body(&value, confirmed, uncertain)),
+                    axum::Json({
+                        let mut body = text_partial_body(&value, confirmed, uncertain);
+                        if let Some(detail) = detail.as_ref() { body["detail"] = detail.clone(); }
+                        body
+                    }),
                 )
                     .into_response(),
             )
@@ -24915,6 +24955,141 @@ mod tests {
             healthy_runner_responder(request)
         });
         (runner, keys, clears)
+    }
+
+    /// Negotiate the real HTTP protocol and refuse a later chunk without reselection/replay.
+    #[test]
+    fn guarded_long_text_keeps_one_target_and_stops_on_focus_loss() {
+        block(async {
+            for fail_at in [0_usize, 1, 3] {
+                let calls = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+                let seen = calls.clone();
+                let mut runner = MockRunner::start(move |request| {
+                    let mut calls = seen.lock().unwrap();
+                    calls.push(request.to_string());
+                    if request.starts_with("POST /session ") {
+                        return r#"{"value":{"sessionId":"SESSION","capabilities":{"ipu:guardedInput":true}}}"#.into();
+                    }
+                    if request.contains("/wda/input-target") {
+                        return r#"{"value":{"token":"bound-field"}}"#.into();
+                    }
+                    if request.contains("/wda/keys") {
+                        let body: serde_json::Value = serde_json::from_str(request.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+                        assert_eq!(body["inputTarget"], "bound-field");
+                        let n = calls.iter().filter(|r| r.contains("/wda/keys")).count();
+                        if n == fail_at {
+                            let body = r#"{"value":{"error":"invalid argument","message":"input_target_focus_changed; nothing was sent"}}"#;
+                            return format!("HTTP/1.1 400 Bad Request\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
+                        }
+                        return r#"{"value":null}"#.into();
+                    }
+                    healthy_runner_responder(request)
+                });
+                let mut client = crate::runner::RunnerClient::new(runner.base()).unwrap();
+                let actionable = std::sync::atomic::AtomicBool::new(true);
+                let mut detail = None;
+                let outcome = direct_agent_action(&mut client, &actionable,
+                    &serde_json::json!({"type":"text","text":"x".repeat(800)}),
+                    &mut detail, far_deadline()).await;
+                match fail_at {
+                    0 => assert_eq!(outcome, RunnerControlOutcome::Applied),
+                    1 => assert_eq!(outcome, RunnerControlOutcome::RunnerRejected),
+                    3 => assert_eq!(outcome, RunnerControlOutcome::TextPartial { confirmed:400, uncertain:0 }),
+                    _ => unreachable!(),
+                }
+                if fail_at > 0 {
+                    assert_eq!(detail.as_ref().unwrap()["runner_error"]["message"],
+                        "input_target_focus_changed; nothing was sent");
+                }
+                let calls = calls.lock().unwrap();
+                assert_eq!(calls.iter().filter(|r| r.contains("/wda/input-target")).count(), 1);
+                assert_eq!(calls.iter().filter(|r| r.contains("/wda/keys")).count(), if fail_at == 0 { 4 } else { fail_at });
+                drop(calls);
+                runner.shutdown();
+            }
+        });
+    }
+
+    #[test]
+    fn guarded_long_text_cannot_clear_or_type_when_binding_fails() {
+        block(async {
+            for bad_target in [r#"{"value":{}}"#, r#"{"value":{"token":"../keys"}}"#, r#"{"value":{"error":"invalid argument","message":"input_target_missing; nothing was sent"}}"#] {
+                let mutations = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+                let seen = mutations.clone();
+                let mut runner = MockRunner::start(move |request| {
+                    if request.starts_with("POST /session ") {
+                        return r#"{"value":{"sessionId":"SESSION","capabilities":{"ipu:guardedInput":true}}}"#.into();
+                    }
+                    if request.contains("/wda/input-target") { return bad_target.into(); }
+                    if request.contains("/wda/keys") || request.contains("/clear") {
+                        seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    }
+                    healthy_runner_responder(request)
+                });
+                let mut client = crate::runner::RunnerClient::new(runner.base()).unwrap();
+                let outcome = direct_agent_action(&mut client, &std::sync::atomic::AtomicBool::new(true),
+                    &serde_json::json!({"type":"text","text":"x".repeat(600),"clear":true}),
+                    &mut None, far_deadline()).await;
+                assert_eq!(outcome, RunnerControlOutcome::NotSent);
+                assert_eq!(mutations.load(std::sync::atomic::Ordering::SeqCst), 0);
+                runner.shutdown();
+            }
+        });
+    }
+
+    #[test]
+    fn guarded_long_text_never_types_after_a_failed_targeted_clear() {
+        block(async {
+            let calls = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+            let seen = calls.clone();
+            let mut runner = MockRunner::start(move |request| {
+                seen.lock().unwrap().push(request.to_string());
+                if request.starts_with("POST /session ") {
+                    return r#"{"value":{"sessionId":"SESSION","capabilities":{"ipu:guardedInput":true}}}"#.into();
+                }
+                if request.contains("/wda/input-target") { return r#"{"value":{"token":"bound-field"}}"#.into(); }
+                if request.contains("/clear") {
+                    assert!(request.contains("/element/bound-field/clear"));
+                    assert!(request.contains(r#""inputTarget":"bound-field""#));
+                    return r#"{"value":{"error":"unknown error","message":"guarded clear incomplete"}}"#.into();
+                }
+                healthy_runner_responder(request)
+            });
+            let mut client = crate::runner::RunnerClient::new(runner.base()).unwrap();
+            let outcome = direct_agent_action(&mut client, &std::sync::atomic::AtomicBool::new(true),
+                &serde_json::json!({"type":"text","text":"x".repeat(600),"clear":true}),
+                &mut None, far_deadline()).await;
+            assert_eq!(outcome, RunnerControlOutcome::Failed);
+            assert!(!calls.lock().unwrap().iter().any(|r| r.contains("/wda/keys") || r.contains("/element/active")));
+            runner.shutdown();
+        });
+    }
+
+    #[test]
+    fn guarded_long_text_rechecks_capability_after_session_replacement() {
+        block(async {
+            let sessions = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let bindings = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let (seen_sessions, seen_bindings) = (sessions.clone(), bindings.clone());
+            let mut runner = MockRunner::start(move |request| {
+                if request.starts_with("POST /session ") {
+                    let first = seen_sessions.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0;
+                    return serde_json::json!({"value":{"sessionId":"SESSION","capabilities":{"ipu:guardedInput":first}}}).to_string();
+                }
+                if request.contains("/wda/input-target") {
+                    seen_bindings.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    return r#"{"value":{"token":"bound-field"}}"#.into();
+                }
+                healthy_runner_responder(request)
+            });
+            let mut client = crate::runner::RunnerClient::new(runner.base()).unwrap();
+            assert_eq!(client.input_target().await.unwrap(), Some("bound-field".into()));
+            client.invalidate_session();
+            assert_eq!(client.input_target().await.unwrap(), None);
+            assert_eq!(sessions.load(std::sync::atomic::Ordering::SeqCst), 2);
+            assert_eq!(bindings.load(std::sync::atomic::Ordering::SeqCst), 1);
+            runner.shutdown();
+        });
     }
 
     fn far_deadline() -> tokio::time::Instant {

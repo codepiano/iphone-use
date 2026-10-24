@@ -1,0 +1,21 @@
+{
+  "scope": "actual XCTest runner on disposable iOS Simulator; not physical-device evidence",
+  "simulator": "BFC4DA6D-2F3B-4355-98DE-E97E7C5035BC",
+  "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+  "cases": [
+    {
+      "case": "harness-or-current-case",
+      "passed": false,
+      "error": "POST /session/8139E158-A0C5-4F06-9C34-A0173DD8C5AB/element: expected 200, got 500: {'value': {'error': 'unknown error', 'message': 'cannot read the foreground tree: Error Domain=com.apple.dt.xctest.ui-testing.error Code=10009 \"Lost connection to the application (pid 63011).\" UserInfo={NSLocalizedDescription=Lost connection to the application (pid 63011)., NSUnderlyingError=0x105e9d140 {Error Domain=NSCocoaErrorDomain Code=4097 \"connection to service created from an endpoint\" UserInfo={NSDebugDescription=connection to service created from an endpoint}}}'}}"
+    }
+  ],
+  "cleanup_errors": [],
+  "xctestrun_sha256": "b451ce398fa218d683575378eb95649465ac9fa2908bbc95c13c3bad146d2f25",
+  "runner_binary_sha256": "347cf8c4b0986fe1a9adbf6fbe64b408dadf8cb6c7a8573e2828d1bc9217a6aa",
+  "sources": {
+    "scripts/test-input-target-simulator.py": "c2cfd77edf48b7c74f8fc441e0b727b8693f189d75a38eea229b85216689bda8",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerRoutes.swift": "14fbab981345b623d7aad40c1a0adc1ff11b4e57d6324f19bab3778e1b149e2d",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerElements.swift": "ec55235d802a501b5a129d06beba3c75509e4a9068ae1aa5125bca333edc378e",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m": "de5c960d294a3092ad45f1848f4502d16848a083b7a9f7ca6a0008e3f255a31a"
+  }
+}

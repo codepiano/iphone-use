@@ -1007,5 +1007,39 @@ do {
   check(false, "strict identifier predicate: \(error)")
 }
 
+// Guarded input uses live identity and focus, never labels or geometry.
+do {
+  func refusal(_ type: String = "XCUIElementTypeTextField", focused: Bool = true,
+               enabled: Bool = true, pid: Int32 = 42, foreground: Int32 = 42, live: Bool = true) -> String? {
+    InputTargetCheck.refusal(type: type, focused: focused, enabled: enabled, pid: pid,
+                             foregroundPID: foreground, live: live)
+  }
+  check(refusal() == nil, "live focused editable target is permitted")
+  check(refusal("XCUIElementTypeTextView") == nil, "multiline target is permitted")
+  check(refusal("XCUIElementTypeSearchField") == nil, "search target is permitted")
+  check(refusal(foreground: 43) == "input_target_app_changed", "app switch refuses target")
+  check(refusal(pid: 0, foreground: 0) != nil, "unknown foreground cannot authorize input")
+  check(refusal(focused: false) == "input_target_focus_changed", "focus switch refuses target")
+  check(refusal(enabled: false) != nil, "disabled target refuses input")
+  check(refusal(live: false) == "input_target_unreadable", "stored snapshot cannot authorize input")
+  check(refusal("XCUIElementTypeSecureTextField") != nil, "secure target requires human input")
+  check(refusal("XCUIElementTypeButton") != nil, "focused noneditable node refuses input")
+  let registry = ElementRegistry(capacity: 4)
+  let start = Date(timeIntervalSince1970: 100)
+  let id = registry.register(tree, now: start)
+  let later = registry.register(tree, now: start.addingTimeInterval(30))
+  registry.renew(id, node: tree, now: start.addingTimeInterval(50))
+  registry.prune(now: start.addingTimeInterval(95))
+  check(registry.node(later) == nil, "renew preserves timestamp order for expiry")
+  check(registry.node(id) != nil, "active binding survives original expiry")
+  registry.prune(now: start.addingTimeInterval(115))
+  registry.renew(id, node: tree, now: start.addingTimeInterval(116))
+  check(registry.node(id) == nil, "renew never resurrects expired binding")
+  let sessionID = registry.register(tree)
+  registry.removeAll()
+  registry.renew(sessionID, node: tree)
+  check(registry.count == 0, "session reset invalidates all prior bindings")
+}
+
 print(failures == 0 ? "unit check: \(checks) checks passed" : "unit check: \(failures) of \(checks) checks FAILED")
 exit(failures == 0 ? 0 : 1)
