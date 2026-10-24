@@ -295,7 +295,7 @@ struct VideoPrivacy {
 
 impl VideoPrivacy {
     fn permits(&self, generation: u64) -> bool {
-        self.generation == generation && !self.until.is_some_and(|until| until > std::time::Instant::now())
+        self.generation == generation && self.until.is_none_or(|until| until <= std::time::Instant::now())
     }
 }
 

@@ -56,13 +56,19 @@ checkpoint. No failed check is counted as acceptance.
 
 ## Actual daemon / runner integration
 
-`simulator-attempt-1.json` records 25 passed cases through the candidate daemon,
+`simulator-attempt-1.json` records 25 passed cases at checkpoint `bf3b2fe` through the candidate daemon,
 XCTest runner and stdio MCP on a disposable iPhone 17 / iOS 27 Simulator. The
 prior 24 input/continuation/cancellation/recovery/host checks still pass. The new
 case verifies a WorkBuddy resource frame during a real private hold: frame=null,
 clear_frame=true, then a valid PNG from a new read after unhide, without keyboard
 input. Listed source and executable hashes match; cleanup and simulator deletion
 were checked. This is backend integration, not actual WorkBuddy UI acceptance.
+
+The first CI check of `bf3b2fe` stopped at Clippy 1.96.0: its nonminimal_bool
+lint required the equivalent `Option::is_none_or(until <= now)` spelling. That
+lint-only follow-up does not rewrite this run's source or binary hashes. Runtime
+acceptance remains attributed to the recorded checkpoint; the exact new head's
+software checks and CI are tracked separately.
 
 ## Limits
 

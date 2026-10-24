@@ -43,5 +43,14 @@
         "test result: FAILED. 106 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.82s"
       ]
     }
+  },
+  "lint_followup": {
+    "command": "heavy-cargo +1.96.0 clippy --workspace --locked -- -D warnings",
+    "conclusion": "passed",
+    "log_sha256": "3caa91e762ad966c67e7ccb136c5e1a93411d3ff9695e495873253641777e352",
+    "first_ci_failure": "https://github.com/leeguooooo/iphone-use/actions/runs/40126880286",
+    "first_failure_rule": "clippy::nonminimal_bool",
+    "runtime_checkpoint": "bf3b2fe",
+    "change": "equivalent Option::is_none_or predicate; runtime manifest retained without rewriting hashes"
   }
 }
