@@ -15,6 +15,8 @@ const RECEIPT_KEYS: &[&str] = &[
     "characters_confirmed",
     "characters_uncertain",
     "characters_total",
+    "native_mutations_confirmed",
+    "native_mutations_uncertain",
     "remaining_text",
     "detail",
     "runner_error",

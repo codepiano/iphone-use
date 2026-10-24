@@ -32,6 +32,7 @@ pub mod prewarm;
 pub mod protocol;
 pub mod recording;
 pub mod observation;
+pub mod native_scope;
 pub mod recovery;
 pub mod redaction;
 pub mod runner_token;

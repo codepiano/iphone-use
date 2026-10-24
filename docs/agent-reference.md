@@ -139,6 +139,17 @@ screenshots, `/agent/elements` and live video answer `423 screen_private`, open
 streams end, and status shows `screen_private_secs`. A later hold without
 `private` lifts it.
 
+**Native sub-operations.** Scoped non-text input rechecks owner/privacy before
+each signed runner send, including after session/lookup/retry work. Metadata
+setup may be cancelled; an approved native mutation may finish and its valid
+acknowledgement remains authoritative. A logical action interrupted after a
+known native prefix reports `action_interrupted`, `outcome:partial`,
+`retry_safe:false` and `native_mutations_confirmed`/`native_mutations_uncertain`.
+These count native request acknowledgements, not app postconditions. Zero native
+mutation approvals can be refused as not_sent; uncertain delivery stays unknown.
+Never replay the whole interrupted action. Separate flow/suite requests and
+non-runner service/intent/vault paths require their own scope acceptance.
+
 **Action observations across handoff/privacy.** Input/actions requests retain
 entry owner/privacy scope for final observations, semantic waits and publication.
 A completed mutation keeps its original acknowledgement when its observation is

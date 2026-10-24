@@ -112,7 +112,9 @@ The combined Simulator input-privacy checkpoint passes 28 cases, including a hol
 after the fixture observes its first input character and fresh continuation
 after timed expiry plus an ordinary hold. [Action observation evidence](../measurements/observation-scope-2026-10-25/README.md)
 adds per-request final/wait/publication filtering while keeping mutation receipts.
-Opaque action internals, cross-request flows/suites, vault/intent/metadata and
+[Native request admission](../measurements/native-scope-2026-10-25/README.md)
+adds send-time guards and native-prefix receipts. Untimed/spawned/service paths,
+cross-request flows/suites, vault/intent/metadata and
 log retention, installed packages and physical modes still require audit.
 
 ## Trial protocol
@@ -144,11 +146,14 @@ keep equivalent raw trace and postcondition evidence for the reference.
 [host adapters](../measurements/host-adapters-2026-10-25/README.md),
 [read/stream privacy](../measurements/privacy-transitions-2026-10-25/README.md)
 [input privacy](../measurements/input-privacy-2026-10-25/README.md)
-and [action observations](../measurements/observation-scope-2026-10-25/README.md)
+[action observations](../measurements/observation-scope-2026-10-25/README.md)
+and [native admission](../measurements/native-scope-2026-10-25/README.md)
 retain exact staged source/binary hashes and earlier failures.
-The latest combined Simulator run passes 30 cases through the actual daemon,
+The latest combined Simulator run passes 31 cases through the actual daemon,
 runner and stdio MCP. It includes private input interruption and valid fresh
 work after expiry, alongside the prior target/cancellation/recovery/host checks.
+The native admission case additionally preserves one termination acknowledgement
+while refusing a later relaunch after privacy changes.
 Physical acceptance, other action/key/set_value and observation/vault paths,
 remaining opaque-action/flow/vault/log, recovery/host/video work, distribution and comparative task trials
 remain open. The broader goal is not complete.

@@ -850,3 +850,17 @@ fn omitted_ui_after_scope_change_keeps_success_and_notice_in_every_output_mode()
         assert_eq!(daemon.requests.lock().unwrap().len(),1,"no replay or surprise extra observation");
     }}
 }
+
+#[test]
+fn acknowledged_native_prefix_is_visible_even_when_no_whole_step_completed(){
+ for mode in ["full","slim","off"]{
+  let body=serde_json::json!({"ok":false,"error":"action_interrupted","outcome":"partial","failed_step_outcome":"partial","batch_outcome":"partially_applied","failed_step":0,"completed":0,"applied_actions":0,"retry_safe":false,"native_mutations_confirmed":1,"native_mutations_uncertain":0,"steps":[]});
+  let daemon=ScriptedDaemon::start("409 Conflict",body.to_string().into_bytes());let mut child=McpChild::start_with(&daemon.url,mode);
+  let response=child.call_tool(2,"phone_run_steps",serde_json::json!({"steps":[{"kind":"tap_locator","locator":{"label":"Target"}}],"observe":false}));
+  let result=&response["result"];assert_eq!(result["isError"],true,"{response}");
+  let text=result["content"].as_array().unwrap().iter().filter_map(|c|c["text"].as_str()).collect::<Vec<_>>().join("\n");
+  assert!(text.contains("1 acknowledged")&&text.contains("DO NOT replay"),"{response}");
+  if mode!="off"{assert_eq!(result["structuredContent"]["native_mutations_confirmed"],1);assert_eq!(result["structuredContent"]["retry_safe"],false);}
+  assert_eq!(daemon.requests.lock().unwrap().len(),1);
+ }
+}

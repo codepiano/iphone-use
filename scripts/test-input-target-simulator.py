@@ -147,6 +147,7 @@ def main():
     parser.add_argument("--hosts", action="store_true", help="verify WorkBuddy resource frames through restarted stdio processes")
     parser.add_argument("--input-privacy", action="store_true", help="verify pending and in-flight typing across private holds")
     parser.add_argument("--observation-scope", action="store_true", help="verify applied input keeps its receipt while stale observations are withheld")
+    parser.add_argument("--native-scope", action="store_true", help="verify no late relaunch after acknowledged termination")
     parser.add_argument("--runtime", default="com.apple.CoreSimulator.SimRuntime.iOS-27-0")
     parser.add_argument("--device-type", default="com.apple.CoreSimulator.SimDeviceType.iPhone-17")
     args = parser.parse_args()
@@ -158,6 +159,8 @@ def main():
     observations = []
     daemon_binary = args.daemon.resolve(strict=True) if args.daemon else None
     mcp_binary = args.mcp.resolve(strict=True) if args.mcp else None
+    if args.native_scope and not daemon_binary:
+        raise RuntimeError("--native-scope requires --daemon")
     if args.observation_scope and not daemon_binary:
         raise RuntimeError("--observation-scope requires --daemon")
     if args.input_privacy and not daemon_binary:
@@ -695,6 +698,35 @@ def main():
                     reports.append({"case":"batch-applied-receipt-withholds-stale-observation" if batch else "single-applied-receipt-withholds-stale-observation",
                         "passed":True,"native_atomic_requests":1,"ok":True,"observation_omitted":True,"independent_readback":True})
 
+            if args.native_scope:
+                prepare()
+                before_terminate=route_count("/wda/apps/terminate")
+                before_launch=route_count("/wda/apps/launch")
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    pending=pool.submit(api,"/agent/input",{"type":"launch_app","bundle":BUNDLE,"fresh":True})
+                    until=time.monotonic()+10
+                    while route_count("/wda/apps/terminate")==before_terminate:
+                        if pending.done() or time.monotonic()>=until:
+                            raise RuntimeError("fresh launch did not acknowledge termination")
+                        time.sleep(0.01)
+                    status,held=api("/agent/hold",{"secs":60,"private":True})
+                    assert status==200,held
+                    status,lifted=api("/agent/hold",{"secs":0})
+                    assert status==200,lifted
+                    status,receipt=pending.result(timeout=30)
+                assert status==409 and receipt.get("outcome")=="partial",receipt
+                assert receipt.get("native_mutations_confirmed")==1 and receipt.get("native_mutations_uncertain")==0,receipt
+                assert receipt.get("retry_safe") is False,receipt
+                assert route_count("/wda/apps/terminate")==before_terminate+1
+                assert route_count("/wda/apps/launch")==before_launch
+                reports.append({"case":"native-termination-ack-preserved-without-late-relaunch","passed":True,
+                    "native_mutations_confirmed":1,"native_mutations_uncertain":0,"later_launch_requests":0})
+                command("xcrun","simctl","launch",udid,BUNDLE)
+                settle_fixture()
+                first,second=find("field-a"),find("field-b")
+                call(prefix+f"/element/{first}/click",{})
+                wait_for(lambda: call(prefix+f"/element/{first}/attribute/focused") is True,"fixture focus after interrupted fresh launch")
+
             if mcp_binary:
                 prepare()
                 env = dict(environment)
@@ -888,7 +920,7 @@ def main():
                  Path("runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m"),
                  Path("runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerTests.swift")]
         if daemon_binary:
-            files.extend(map(Path, ["crates/server/src/http.rs", "crates/server/src/runner.rs", "crates/server/src/input_continuation.rs", "crates/server/src/recovery.rs", "crates/server/src/video.rs", "crates/server/src/observation.rs"]))
+            files.extend(map(Path, ["crates/server/src/http.rs", "crates/server/src/runner.rs", "crates/server/src/input_continuation.rs", "crates/server/src/recovery.rs", "crates/server/src/video.rs", "crates/server/src/observation.rs", "crates/server/src/native_scope.rs", "crates/server/src/timing.rs"]))
         if mcp_binary:
             files.extend(map(Path, ["crates/mcp/src/server.rs", "crates/mcp/src/client.rs", "crates/mcp/src/screen.rs", "crates/mcp/src/screen.html"]))
         manifest = {"scope": "actual XCTest runner on disposable iOS Simulator; not physical-device evidence",
@@ -902,7 +934,7 @@ def main():
             manifest["mcp_binary_sha256"] = hashlib.sha256(mcp_binary.read_bytes()).hexdigest()
         (out / "results.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(json.dumps({"cases": reports, "observations": observations, "cleanup_errors": cleanup_errors}))
-    expected = (20 if mcp_binary else 19 if daemon_binary else 6) + ((3 if mcp_binary else 2) if args.recovery else 0) + 2 * int(args.hosts) + 3 * int(args.input_privacy) + 2 * int(args.observation_scope)
+    expected = (20 if mcp_binary else 19 if daemon_binary else 6) + ((3 if mcp_binary else 2) if args.recovery else 0) + 2 * int(args.hosts) + 3 * int(args.input_privacy) + 2 * int(args.observation_scope) + int(args.native_scope)
     return 0 if len(reports) == expected and all(r["passed"] for r in reports) and not cleanup_errors else 1
 
 

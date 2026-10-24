@@ -641,6 +641,10 @@ pub fn failed_batch(json: &Value) -> Option<String> {
         None => {}
     }
     let mut out = vec![head];
+    if let Some(confirmed)=json.get("native_mutations_confirmed").and_then(Value::as_u64){
+        let uncertain=json.get("native_mutations_uncertain").and_then(Value::as_u64).unwrap_or(0);
+        out.push(format!("native sub-operations: {confirmed} acknowledged, {uncertain} uncertain; the logical action was interrupted. These are request acknowledgements, not app postconditions; do not replay the whole action"));
+    }
     // A long text that stopped part-way: how far it got is the whole point.
     // `remaining_text` itself stays in the structured content.
     if let Some(confirmed) = json.get("characters_confirmed").and_then(Value::as_u64) {

@@ -1,0 +1,48 @@
+
+running 3 tests
+test one_in_flight_native_ack_is_not_downgraded_by_scope_loss ... ok
+test acknowledged_termination_survives_but_fresh_launch_is_not_sent_after_scope_loss ... FAILED
+test scope_change_during_session_setup_never_sends_home ... FAILED
+
+failures:
+
+---- acknowledged_termination_survives_but_fresh_launch_is_not_sent_after_scope_loss stdout ----
+
+thread 'acknowledged_termination_survives_but_fresh_launch_is_not_sent_after_scope_loss' (31087271) panicked at crates/server/tests/native_scope.rs:29:2:
+assertion `left == right` failed: the termination was acknowledged: {"hint":"The original action delivery verdict is unchanged; UI observations and diagnostics were withheld because the owner/privacy scope changed. Check current status and coordinate with the current owner before new work. Never replay applied or uncertain steps","observation_omitted":true,"ok":true,"scope_changed":"input_privacy_changed","timing":{"daemon_ms":310,"runner":[{"bytes":33,"call":"POST /session","count":1,"ms":121},{"bytes":14,"call":"POST /appium/settings","count":1,"ms":208},{"bytes":14,"call":"POST /wda/apps/terminate","count":1,"ms":869},{"bytes":14,"call":"POST /wda/apps/launch","count":1,"ms":67}],"runner_ms":1265,"total_ms":1575},"transport":"runner"}
+  left: Null
+ right: "partial"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- scope_change_during_session_setup_never_sends_home stdout ----
+
+thread 'scope_change_during_session_setup_never_sends_home' (31087357) panicked at crates/server/tests/native_scope.rs:20:2:
+assertion `left == right` failed: {"hint":"The original action delivery verdict is unchanged; UI observations and diagnostics were withheld because the owner/privacy scope changed. Check current status and coordinate with the current owner before new work. Never replay applied or uncertain steps","observation_omitted":true,"ok":true,"scope_changed":"input_privacy_changed","timing":{"daemon_ms":3,"runner":[{"bytes":33,"call":"POST /session","count":1,"ms":788},{"bytes":14,"call":"POST /appium/settings","count":1,"ms":205},{"bytes":14,"call":"POST /wda/pressButton","count":1,"ms":206}],"runner_ms":1199,"total_ms":1202},"transport":"runner"}
+  left: 200
+ right: 409
+
+
+failures:
+    acknowledged_termination_survives_but_fresh_launch_is_not_sent_after_scope_loss
+    scope_change_during_session_setup_never_sends_home
+
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.89s
+
+warning: use of deprecated method `std::sync::atomic::Atomic::<usize>::fetch_update`: renamed to `try_update` for consistency
+   --> crates/server/src/http.rs:882:11
+    |
+882 |         c.fetch_update(
+    |           ^^^^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+    |
+882 -         c.fetch_update(
+882 +         c.try_update(
+    |
+
+warning: `server` (lib) generated 1 warning (run `cargo fix --lib -p server` to apply 1 suggestion)
+   Compiling server v0.23.0 (/private/tmp/iphone-use-runner-input-target-guard/crates/server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.62s
+     Running tests/native_scope.rs (target/debug/deps/native_scope-2acc92d5e63cd13f)
+error: test failed, to rerun pass `-p server --test native_scope`

@@ -6473,6 +6473,7 @@ enum RunnerControlOutcome {
     /// ones were sent without an acknowledgement and may be partly typed.
     /// Never replayed — the caller appends only the rest.
     TextPartial { confirmed: usize, uncertain: usize },
+    NativePartial { confirmed: u64 },
     /// The runner refused the request and said nothing reached the screen
     /// (issue #257: a scroll point outside the runner's screen). Its reason
     /// is in the `runner_error` detail.
@@ -9304,6 +9305,8 @@ fn runner_failure_outcome(
     detail: &mut Option<serde_json::Value>,
 ) -> RunnerControlOutcome {
     use std::sync::atomic::Ordering;
+    // Revocation is permission loss, not a broken device or transport.
+    if crate::native_scope::is_revoked(error) { return RunnerControlOutcome::Failed; }
     let runner = crate::runner::runner_http_error(error);
     if let Some(runner) = runner {
         *detail = Some(serde_json::json!({ "runner_error": runner.to_json() }));
@@ -9400,17 +9403,11 @@ fn runner_failed_after_dispatch_response() -> Response {
 /// `outcome_unknown`, carrying the runner's own reason (`runner_error`) when
 /// it answered with an error status (issue #257).
 fn runner_failed_after_dispatch_response_with(detail: Option<&serde_json::Value>) -> Response {
-    let Some(runner_error) = detail.and_then(|d| d.get("runner_error")) else {
-        return runner_failed_after_dispatch_response();
-    };
-    let body = serde_json::json!({
-        "ok": false,
-        "error": "outcome_unknown",
-        "outcome": "unknown",
-        "retry_safe": false,
-        "runner_error": runner_error,
-    });
-    with_security_headers((StatusCode::BAD_GATEWAY, axum::Json(body)).into_response())
+    let Some(detail)=detail else{return runner_failed_after_dispatch_response();};
+    if detail.get("runner_error").is_none()&&detail.get("native_mutations_confirmed").is_none(){return runner_failed_after_dispatch_response();}
+    let mut body=serde_json::json!({"ok":false,"error":"outcome_unknown","outcome":"unknown","retry_safe":false});
+    for key in ["runner_error","native_mutations_confirmed","native_mutations_uncertain"]{if let Some(value)=detail.get(key){body[key]=value.clone();}}
+    with_security_headers((StatusCode::BAD_GATEWAY,axum::Json(body)).into_response())
 }
 
 const RUNNER_REJECTED_HINT: &str = "the device runner refused this action before touching the screen (see runner_error); nothing was sent, so fix what it names and send it again";
@@ -9678,10 +9675,12 @@ async fn in_input_context<T>(context:InputContext<'_>,work:impl std::future::Fut
     }
 }
 
-fn batch_scope_refusal(state:&AppState,scope:Option<&crate::input_continuation::Scope>,index:usize,completed:usize,applied:usize,steps:&[serde_json::Value])->Response {
+fn batch_scope_refusal(state:&AppState,scope:Option<&crate::input_continuation::Scope>,index:usize,completed:usize,applied:usize,steps:&[serde_json::Value],observes_screen:bool)->Response {
     let (reason,_)=request_scope_refusal(state,scope).unwrap_or(("input_privacy_changed","observation permission changed"));
-    let body=agent_actions_failure_body(index,completed,applied,reason,"not_sent",applied==0,steps,None);
-    agent_actions_json(StatusCode::CONFLICT,crate::observation::redact(body,reason))
+    let private_read=observes_screen&&screen_private_now(&state.private_until);
+    let error=if private_read {"screen_private"}else{reason};
+    let body=agent_actions_failure_body(index,completed,applied,error,"not_sent",applied==0,steps,None);
+    agent_actions_json(if private_read {StatusCode::LOCKED}else{StatusCode::CONFLICT},crate::observation::redact(body,reason))
 }
 
 #[derive(Clone)]
@@ -9897,12 +9896,28 @@ fn validate_text_request(action: &serde_json::Map<String, serde_json::Value>) ->
     Ok(())
 }
 
+fn native_guard(state:&AppState,scope:&crate::input_continuation::Scope)->Arc<crate::native_scope::Guard>{
+    let scope=scope.clone();let owner=state.owner_epoch.clone();let privacy=state.privacy_epoch.clone();let until=state.private_until.clone();
+    crate::native_scope::Guard::new(move || InputContext{scope:&scope,owner_epoch:&owner,privacy_epoch:&privacy,private_until:&until}.refusal().map(|(reason,_)|reason))
+}
+
+fn native_partial_body(confirmed:u64)->serde_json::Value {
+    serde_json::json!({"ok":false,"error":"action_interrupted","outcome":"partial","retry_safe":false,
+        "native_mutations_confirmed":confirmed,"native_mutations_uncertain":0,
+        "hint":"Some native sub-operations were acknowledged before scope changed; the logical action did not complete. Inspect current state with the current owner, and never replay the whole action"})
+}
+fn native_partial_response(confirmed:u64)->Response {
+    with_security_headers((StatusCode::CONFLICT,axum::Json(native_partial_body(confirmed))).into_response())
+}
+
 /// Production entry points carry the current ownership incarnation. The legacy dispatcher
 /// remains useful for native actions and device-free tests; it cannot resume token-only input.
+#[allow(clippy::too_many_arguments)]
 async fn owned_agent_action(
     state: &AppState, headers: &HeaderMap, w: &mut crate::runner::RunnerClient,
     action: &serde_json::Value, detail: &mut Option<serde_json::Value>, deadline: tokio::time::Instant,
     request_scope: Option<&crate::input_continuation::Scope>,
+    unlock: bool,
 ) -> (RunnerControlOutcome, Option<serde_json::Value>) {
     let resume = is_input_continuation(action);
     let text = action.get("text").and_then(serde_json::Value::as_str).unwrap_or("");
@@ -9918,7 +9933,24 @@ async fn owned_agent_action(
         privacy_epoch:&state.privacy_epoch, private_until:&state.private_until };
     if let Some((error,hint)) = context.refusal() { return (RunnerControlOutcome::Refused(error,hint),None); }
     if action.get("type").and_then(serde_json::Value::as_str)!=Some("text") {
-        return (direct_agent_action(w, &state.runner_actionable, action, detail, deadline).await, None);
+        let guard=native_guard(state,context.scope);
+        let outcome=guard.run(async {
+            if unlock {unlock_before_action(state,w,deadline).await;}
+            direct_agent_action(w,&state.runner_actionable,action,detail,deadline).await
+        }).await;
+        if guard.denied() {
+            let counts=guard.counts();
+            let metadata=detail.get_or_insert_with(||serde_json::json!({}));
+            metadata["native_mutations_confirmed"]=counts.confirmed.into();
+            metadata["native_mutations_uncertain"]=counts.uncertain().into();
+            if outcome==Some(RunnerControlOutcome::Applied)&&counts.confirmed>0&&counts.uncertain()==0 {
+                return (RunnerControlOutcome::Applied,None);
+            }
+            if counts.uncertain()>0 {return (RunnerControlOutcome::Failed,None);}
+            if counts.confirmed>0 {return (RunnerControlOutcome::NativePartial{confirmed:counts.confirmed},None);}
+            return (RunnerControlOutcome::Refused(guard.reason(),"scope changed before native input; nothing was sent. Check status and coordinate with the current owner before new work"),None);
+        }
+        return (outcome.unwrap_or(RunnerControlOutcome::NotSent),None);
     }
     if !resume && budget.is_none() && text.chars().count() <= crate::text_input::CHUNK_CHARS {
         // Capability discovery may await a new session. Recheck before sending
@@ -11991,7 +12023,7 @@ async fn agent_actions_claimed(
         }
     }
 
-    if request_scope_refusal(&state,request_scope.as_ref()).is_some(){return batch_scope_refusal(&state,request_scope.as_ref(),0,0,0,&[]);}
+    if request_scope_refusal(&state,request_scope.as_ref()).is_some(){return batch_scope_refusal(&state,request_scope.as_ref(),0,0,0,&[],observes_screen);}
     state.touch_activity();
     state.cancel_settled_frame_prefetch();
     // Do Not Disturb at a quiet moment; a batch that opens with launch_app
@@ -12008,7 +12040,7 @@ async fn agent_actions_claimed(
         _ => None,
     }).unwrap_or(false);
     if !starts_with_text && !request.steps.iter().any(|step| matches!(step, AgentActionStep::Action {action,..} if is_input_continuation(action))) {
-        engage_agent_focus(&state, runner, first_launch.flatten(), true).await;
+        if let Some(scope)=request_scope.as_ref(){native_guard(&state,scope).scoped(engage_agent_focus(&state,runner,first_launch.flatten(),true)).await;}
     }
     // Long text steps add their typing time (zero for text up to one chunk).
     let typing_allowance: std::time::Duration = request
@@ -12041,7 +12073,7 @@ async fn agent_actions_claimed(
     let mut applied_actions = 0_usize;
     let mut step_results = Vec::with_capacity(request.steps.len());
     for (index, step) in request.steps.iter().enumerate() {
-        if request_scope_refusal(&state,request_scope.as_ref()).is_some(){return batch_scope_refusal(&state,request_scope.as_ref(),index,completed,applied_actions,&step_results);}
+        if request_scope_refusal(&state,request_scope.as_ref()).is_some(){return batch_scope_refusal(&state,request_scope.as_ref(),index,completed,applied_actions,&step_results,observes_screen);}
         if observes_screen && state.screen_private_secs() > 0 {
             return private_batch_refusal(index, completed, applied_actions);
         }
@@ -12107,7 +12139,7 @@ async fn agent_actions_claimed(
                 let effective;
                 let outcome = match tokio::time::timeout_at(
                     batch_deadline,
-                    owned_agent_action(&state, &headers, &mut w, action, &mut step_detail, batch_deadline, request_scope.as_ref()),
+                    owned_agent_action(&state, &headers, &mut w, action, &mut step_detail, batch_deadline, request_scope.as_ref(), false),
                 )
                 .await
                 {
@@ -12169,6 +12201,11 @@ async fn agent_actions_claimed(
                     continue;
                 }
                 renew_after_long_text(&state, &headers, action, request_scope.as_ref());
+                if let RunnerControlOutcome::NativePartial{confirmed}=outcome {
+                    let mut body=agent_actions_failure_body(index,completed,applied_actions,"action_interrupted","partial",false,&step_results,None);
+                    body["native_mutations_confirmed"]=confirmed.into();body["native_mutations_uncertain"]=0.into();
+                    return agent_actions_json(StatusCode::CONFLICT,body);
+                }
                 if let RunnerControlOutcome::TextPartial {
                     confirmed,
                     uncertain,
@@ -12265,6 +12302,7 @@ async fn agent_actions_claimed(
                         RunnerControlOutcome::NoEffect(error, _) => {
                             (StatusCode::CONFLICT, error, "no_effect", true)
                         }
+                        RunnerControlOutcome::NativePartial{..} => (StatusCode::CONFLICT,"action_interrupted","partial",false),
                         RunnerControlOutcome::Refused(error, _) => {
                             (StatusCode::CONFLICT, error, "not_sent", true)
                         }
@@ -12310,6 +12348,9 @@ async fn agent_actions_claimed(
                         None,
                     );
                     // The runner's own reason for a refused or failed step.
+                    for key in ["native_mutations_confirmed","native_mutations_uncertain"]{
+                        if let Some(value)=step_detail.as_ref().and_then(|detail|detail.get(key)){body[key]=value.clone();}
+                    }
                     if let Some(runner_error) =
                         step_detail.as_ref().and_then(|d| d.get("runner_error"))
                     {
@@ -12343,7 +12384,7 @@ async fn agent_actions_claimed(
             AgentActionStep::Pause { ms } => {
                 match in_request_scope(&state,request_scope.as_ref(),tokio::time::timeout_at(batch_deadline,
                     tokio::time::sleep(std::time::Duration::from_millis(*ms)))).await {
-                    None=>return batch_scope_refusal(&state,request_scope.as_ref(),index,completed,applied_actions,&step_results),
+                    None=>return batch_scope_refusal(&state,request_scope.as_ref(),index,completed,applied_actions,&step_results,observes_screen),
                     Some(Err(_))=>return agent_actions_failure(StatusCode::GATEWAY_TIMEOUT,index,completed,applied_actions,"batch_deadline","not_sent",applied_actions==0,&step_results,None),
                     Some(Ok(()))=>{},
                 }
@@ -12381,7 +12422,7 @@ async fn agent_actions_claimed(
                 let probes = if alert_only { None } else { wait_probe_predicates(expect) };
                 let mut probe_misses = 0_u64;
                 loop {
-                    if request_scope_refusal(&state,request_scope.as_ref()).is_some(){return batch_scope_refusal(&state,request_scope.as_ref(),index,completed,applied_actions,&step_results);}
+                    if request_scope_refusal(&state,request_scope.as_ref()).is_some(){return batch_scope_refusal(&state,request_scope.as_ref(),index,completed,applied_actions,&step_results,observes_screen);}
                     if state.screen_private_secs() > 0 {
                         return private_batch_refusal(index, completed, applied_actions);
                     }
@@ -12395,7 +12436,7 @@ async fn agent_actions_claimed(
                         if tokio::time::Instant::now() + poll < probe_deadline
                             && match in_request_scope(&state,request_scope.as_ref(),wait_probe_missed(&mut w, probes, probe_deadline)).await {
                                 Some(missed)=>missed,
-                                None=>return batch_scope_refusal(&state,request_scope.as_ref(),index,completed,applied_actions,&step_results),
+                                None=>return batch_scope_refusal(&state,request_scope.as_ref(),index,completed,applied_actions,&step_results,observes_screen),
                             }
                         {
                             probe_misses += 1;
@@ -12407,7 +12448,7 @@ async fn agent_actions_claimed(
                     }
                     let Some(read)=in_request_scope(&state,request_scope.as_ref(),async {
                         if alert_only {agent_wait_alert(&mut w,wait_deadline).await} else {agent_wait_elements(&mut w,wait_deadline).await}
-                    }).await else {return batch_scope_refusal(&state,request_scope.as_ref(),index,completed,applied_actions,&step_results);};
+                    }).await else {return batch_scope_refusal(&state,request_scope.as_ref(),index,completed,applied_actions,&step_results,observes_screen);};
                     if state.screen_private_secs() > 0 {
                         return private_batch_refusal(index, completed, applied_actions);
                     }
@@ -14169,7 +14210,7 @@ async fn agent_input_claimed(
     let focus_started = tokio::time::Instant::now();
     // Typing relies on an already-focused field. A DND shortcut must not replace that app.
     if value.get("type").and_then(serde_json::Value::as_str) != Some("text") {
-        engage_agent_focus(&state, runner, crate::focus::launch_bundle(&value), true).await;
+        if let Some(scope)=request_scope.as_ref(){native_guard(&state,scope).scoped(engage_agent_focus(&state,runner,crate::focus::launch_bundle(&value),true)).await;}
     }
     // A long text gets its typing time on top (zero for text up to one chunk),
     // so the per-chunk timeouts, not this deadline, decide how it ends.
@@ -14227,10 +14268,9 @@ async fn agent_input_claimed(
         if let Some((error,hint))=request_scope_refusal(&state,request_scope.as_ref()) {
             return Some((client,RunnerControlOutcome::Refused(error,hint),None,None));
         }
-        if value.get("type").and_then(serde_json::Value::as_str) != Some("text") { unlock_before_action(&state, &mut client, agent_runner_deadline).await; }
         *recover(dispatch_marker.lock()) = Some(client.last_post());
         let mut detail = None;
-        let (outcome, effective) = owned_agent_action(&state, &headers, &mut client, &value, &mut detail, agent_runner_deadline, request_scope.as_ref()).await;
+        let (outcome, effective) = owned_agent_action(&state, &headers, &mut client, &value, &mut detail, agent_runner_deadline, request_scope.as_ref(), true).await;
         Some((client, outcome, detail, effective))
     })
     .await;
@@ -14426,6 +14466,7 @@ async fn agent_input_claimed(
         RunnerControlOutcome::NoAlert => no_alert_response(),
         RunnerControlOutcome::ForcePressUnsupported => force_press_unsupported_response(),
         RunnerControlOutcome::NoPageScroller(hint) => no_page_scroller_response(hint),
+        RunnerControlOutcome::NativePartial{confirmed} => native_partial_response(confirmed),
         RunnerControlOutcome::TextPartial {
             confirmed,
             uncertain,
