@@ -84,6 +84,7 @@ pub fn app_state(inputs: StateInputs<'_>) -> Arc<AppState> {
         ))),
         hold_until: Arc::new(Mutex::new(None)),
         private_until: Arc::new(Mutex::new(None)),
+        privacy_epoch: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         owner: Arc::new(Mutex::new(None)),
         owner_lease_secs: inputs.cfg.owner_lease_secs,
         owner_epoch: Arc::new(std::sync::atomic::AtomicU64::new(0)),

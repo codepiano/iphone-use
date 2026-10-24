@@ -360,6 +360,23 @@ hovering at an edge to flip a folder page. Use coordinates observed on the
 current screen, then verify the end screen. Flow drafts preserve all points and
 dwells. `supported.drag_path` in `/agent/capabilities` advertises this format.
 
+**Visual recovery.** Scoped failures such as missing/covered targets, no scroll
+progress, failed waits and an observed input-target change can include one fresh
+`image` and a `recovery` next step. HTTP status, error, outcome, retry safety and
+prior dispatch counts retain their original meanings. The image is requested
+after the failure response was formed; its source, request/receive interval and
+`pixel_size` describe a later screen, not the failure instant. Coordinate taps
+use pixel x/y divided by that image's width/height to obtain normalized 0..1.
+Use a fresh visible target; never replay an uncertain input or the whole batch.
+
+Automatic capture requires the original named owner's live lease and unchanged
+owner/privacy generations. Privacy holds, human handoff, release or transitions
+withhold it. Capture has a two-second total budget and a bounded response size;
+no cached-frame fallback is used. Unavailable/omitted images do not replace the
+original failure. `X-Phone-Recovery-Image: none` skips this behavior; operators may
+set `IPHONE_USE_RECOVERY_IMAGES=0` on the daemon. MCP lifts PNG data into one image
+content block and keeps only metadata in text/structured content.
+
 **Short text and replacement.** A runner advertising `ipu:atomicText` handles
 up to 200 Unicode scalars in one native request: bind the focused nonsecure
 field, optionally clear it, type, then recheck the same field and app. No

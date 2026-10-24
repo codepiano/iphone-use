@@ -466,6 +466,8 @@ pub struct AppState {
     /// and the element tree are refused and open streams end. Ends with the
     /// hold. See [`AppState::screen_private_secs`].
     pub private_until: Arc<Mutex<Option<Instant>>>,
+    /// Fences captures across an explicit private-hold toggle, even if it is lifted before capture completes.
+    pub privacy_epoch: Arc<std::sync::atomic::AtomicU64>,
     /// Who is driving the phone right now (issue #72). A client that names
     /// itself with `X-Phone-Owner` takes this lease on its first control
     /// request and refreshes it on every one; other clients' control requests
@@ -11742,7 +11744,8 @@ async fn agent_actions(
     if let Some(owner) = trusted_bearer_owner(&state, &headers) {
         crate::advice::reset(&owner);
     }
-    agent_actions_inner(state, headers, body).await
+    let response = agent_actions_inner(state.clone(), headers.clone(), body).await;
+    attach_failure_recovery(&state, &headers, response).await
 }
 
 /// No screen text survives a privacy refusal, but prior dispatch counts and
@@ -11780,6 +11783,19 @@ async fn agent_actions_inner(
         Ok(true) => prewarm_on_new_lease(&state, &headers),
         Ok(false) => {}
     }
+    let scope = capture_recovery_scope(&state, &headers);
+    let mut response = agent_actions_claimed(State(state), headers, body).await;
+    if let Some(scope) = scope {
+        response.extensions_mut().insert(scope);
+    }
+    response
+}
+
+async fn agent_actions_claimed(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: String,
+) -> Response {
     if body.len() > AGENT_ACTIONS_MAX_BODY_BYTES {
         return agent_actions_invalid(format!(
             "request body exceeds {AGENT_ACTIONS_MAX_BODY_BYTES} bytes"
@@ -13579,6 +13595,173 @@ async fn read_json_response(response: Response) -> (Response, Option<serde_json:
     }
 }
 
+#[derive(Clone)]
+struct RecoveryScope {
+    owner: String,
+    epoch: u64,
+    privacy_epoch: u64,
+}
+
+fn capture_recovery_scope(state: &AppState, headers: &HeaderMap) -> Option<RecoveryScope> {
+    let name = named_owner(headers)?;
+    let owner = recover(state.owner.lock());
+    owner
+        .as_ref()
+        .filter(|owner| owner.name == name)
+        .map(|_| RecoveryScope {
+            owner: name.into(),
+            epoch: state.owner_epoch.load(std::sync::atomic::Ordering::Acquire),
+            privacy_epoch: state
+                .privacy_epoch
+                .load(std::sync::atomic::Ordering::Acquire),
+        })
+}
+
+fn recovery_scope_current(state: &AppState, scope: &RecoveryScope) -> bool {
+    let owner = recover(state.owner.lock());
+    state.owner_epoch.load(std::sync::atomic::Ordering::Acquire) == scope.epoch
+        && state
+            .privacy_epoch
+            .load(std::sync::atomic::Ordering::Acquire)
+            == scope.privacy_epoch
+        && owner.as_ref().is_some_and(|owner| {
+            owner.name == scope.owner
+                && Instant::now().saturating_duration_since(owner.last_seen)
+                    < std::time::Duration::from_secs(state.owner_lease_secs)
+        })
+        && !screen_private_now(&state.private_until)
+        && !human_handoff_active()
+        && !state.released.load(std::sync::atomic::Ordering::Acquire)
+        && !state.runner_lifecycle.is_transitioning()
+}
+
+/// Preserve status and every fate/count field even when capture fails. No cached frame fallback.
+async fn attach_failure_recovery(
+    state: &Arc<AppState>,
+    headers: &HeaderMap,
+    response: Response,
+) -> Response {
+    if headers
+        .get("x-phone-recovery-image")
+        .is_some_and(|v| v.as_bytes() == b"none")
+        || std::env::var("IPHONE_USE_RECOVERY_IMAGES")
+            .is_ok_and(|v| matches!(v.as_str(), "0" | "false" | "off"))
+    {
+        return response;
+    }
+    let Some(scope) = response.extensions().get::<RecoveryScope>().cloned() else {
+        return response;
+    };
+    let (response, json) = read_json_response(response).await;
+    let Some(mut json) = json.filter(serde_json::Value::is_object) else {
+        return response;
+    };
+    let Some(advice) = crate::recovery::advice(&json) else {
+        return response;
+    };
+    json["recovery"] =
+        serde_json::json!({"visual_check_required":true,"replay_action":false,"next_step":advice});
+    if !recovery_scope_current(state, &scope) {
+        json["recovery"]["image_omitted"] = "owner_or_privacy_changed".into();
+    } else {
+        let budget =
+            crate::scope::image_budget_bytes().min(crate::scope::DEFAULT_IMAGE_BUDGET_BYTES);
+        let capture = async {
+            let mut outcome = crate::scope::ImageOutcome::Unavailable;
+            for side in crate::scope::IMAGE_SIDES {
+                if !recovery_scope_current(state, &scope) {
+                    break;
+                }
+                let requested_ms = crate::metrics::now_ms();
+                let shot = agent_screenshot(
+                    State(state.clone()),
+                    headers.clone(),
+                    Query(ScreenshotQuery {
+                        raw: None,
+                        max_side: Some(side),
+                        fresh: Some("1".into()),
+                        overlay: None,
+                    }),
+                )
+                .await;
+                if !shot.status().is_success() {
+                    break;
+                }
+                let source = shot
+                    .headers()
+                    .get("x-screenshot-source")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("runner-capture")
+                    .to_string();
+                let redacted = shot
+                    .headers()
+                    .get("x-capture-redacted")
+                    .is_some_and(|v| v.as_bytes() == b"1");
+                let Ok(png) = axum::body::to_bytes(shot.into_body(), 32 << 20).await else {
+                    break;
+                };
+                let received_ms = crate::metrics::now_ms();
+                if png.len() < 24 || &png[..8] != b"\x89PNG\r\n\x1a\n" {
+                    break;
+                }
+                if json.to_string().len() + png.len().div_ceil(3) * 4 + 1024 > budget {
+                    outcome = crate::scope::ImageOutcome::TooLarge;
+                    continue;
+                }
+                outcome = crate::scope::ImageOutcome::Attached {
+                    png: png.to_vec(),
+                    requested_ms,
+                    received_ms,
+                    source,
+                    max_side: side,
+                    redacted,
+                };
+                break;
+            }
+            outcome
+        };
+        match tokio::time::timeout(std::time::Duration::from_secs(2), capture).await {
+            Ok(outcome) if recovery_scope_current(state, &scope) => {
+                let dimensions = match &outcome {
+                    crate::scope::ImageOutcome::Attached { png, .. } if png.len() >= 24 => Some([
+                        u32::from_be_bytes(png[16..20].try_into().unwrap()),
+                        u32::from_be_bytes(png[20..24].try_into().unwrap()),
+                    ]),
+                    _ => None,
+                };
+                crate::scope::attach_image(&mut json, outcome);
+                if let Some(image) = json.get_mut("image") {
+                    if let Some(dimensions) = dimensions {
+                        image["pixel_size"] = serde_json::json!(dimensions);
+                    }
+                    image["relation"]="fresh capture requested after the failure response; not the failure instant".into();
+                    image["coordinates"] =
+                        "normalized_0_1: divide pixel x/y by this image's width/height".into();
+                }
+            }
+            Ok(_) => json["recovery"]["image_omitted"] = "owner_or_privacy_changed".into(),
+            Err(_) => {
+                json["image_unavailable"] = true.into();
+                json["recovery"]["image_omitted"] = "capture_timeout".into();
+            }
+        }
+    }
+    if json.get("image").is_none() {
+        let withheld = json
+            .pointer("/recovery/image_omitted")
+            .and_then(serde_json::Value::as_str)
+            == Some("owner_or_privacy_changed");
+        json["recovery"]["next_step"] = if withheld {
+            "Recovery capture was withheld because ownership/privacy changed. Re-read current status and coordinate with the current owner before proceeding; do not replay this operation".into()
+        } else {
+            "The original failure is unchanged; recovery capture was unavailable or over budget. Check current owner/privacy and, only if the task still needs it, request one fresh screenshot before choosing a new action. Never replay an uncertain operation".into()
+        };
+    }
+    let (mut parts, _) = response.into_parts();
+    parts.headers.remove(header::CONTENT_LENGTH);
+    Response::from_parts(parts, Body::from(json.to_string()))
+}
+
 fn refused_as_unauthenticated(response: &Response) -> bool {
     matches!(response.status().as_u16(), 401 | 403 | 429)
 }
@@ -13593,7 +13776,8 @@ async fn agent_input(
     body: String,
 ) -> Response {
     let Some(owner) = trusted_bearer_owner(&state, &headers) else {
-        return agent_input_inner(state, Query(query), headers, body).await;
+        let response = agent_input_inner(state.clone(), Query(query), headers.clone(), body).await;
+        return attach_failure_recovery(&state, &headers, response).await;
     };
     let observed = query.return_mode.as_deref() == Some("delta");
     let action = serde_json::from_str::<serde_json::Value>(&body)
@@ -13608,7 +13792,8 @@ async fn agent_input(
             None
         }
     };
-    let response = agent_input_inner(state, Query(query), headers, body).await;
+    let response = agent_input_inner(state.clone(), Query(query), headers.clone(), body).await;
+    let response = attach_failure_recovery(&state, &headers, response).await;
     let Some(guard) = guard else {
         return response;
     };
@@ -13650,6 +13835,20 @@ async fn agent_input_inner(
     if let Err(refused) = claim_phone_owner(&state, &headers) {
         return refused;
     }
+    let scope = capture_recovery_scope(&state, &headers);
+    let mut response = agent_input_claimed(State(state), Query(query), headers, body).await;
+    if let Some(scope) = scope {
+        response.extensions_mut().insert(scope);
+    }
+    response
+}
+
+async fn agent_input_claimed(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<AgentInputQuery>,
+    headers: HeaderMap,
+    body: String,
+) -> Response {
     // App install via CoreDevice (`agent_install`): checked on every
     // platform, installed on macOS.
     if body.contains("install") {
@@ -15732,7 +15931,13 @@ async fn unless_private<T>(
 fn set_screen_private(state: &AppState, private: bool, secs: u64) {
     let until = (private && secs > 0)
         .then(|| Instant::now() + std::time::Duration::from_secs(secs));
-    *recover(state.private_until.lock()) = until;
+    let mut current = recover(state.private_until.lock());
+    if *current != until {
+        *current = until;
+        state.privacy_epoch
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+    }
+    drop(current);
     if let Some(hub) = &state.video {
         hub.hide_until(until);
     }

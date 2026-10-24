@@ -494,3 +494,8 @@ the current stage (for example an Xcode build after an update).
 - Logs to **stderr** at `INFO` level by default; set `RUST_LOG=debug` for
   verbose output.  Stderr is forwarded to the MCP client's diagnostics view
   and never mixed with the stdio protocol stream.
+
+Visual mutation failures can carry a fresh recovery screenshot. The server emits
+one image block, retaining only source/time/dimension metadata in text and
+structured output; error, outcome, retry safety and batch progress are unchanged.
+An unavailable or privacy-withheld image never turns a failed action into a success.

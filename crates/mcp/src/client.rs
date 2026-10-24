@@ -1085,14 +1085,30 @@ impl DaemonResponse {
                 DAEMON_RESPONSE_READ_LIMIT
             );
         }
-        if self.body.len() <= DAEMON_RESPONSE_PREVIEW_BYTES {
-            return self.body.clone();
+        // Images belong in one MCP image block, never in a text preview. Retain the raw body
+        // for parsers/evidence, but suppress payloads even when the image itself is malformed.
+        let sanitized = self.json
+            .as_ref()
+            .filter(|json| json.pointer("/image/png_base64").is_some())
+            .map(|json| {
+                let mut json = json.clone();
+                if let Some(image) = json
+                    .get_mut("image")
+                    .and_then(serde_json::Value::as_object_mut)
+                {
+                    image.remove("png_base64");
+                }
+                json.to_string()
+            });
+        let body = sanitized.as_deref().unwrap_or(&self.body);
+        if body.len() <= DAEMON_RESPONSE_PREVIEW_BYTES {
+            return body.to_string();
         }
         let mut end = DAEMON_RESPONSE_PREVIEW_BYTES;
-        while end > 0 && !self.body.is_char_boundary(end) {
+        while end > 0 && !body.is_char_boundary(end) {
             end -= 1;
         }
-        format!("{}…", &self.body[..end])
+        format!("{}…", &body[..end])
     }
 
     /// One line for an error message: status, error code, outcome and whether

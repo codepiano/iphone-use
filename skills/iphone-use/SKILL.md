@@ -156,6 +156,14 @@ owner; an intervening action or owner/session/field change invalidates it.
 unknown delivery. If continuation is refused, inspect the original field;
 never rebind to the current focus or resend the full text.
 
+Visual failures may include a fresh recovery image with source/time/size metadata.
+Inspect that image before another lookup, coordinate guess or scroll. Its screen
+is later than the failed operation; it is not proof the operation succeeded.
+Original `outcome`/`retry_safe` and batch counts stay authoritative. Capture withheld
+for ownership/privacy means re-read status and coordinate with the current owner;
+do not bypass the hold with another screenshot. Unavailable capture is not a reason
+to replay the failed mutation.
+
 Task metrics: `iphone-use metrics` / `GET /agent/metrics` count HTTP calls, not
 model turns. To count one task exactly, wrap it in `phone_run_start` /
 `phone_run_end` (HTTP: `POST /agent/run`). `GET /agent/elements?scope=app`

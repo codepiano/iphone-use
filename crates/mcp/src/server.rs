@@ -2666,12 +2666,48 @@ fn slim_tools(tools: Vec<rmcp::model::Tool>) -> Vec<rmcp::model::Tool> {
 /// [`shape_structured`] for every tool but the panel's frame tool: a frame
 /// is read by the panel, never the model, and its base64 image must reach
 /// `structuredContent` whole.
-fn finish_result(tool: &str, result: CallToolResult, mode: StructuredMode) -> CallToolResult {
+fn finish_result(tool: &str, mut result: CallToolResult, mode: StructuredMode) -> CallToolResult {
     if tool == crate::screen::FRAME_TOOL {
-        result
-    } else {
-        shape_structured(result, mode)
+        return result;
     }
+    let payload = result
+        .structured_content
+        .as_mut()
+        .and_then(|json| json.get_mut("image"))
+        .and_then(serde_json::Value::as_object_mut)
+        .and_then(|image| image.remove("png_base64"));
+    if let Some(payload) = payload {
+        let png = payload.as_str().filter(|b64| {
+            B64.decode(b64)
+                .ok()
+                .is_some_and(|bytes| bytes.starts_with(b"\x89PNG\r\n\x1a\n"))
+        });
+        if let Some(png) = png {
+            if let Some(image) = result
+                .structured_content
+                .as_ref()
+                .and_then(|json| json.get("image"))
+            {
+                let redaction_note = if image["capture_redacted"] == serde_json::Value::Bool(true) {
+                    " This is an accessibility wireframe, not app pixels."
+                } else {
+                    ""
+                };
+                result.content.push(Content::text(format!(
+                    "Recovery image: source {}, requested {} and received {} (ms); it shows a later screen. Inspect it before selecting a new action.{}",
+                    image["source"].as_str().unwrap_or("?"),
+                    image["requested_at_ms"], image["received_at_ms"], redaction_note,
+                )));
+            }
+            result
+                .content
+                .push(Content::image(png.to_string(), "image/png"));
+        } else if let Some(json) = result.structured_content.as_mut() {
+            json["image_unavailable"] = true.into();
+            json["image_omitted"] = "invalid_png_payload".into();
+        }
+    }
+    shape_structured(result, mode)
 }
 
 /// What `tools/list` answers under `profile`: the tools it exposes, with

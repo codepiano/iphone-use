@@ -608,3 +608,86 @@ fn cancelled_tool_drops_the_foreground_http_request_without_replay() {
     }
     assert_eq!(daemon.requests.lock().unwrap().len(),1,"cancelled call must not be resent");
 }
+#[test]
+fn recovery_png_is_one_image_block_and_never_base64_text_or_structured_duplication() {
+    use base64::Engine as _;
+    let png =
+        base64::engine::general_purpose::STANDARD.encode(include_bytes!("fixtures/recovery.png"));
+    for mode in ["full", "slim", "off"] {
+        for batch in [false, true] {
+            let mut body = serde_json::json!({"ok":false,"error":"element_occluded","outcome":"not_sent","retry_safe":true,
+            "image":{"png_base64":png,"source":"runner-capture","requested_at_ms":10,"received_at_ms":12,"pixel_size":[16,16]},
+            "recovery":{"visual_check_required":true,"replay_action":false,"next_step":"inspect the visible overlay"}});
+            if batch {
+                body["error"] = "wait_for_timeout".into();
+                body["retry_safe"] = false.into();
+                body["failed_step"] = 1.into();
+                body["completed"] = 1.into();
+                body["applied_actions"] = 1.into();
+                body["batch_outcome"] = "partially_applied".into();
+                body["steps"] = serde_json::json!([{"index":0,"kind":"action","ok":true}]);
+            }
+            let daemon = ScriptedDaemon::start("409 Conflict", body.to_string().into_bytes());
+            let mut mcp = McpChild::start_with(&daemon.url, mode);
+            let reply = mcp.call_tool(
+                2,
+                if batch {
+                    "phone_run_steps"
+                } else {
+                    "phone_tap"
+                },
+                if batch {
+                    serde_json::json!({"steps":[{"kind":"tap","x":0.5,"y":0.5}],"observe":false})
+                } else {
+                    serde_json::json!({"x":0.5,"y":0.5,"observe":false})
+                },
+            );
+            let result = &reply["result"];
+            assert_eq!(result["isError"], true, "{reply}");
+            let blocks = result["content"].as_array().unwrap();
+            assert_eq!(
+                blocks.iter().filter(|b| b["type"] == "image").count(),
+                1,
+                "{reply}"
+            );
+            for text in blocks.iter().filter_map(|b| b["text"].as_str()) {
+                assert!(!text.contains(&png), "base64 leaked into text");
+                assert!(!text.contains("png_base64"), "payload key leaked into text");
+            }
+            assert_eq!(reply.to_string().matches(&png).count(), 1);
+            if mode != "off" {
+                assert_eq!(result["structuredContent"]["outcome"], "not_sent");
+                assert!(result["structuredContent"]
+                    .pointer("/image/png_base64")
+                    .is_none());
+                assert_eq!(result["structuredContent"]["retry_safe"], !batch);
+                if batch {
+                    assert_eq!(result["structuredContent"]["applied_actions"], 1);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn malformed_recovery_image_keeps_the_failure_without_an_image_block() {
+    let body = serde_json::json!({"ok":false,"error":"element_not_found","outcome":"not_sent","retry_safe":true,
+        "image":{"png_base64":"not-a-png","source":"runner-capture"}});
+    let daemon = ScriptedDaemon::start("422 Unprocessable Entity", body.to_string().into_bytes());
+    let mut mcp = McpChild::start(&daemon.url);
+    let reply = mcp.call_tool(
+        2,
+        "phone_tap",
+        serde_json::json!({"x":0.5,"y":0.5,"observe":false}),
+    );
+    let result = &reply["result"];
+    assert_eq!(result["isError"], true);
+    assert_eq!(result["structuredContent"]["error"], "element_not_found");
+    assert_eq!(result["structuredContent"]["retry_safe"], true);
+    assert_eq!(result["structuredContent"]["image_unavailable"], true);
+    assert!(!result["content"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|b| b["type"] == "image"));
+}

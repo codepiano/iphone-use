@@ -74,6 +74,21 @@ Limits to close before claiming input superiority:
   host cancellation and default long-input pacing still need acceptance.
 - No physical-device acceptance or comparative speed result is available yet.
 
+## Failure recovery, in development
+
+Selected UI failures from `/agent/input` and `/agent/actions` now request a fresh,
+bounded image and give recovery advice while retaining the original delivery and
+batch verdict. The capture is a later observation with explicit timing/source,
+not the failure instant. Owner and privacy generations fence capture across
+handoff and private-hold transitions. Unavailable, timed-out and oversized
+captures leave the original failure intact. MCP returns one image block without
+base64 duplication in text or structured output.
+
+[Recovery evidence](../measurements/recovery-image-2026-10-25/README.md) records
+software checks and the actual candidate integration results. Dedicated
+`scroll_find`/`collect` recovery, physical popups and custom-drawn screens, and
+image rendering in real hosts remain open.
+
 ## Trial protocol
 
 Use the same phone, iOS, app versions, account/data shape, transport and model.
@@ -98,9 +113,11 @@ keep equivalent raw trace and postcondition evidence for the reference.
 
 [First binding validation](../measurements/input-target-2026-10-24/README.md),
 [continuation validation](../measurements/input-continuation-2026-10-25/README.md)
-and [atomic short input/cancellation validation](../measurements/short-input-2026-10-25/README.md)
+[atomic short input/cancellation validation](../measurements/short-input-2026-10-25/README.md)
+and [failure recovery validation](../measurements/recovery-image-2026-10-25/README.md)
 record the staged candidates, exact source/binary hashes and earlier failures.
-The latest combined simulator run passes 20 cases through the actual daemon,
-runner and stdio MCP cancellation path. Physical acceptance, separate key and
+The latest combined simulator run passes 23 cases through the actual daemon,
+runner and stdio MCP path, including fresh failure images and private-hold
+withholding. Physical acceptance, separate key and
 set_value protection, remaining recovery/host work and comparative task trials
 remain open. The broader goal is not complete.

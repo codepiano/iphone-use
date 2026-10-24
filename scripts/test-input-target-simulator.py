@@ -136,6 +136,7 @@ def main():
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--daemon", type=Path, help="also verify cross-call continuation through this candidate daemon")
     parser.add_argument("--mcp", type=Path, help="observe MCP cancellation through this candidate stdio binary (requires --daemon)")
+    parser.add_argument("--recovery", action="store_true", help="also verify fresh failure images and privacy withholding")
     parser.add_argument("--runtime", default="com.apple.CoreSimulator.SimRuntime.iOS-27-0")
     parser.add_argument("--device-type", default="com.apple.CoreSimulator.SimDeviceType.iPhone-17")
     args = parser.parse_args()
@@ -147,6 +148,8 @@ def main():
     observations = []
     daemon_binary = args.daemon.resolve(strict=True) if args.daemon else None
     mcp_binary = args.mcp.resolve(strict=True) if args.mcp else None
+    if args.recovery and not daemon_binary:
+        raise RuntimeError("--recovery requires --daemon")
     if mcp_binary and not daemon_binary:
         raise RuntimeError("--mcp requires --daemon")
     daemon_state = out / "daemon-state"
@@ -584,7 +587,7 @@ def main():
                 prepare()
                 env = dict(environment)
                 env.update(IPHONE_USE_URL=f"http://127.0.0.1:{daemon_port}", IPHONE_USE_TOKEN=tok,
-                    IPHONE_USE_OWNER="input-continuation-fixture", IPHONE_USE_MCP_TOOLS="phone_type",
+                    IPHONE_USE_OWNER="input-continuation-fixture", IPHONE_USE_MCP_TOOLS="phone_type,phone_run_steps",
                     IPHONE_USE_MCP_STRUCTURED="full")
                 with (out / "mcp.log").open("w") as log:
                     mcp = subprocess.Popen([str(mcp_binary)], env=env, stdin=subprocess.PIPE,
@@ -654,6 +657,40 @@ def main():
                 reports.append({"case": "mcp-cancel-notification-stops-after-current-native-chunk",
                     "passed": True, "native_key_requests": 1, "verdict": "unknown",
                     "observed_quiet_after_notification_ms": observed_stop})
+
+            if args.recovery:
+                status, result = api("/agent/input", {"type": "tap_locator", "locator": {"label": "__missing_fixture_target__"}})
+                assert status == 422 and result.get("error") == "element_not_found", result
+                assert result.get("outcome") == "not_sent" and result.get("retry_safe") is True, result
+                image = result.get("image", {})
+                assert image.get("png_base64") and image.get("pixel_size", [0, 0])[0] > 0, result
+                assert image["received_at_ms"] >= image["requested_at_ms"]
+                assert "failure" in image.get("relation", "")
+                reports.append({"case": "daemon-visual-failure-fresh-image-preserves-verdict", "passed": True,
+                                "pixel_size": image["pixel_size"], "source": image.get("source")})
+
+                status, held = api("/agent/hold", {"secs": 60, "private": True})
+                assert status == 200, held
+                status, result = api("/agent/input", {"type": "tap_locator", "locator": {"label": "__missing_fixture_target__"}})
+                assert status in (422, 423) and "image" not in result, result
+                reports.append({"case": "daemon-private-hold-withholds-failure-image", "passed": True})
+                status, released = api("/agent/hold", {"secs": 0})
+                assert status == 200, released
+
+                if mcp_binary:
+                    rpc({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {
+                        "name": "phone_run_steps", "arguments": {"steps": [{"kind": "tap_locator",
+                            "locator": {"label": "__missing_fixture_target__"}}], "observe": False}}})
+                    recovered = reply(3)
+                    payload = recovered.get("result", {})
+                    assert payload.get("isError") is True, recovered
+                    verdict = payload.get("structuredContent", {})
+                    assert verdict.get("outcome") == "not_sent" and verdict.get("retry_safe") is True, recovered
+                    images = [block for block in payload.get("content", []) if block.get("type") == "image"]
+                    assert len(images) == 1 and "png_base64" not in json.dumps(verdict), "image must be lifted once"
+                    assert all("png_base64" not in block.get("text", "") for block in payload.get("content", []))
+                    reports.append({"case": "stdio-visual-recovery-one-image-with-original-batch-fate", "passed": True})
+
     except Exception as error:
         reports.append({"case": "harness-or-current-case", "passed": False, "error": str(error)})
     finally:
@@ -686,7 +723,7 @@ def main():
                  Path("runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m"),
                  Path("runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerTests.swift")]
         if daemon_binary:
-            files.extend(map(Path, ["crates/server/src/http.rs", "crates/server/src/runner.rs", "crates/server/src/input_continuation.rs"]))
+            files.extend(map(Path, ["crates/server/src/http.rs", "crates/server/src/runner.rs", "crates/server/src/input_continuation.rs", "crates/server/src/recovery.rs"]))
         if mcp_binary:
             files.extend(map(Path, ["crates/mcp/src/server.rs", "crates/mcp/src/client.rs"]))
         manifest = {"scope": "actual XCTest runner on disposable iOS Simulator; not physical-device evidence",
@@ -700,7 +737,8 @@ def main():
             manifest["mcp_binary_sha256"] = hashlib.sha256(mcp_binary.read_bytes()).hexdigest()
         (out / "results.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(json.dumps({"cases": reports, "observations": observations, "cleanup_errors": cleanup_errors}))
-    return 0 if len(reports) == (20 if mcp_binary else 19 if daemon_binary else 6) and all(r["passed"] for r in reports) and not cleanup_errors else 1
+    expected = (20 if mcp_binary else 19 if daemon_binary else 6) + ((3 if mcp_binary else 2) if args.recovery else 0)
+    return 0 if len(reports) == expected and all(r["passed"] for r in reports) and not cleanup_errors else 1
 
 
 if __name__ == "__main__":

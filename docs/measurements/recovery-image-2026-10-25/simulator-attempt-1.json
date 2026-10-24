@@ -1,0 +1,179 @@
+{
+  "scope": "actual XCTest runner on disposable iOS Simulator; not physical-device evidence",
+  "simulator": "9AF5C4F0-E134-4040-96DA-282DDAD6D845",
+  "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+  "cases": [
+    {
+      "case": "bound-input-readback",
+      "passed": true
+    },
+    {
+      "case": "bound-clear-and-append",
+      "passed": true
+    },
+    {
+      "case": "same-label-field-switch-refused",
+      "passed": true,
+      "refusal": {
+        "message": "input_target_focus_changed; nothing was sent",
+        "error": "invalid argument"
+      }
+    },
+    {
+      "case": "foreground-app-switch-refused",
+      "passed": true,
+      "refusal": {
+        "message": "input_target_app_changed; nothing was sent",
+        "error": "invalid argument"
+      }
+    },
+    {
+      "case": "session-replacement-refused",
+      "passed": true,
+      "refusal": {
+        "message": "input_target_expired_or_unreadable; nothing was sent",
+        "error": "invalid argument"
+      }
+    },
+    {
+      "case": "external-native-command-invalidates-binding",
+      "passed": true,
+      "refusal": {
+        "error": "invalid argument",
+        "message": "input_target_invalidated_by_another_command; nothing was sent"
+      }
+    },
+    {
+      "case": "daemon-continuation-500-character-readback",
+      "passed": true,
+      "confirmed_partial_portions": [
+        200,
+        200
+      ],
+      "final_length": 500
+    },
+    {
+      "case": "native-clear-after-mid-field-click",
+      "passed": true,
+      "before_length": 500,
+      "after_length": 0
+    },
+    {
+      "case": "daemon-owner-release-invalidates-continuation",
+      "passed": true
+    },
+    {
+      "case": "daemon-native-focus-change-refuses-continuation",
+      "passed": true
+    },
+    {
+      "case": "daemon-native-session-change-refuses-continuation",
+      "passed": true
+    },
+    {
+      "case": "daemon-mid-chunk-focus-change-is-unknown-without-continuation",
+      "passed": true,
+      "native_key_requests": 1,
+      "field_lengths": {
+        "a": 20,
+        "b": 180
+      }
+    },
+    {
+      "case": "daemon-takeover-during-chunk-is-not-stolen-back-on-completion",
+      "passed": true,
+      "confirmed": 200,
+      "native_key_requests": 1
+    },
+    {
+      "case": "daemon-short-clear-is-one-bound-native-request",
+      "passed": true,
+      "native_requests": 1
+    },
+    {
+      "case": "daemon-short-clear-does-not-mistake-typed-placeholder-text-for-empty",
+      "passed": true
+    },
+    {
+      "case": "daemon-short-newline-refused-before-clearing-single-line-field",
+      "passed": true
+    },
+    {
+      "case": "daemon-short-secure-field-requires-human",
+      "passed": true
+    },
+    {
+      "case": "daemon-short-multiline-textview-newline-readback",
+      "passed": true
+    },
+    {
+      "case": "daemon-short-mid-input-focus-change-is-unknown-without-retry",
+      "passed": true,
+      "native_requests": 1,
+      "field_lengths": {
+        "a": 20,
+        "b": 37
+      }
+    },
+    {
+      "case": "mcp-cancel-notification-stops-after-current-native-chunk",
+      "passed": true,
+      "native_key_requests": 1,
+      "verdict": "unknown",
+      "observed_quiet_after_notification_ms": 4108
+    },
+    {
+      "case": "daemon-visual-failure-fresh-image-preserves-verdict",
+      "passed": true,
+      "pixel_size": [
+        552,
+        1200
+      ],
+      "source": "runner-capture"
+    },
+    {
+      "case": "daemon-private-hold-withholds-failure-image",
+      "passed": true
+    },
+    {
+      "case": "stdio-visual-recovery-one-image-with-original-batch-fate",
+      "passed": true
+    }
+  ],
+  "observations": [
+    {
+      "case": "tcp-disconnect-during-input",
+      "typing_budget_ms": null,
+      "completed_native_chunks": 1,
+      "observed_quiet_after_disconnect_ms": 4103,
+      "explicit_owner_release_for_cleanup": false,
+      "interpretation": "stop causality is unproven for bounded input; owner-release cleanup is not TCP cancellation"
+    },
+    {
+      "case": "tcp-disconnect-during-input",
+      "typing_budget_ms": 6000,
+      "completed_native_chunks": 1,
+      "observed_quiet_after_disconnect_ms": 4100,
+      "explicit_owner_release_for_cleanup": false,
+      "interpretation": "stop causality is unproven for bounded input; owner-release cleanup is not TCP cancellation"
+    }
+  ],
+  "cleanup_errors": [],
+  "xctestrun_sha256": "b451ce398fa218d683575378eb95649465ac9fa2908bbc95c13c3bad146d2f25",
+  "runner_binary_sha256": "e541e139611061606be49f2dedd8a4c68597d96206fb05ac04cb9eecaa353f9e",
+  "sources": {
+    "scripts/test-input-target-simulator.py": "be4b50195806d3f7f44ed6847f500b38eb5191de07e8cfd241992c1631b2f14a",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerRoutes.swift": "0730178c4c3d7ed563864c6a06ffae08f23d7004d957243efcdea0558c5755d7",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerElements.swift": "0f6716d35c531504148cf75da879a24882dab645f6c0ee2a122cf28a2c92b3c2",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m": "de5c960d294a3092ad45f1848f4502d16848a083b7a9f7ca6a0008e3f255a31a",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerTests.swift": "63b4e08c98732116fd9054fcafb9fa15c5500d98b907fa5f1cceb04339bd02ba",
+    "crates/server/src/http.rs": "d04a0d5de95594df89e842e40e8c9dd22d39941ddb7c3c793d8bbf0120016aac",
+    "crates/server/src/runner.rs": "cd4b08c7dd96ce3b2b3d7d56e889665e816953fe0ee758f7a77c5d4205612c24",
+    "crates/server/src/input_continuation.rs": "1fa8bb7bcfe52c345f23c193a8b8d05aa21a14210429838502cd446fb48b29e1",
+    "crates/server/src/recovery.rs": "9643520cfab1d1e323138415d3af64507b6d9515fe46ef0fdffaa8f915717694",
+    "crates/mcp/src/server.rs": "b3b270e3a46d18b8efa694774fcfb66051fcefe10fd29636beed7b744c814adf",
+    "crates/mcp/src/client.rs": "76f1cb1b7aeee3c7049408021a7a039098fe10b9539ae04984b3386c3b41149c"
+  },
+  "daemon_binary_sha256": "965ec6cdc9518b33aff94e5638c2279a37f42c3d5dd66e3978b0182c421d7c7d",
+  "mcp_binary_sha256": "5557ce97f22229dbfcbb9c35bc7c967b82389a089736f387ce962ca023dbf60d"
+}
