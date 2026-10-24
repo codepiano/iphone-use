@@ -38,6 +38,7 @@
   #image[hidden] { display: none; }
   #empty { color: #bbbbbb; padding: 16px; text-align: center; }
   #empty[hidden] { display: none; }
+  #toolbar[hidden] { display: none; }
   #toolbar { display: flex; gap: 8px; }
   button { font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--line);
     border-radius: 6px; padding: 4px 12px; cursor: pointer; }
@@ -65,6 +66,9 @@
   // MCP Apps (SEP-1865) view: JSON-RPC 2.0 over postMessage with the host.
   const FRAME_TOOL = "__IU_FRAME_TOOL__";
   const VERSION = "__IU_VERSION__";
+  const RESOURCE_FRAMES = __IU_RESOURCE_FRAMES__;
+  const FRAME_RESOURCE = "__IU_FRAME_RESOURCE__";
+  let frameNonce = Date.now() * 1000;
   const PROTOCOL = "2026-01-26";
   const FRAME_INTERVAL_MS = 500;   // at most 2 frames a second
   const IDLE_INTERVAL_MS = 2000;   // released / offline phone
@@ -98,6 +102,7 @@
     "this host did not answer ui/initialize": "宿主没有响应 ui/initialize",
     "frame tool failed": "截图工具出错",
     "empty frame": "没有收到画面",
+    "Control the phone through the conversation.": "通过对话操作手机。",
   };
   const ZH = (() => {
     const first = (navigator.languages && navigator.languages[0]) || navigator.language || "en";
@@ -123,6 +128,10 @@
   const image = $("image"), empty = $("empty"), dot = $("dot");
   const statusText = $("status-text"), note = $("note");
   const homeButton = $("home"), refreshButton = $("refresh");
+  if (RESOURCE_FRAMES) {
+    $("toolbar").hidden = true;
+    note.textContent = t("Control the phone through the conversation.");
+  }
 
   let nextId = 1;
   const pending = new Map();
@@ -275,9 +284,19 @@
     const started = performance.now();
     let delay = FRAME_INTERVAL_MS;
     try {
-      const result = await callTool(FRAME_TOOL, fresh ? { fresh: true } : {});
-      if (result && result.isError) throw new Error("frame tool failed");
-      const live = show(result && result.structuredContent);
+      let body;
+      if (RESOURCE_FRAMES) {
+        if (!ready) await connect();
+        const result = await request("resources/read", { uri: FRAME_RESOURCE + "600/" + (++frameNonce) });
+        const item = result && result.contents && result.contents.find((item) => typeof item.text === "string");
+        if (!item) throw new Error("empty frame");
+        body = JSON.parse(item.text);
+      } else {
+        const result = await callTool(FRAME_TOOL, fresh ? { fresh: true } : {});
+        if (result && result.isError) throw new Error("frame tool failed");
+        body = result && result.structuredContent;
+      }
+      const live = show(body);
       failures = 0;
       delay = live ? Math.max(0, FRAME_INTERVAL_MS - (performance.now() - started)) : IDLE_INTERVAL_MS;
     } catch (error) {
@@ -291,6 +310,7 @@
   }
 
   async function home() {
+    if (RESOURCE_FRAMES) return;
     homeButton.disabled = true;
     try {
       const result = await callTool("phone_shortcut", { name: "home", observe: false });
@@ -310,6 +330,7 @@
   }
 
   async function refresh() {
+    if (RESOURCE_FRAMES) return;
     refreshButton.disabled = true;
     stop();
     try { await poll(true); } finally { refreshButton.disabled = false; }

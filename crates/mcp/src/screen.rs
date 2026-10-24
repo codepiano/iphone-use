@@ -8,6 +8,8 @@
 //! - the page polls `phone_screen_frame`, which `_meta.ui.visibility: ["app"]`
 //!   keeps out of the model's tool list in such hosts.
 //!
+//! WorkBuddy uses a read-only resource frame transport selected explicitly by
+//! `IPHONE_USE_MCP_HOST=workbuddy`; Doubao keeps tools/call and one panel opener.
 //! A host without MCP Apps ignores every `_meta` key here; it only sees two
 //! more tools.
 
@@ -34,6 +36,119 @@ const WIDGET_SESSION_ID: &str = "iphone-use-screen";
 /// PNG small enough to poll twice a second.
 pub const DEFAULT_FRAME_SIDE: u32 = 600;
 
+/// Explicit host adaptation. Generic clients keep the standard tool transport.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Host {
+    #[default]
+    Generic,
+    WorkBuddy,
+    Doubao,
+}
+
+impl Host {
+    pub fn from_env() -> Self {
+        match std::env::var("IPHONE_USE_MCP_HOST")
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "" | "generic" => Self::Generic,
+            "workbuddy" => Self::WorkBuddy,
+            "doubao" => Self::Doubao,
+            _ => {
+                eprintln!("iphone-use-mcp: unknown IPHONE_USE_MCP_HOST; using generic transport");
+                Self::Generic
+            }
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Generic => "generic",
+            Self::WorkBuddy => "workbuddy",
+            Self::Doubao => "doubao",
+        }
+    }
+
+    pub fn screen_uri(self) -> String {
+        if self == Self::Generic {
+            return screen_uri();
+        }
+        format!(
+            "ui://iphone-use/screen-{}-{}.html",
+            self.name(),
+            env!("CARGO_PKG_VERSION")
+        )
+    }
+}
+
+/// No control operation is addressable through this resource namespace. The last
+/// component is only a cache nonce for hosts that cache resources by URI.
+pub const FRAME_RESOURCE_PREFIX: &str = "ui://iphone-use/frame-v1/";
+
+pub fn resource_frame_side(host: Host, uri: &str) -> Option<u32> {
+    if host != Host::WorkBuddy {
+        return None;
+    }
+    let (side, nonce) = uri.strip_prefix(FRAME_RESOURCE_PREFIX)?.split_once('/')?;
+    if side.is_empty()
+        || nonce.is_empty()
+        || nonce.len() > 20
+        || !side.bytes().all(|v| v.is_ascii_digit())
+        || !nonce.bytes().all(|v| v.is_ascii_digit())
+    {
+        return None;
+    }
+    nonce.parse::<u64>().ok()?;
+    let side = side.parse::<u32>().ok()?;
+    (200..=1000).contains(&side).then_some(side)
+}
+
+pub fn adapt_tools(mut tools: Vec<Tool>, host: Host) -> Vec<Tool> {
+    if host == Host::Generic {
+        return tools;
+    }
+    for tool in &mut tools {
+        if PANEL_TOOLS.contains(&tool.name.as_ref()) {
+            let meta = tool.meta.get_or_insert_with(Meta::new);
+            meta.0.remove("ui");
+            meta.0.remove("openai/ui");
+            if tool.name == SCREEN_TOOL {
+                meta.0
+                    .insert("ui".into(), json!({"resourceUri":host.screen_uri()}));
+                if host == Host::WorkBuddy {
+                    meta.0
+                        .insert("workbuddy".into(), json!({"ui":{"launchSurface":"panel"}}));
+                    tool.description = Some("Open or reuse the read-only iPhone screen panel. Frame reads take no owner lease and wake nothing. Use normal agent tools in the conversation for Home, refresh or control; the panel does not send control through resources.".into());
+                }
+            } else if let Some(description) = &mut tool.description {
+                description.to_mut().push_str(" To watch the phone, open phone_screen once; status does not open a second panel in this host.");
+            }
+        }
+    }
+    tools
+}
+
+pub fn resources_for(host: Host) -> Vec<Resource> {
+    let mut listed = resources();
+    listed[0].raw.uri = host.screen_uri();
+    if host == Host::WorkBuddy {
+        listed[0].raw.description = Some(
+            "Read-only iPhone screen. Control remains in the conversation's normal tools.".into(),
+        );
+    }
+    listed
+}
+
+pub fn read_for(host: Host, uri: &str) -> Option<ResourceContents> {
+    (uri == host.screen_uri()).then(|| ResourceContents::TextResourceContents {
+        uri: uri.to_string(),
+        mime_type: Some(MIME.into()),
+        text: html_for(host),
+        meta: Some(resource_meta()),
+    })
+}
 const HTML: &str = include_str!("screen.html");
 
 /// Versioned so a host that caches resources by URI picks up a new page after
@@ -50,9 +165,13 @@ fn meta(value: Value) -> Meta {
 }
 
 /// The page itself, with the build's version and tool name filled in.
-pub fn html() -> String {
+pub fn html() -> String { html_for(Host::Generic) }
+
+pub fn html_for(host: Host) -> String {
     HTML.replace("__IU_VERSION__", env!("CARGO_PKG_VERSION"))
         .replace("__IU_FRAME_TOOL__", FRAME_TOOL)
+        .replace("__IU_RESOURCE_FRAMES__", if host == Host::WorkBuddy { "true" } else { "false" })
+        .replace("__IU_FRAME_RESOURCE__", FRAME_RESOURCE_PREFIX)
 }
 
 /// `_meta` on the resource and its contents. No `csp`: the host default

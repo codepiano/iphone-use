@@ -26,7 +26,7 @@ Baseline inspected on 2026-10-24:
 | Task latency | Higher or equal verified completion rate; better completion latency and model round trips on representative tasks | Paired same-device runs, same model, initial state and independent postconditions |
 | Replay | Repeated tasks complete with deterministic flows and useful failure evidence | Installed-package flow runs on representative apps |
 | Setup/recovery | Fresh setup, upgrade, existing setup reuse, signing errors and reconnect have actionable outcomes | Disposable install tests and free/paid signing with devices |
-| Hosts | Codex, Claude, Cursor/Desktop and domestic hosts work through their actual tool and panel paths | WorkBuddy and Doubao adaptation and live host acceptance |
+| Hosts | Codex, Claude, Cursor/Desktop and domestic hosts work through their actual tool and panel paths | WorkBuddy/Doubao candidate adapters now have protocol and installer checks; live host trust, rendering, reuse and task acceptance remain open |
 | Viewing/control | Live view, human takeover, capture-hidden UI, gestures and pause/resume work reliably | Browser, MCP panel and iOS controller acceptance; measured bandwidth/latency |
 | Deployment modes | USB, Wi-Fi, multiple phones, old supported iOS and simulator keep documented behavior | Separate acceptance per mode/version; do not generalize one phone's results |
 | Privacy/access | No unexpected collection; authentication, owner isolation and limits remain enforced | Read-only/security regressions, wrong-owner and concurrent-control tests |
@@ -88,6 +88,23 @@ base64 duplication in text or structured output.
 software checks and the actual candidate integration results. Dedicated
 `scroll_find`/`collect` recovery, physical popups and custom-drawn screens, and
 image rendering in real hosts remain open.
+
+## Candidate host adapters
+
+[Host adapter evidence](../measurements/host-adapters-2026-10-25/README.md)
+records WorkBuddy resource-frame transport, a Doubao single-panel mode,
+isolated config installation, GUI proxy reproduction/fix and 24 combined
+Simulator cases. Only protocol/panel-script emulation and backend integration
+are accepted here; WorkBuddy/Doubao applications are not installed on this host.
+Actual trust, skill import, image rendering, panel reuse and complete tasks
+remain open. The panel still has the existing 2 fps PNG ceiling; integrating
+our native video path and matching reference streaming behavior remain open.
+
+Ordinary screenshot/overlay and live-stream privacy transitions also need a
+separate race audit: recovery responses already fence their own image by the
+privacy generation, while general captures currently check private state at
+entry and stream waits sample it. Static private-hold tests do not prove that
+a hold starting and ending during capture/re-encoding cannot race delivery.
 
 ## Trial protocol
 

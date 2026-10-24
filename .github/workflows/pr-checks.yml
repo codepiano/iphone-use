@@ -215,6 +215,8 @@ jobs:
           /bin/bash -n scripts/setup-runner.sh
           bash scripts/test-install-release-transaction.sh
           bash scripts/test-install-cli-link.sh
+          bash scripts/test-install-client-config.sh
+          node scripts/test-mcp-screen-hosts.mjs
           bash scripts/test-install-runner-sources.sh
           bash scripts/test-install-named-swap.sh
           bash scripts/test-install-legacy-plist.sh

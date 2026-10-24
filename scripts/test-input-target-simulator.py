@@ -6,6 +6,7 @@ Build the runner with `IPU_RUNNER_DERIVED_DATA=/tmp/ipu-input-build bash runner/
 Creates and deletes only its own simulator; never uses a personal device or daemon.
 """
 import argparse
+import base64
 import hashlib
 from concurrent.futures import ThreadPoolExecutor
 import json
@@ -137,6 +138,7 @@ def main():
     parser.add_argument("--daemon", type=Path, help="also verify cross-call continuation through this candidate daemon")
     parser.add_argument("--mcp", type=Path, help="observe MCP cancellation through this candidate stdio binary (requires --daemon)")
     parser.add_argument("--recovery", action="store_true", help="also verify fresh failure images and privacy withholding")
+    parser.add_argument("--hosts", action="store_true", help="verify WorkBuddy resource frames through restarted stdio processes")
     parser.add_argument("--runtime", default="com.apple.CoreSimulator.SimRuntime.iOS-27-0")
     parser.add_argument("--device-type", default="com.apple.CoreSimulator.SimDeviceType.iPhone-17")
     args = parser.parse_args()
@@ -148,6 +150,8 @@ def main():
     observations = []
     daemon_binary = args.daemon.resolve(strict=True) if args.daemon else None
     mcp_binary = args.mcp.resolve(strict=True) if args.mcp else None
+    if args.hosts and not mcp_binary:
+        raise RuntimeError("--hosts requires --mcp and --daemon")
     if args.recovery and not daemon_binary:
         raise RuntimeError("--recovery requires --daemon")
     if mcp_binary and not daemon_binary:
@@ -691,6 +695,41 @@ def main():
                     assert all("png_base64" not in block.get("text", "") for block in payload.get("content", []))
                     reports.append({"case": "stdio-visual-recovery-one-image-with-original-batch-fate", "passed": True})
 
+
+            if args.hosts:
+                status, before_owner = api("/agent/status")
+                assert status == 200
+                before_calls = native_keys()
+                for iteration in [1, 2]:
+                    if mcp and mcp.poll() is None:
+                        os.killpg(mcp.pid, signal.SIGTERM)
+                        mcp.wait(timeout=10)
+                    env = dict(environment)
+                    env.update(IPHONE_USE_URL=f"http://127.0.0.1:{daemon_port}", IPHONE_USE_TOKEN=tok,
+                        IPHONE_USE_OWNER="workbuddy-view-fixture", IPHONE_USE_MCP_HOST="workbuddy",
+                        IPHONE_USE_MCP_TOOLS="phone_screen", IPHONE_USE_MCP_STRUCTURED="off")
+                    with (out / "mcp.log").open("a") as log:
+                        mcp = subprocess.Popen([str(mcp_binary)], env=env, stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE, stderr=log, start_new_session=True)
+                    reply_buffer = b""
+                    rpc({"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+                        "protocolVersion":"2025-06-18","capabilities":{},
+                        "clientInfo":{"name":"workbuddy-fixture","version":"1"}}})
+                    assert "result" in reply(1)
+                    rpc({"jsonrpc":"2.0","method":"notifications/initialized"})
+                    rpc({"jsonrpc":"2.0","id":2,"method":"resources/read","params":{
+                        "uri":f"ui://iphone-use/frame-v1/600/{iteration}"}})
+                    resource = reply(2)
+                    frame = json.loads(resource["result"]["contents"][0]["text"])
+                    assert frame["owner"] == before_owner.get("owner"), frame
+                    png = base64.b64decode(frame["frame"]["data"], validate=True)
+                    assert png.startswith(b"\x89PNG\r\n\x1a\n")
+                status, after_owner = api("/agent/status")
+                assert status == 200 and after_owner.get("owner") == before_owner.get("owner")
+                assert native_keys() == before_calls, "resource frame path sent keyboard input"
+                reports.append({"case":"workbuddy-resource-frame-across-two-mcp-processes", "passed":True,
+                    "processes":2, "frame_mime":"image/png", "owner_unchanged":True, "native_key_requests":0})
+
     except Exception as error:
         reports.append({"case": "harness-or-current-case", "passed": False, "error": str(error)})
     finally:
@@ -725,7 +764,7 @@ def main():
         if daemon_binary:
             files.extend(map(Path, ["crates/server/src/http.rs", "crates/server/src/runner.rs", "crates/server/src/input_continuation.rs", "crates/server/src/recovery.rs"]))
         if mcp_binary:
-            files.extend(map(Path, ["crates/mcp/src/server.rs", "crates/mcp/src/client.rs"]))
+            files.extend(map(Path, ["crates/mcp/src/server.rs", "crates/mcp/src/client.rs", "crates/mcp/src/screen.rs", "crates/mcp/src/screen.html"]))
         manifest = {"scope": "actual XCTest runner on disposable iOS Simulator; not physical-device evidence",
             "simulator": udid, "runtime": args.runtime, "cases": reports, "observations": observations, "cleanup_errors": cleanup_errors,
             "xctestrun_sha256": hashlib.sha256(xctestrun.read_bytes()).hexdigest(),
@@ -737,7 +776,7 @@ def main():
             manifest["mcp_binary_sha256"] = hashlib.sha256(mcp_binary.read_bytes()).hexdigest()
         (out / "results.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(json.dumps({"cases": reports, "observations": observations, "cleanup_errors": cleanup_errors}))
-    expected = (20 if mcp_binary else 19 if daemon_binary else 6) + ((3 if mcp_binary else 2) if args.recovery else 0)
+    expected = (20 if mcp_binary else 19 if daemon_binary else 6) + ((3 if mcp_binary else 2) if args.recovery else 0) + int(args.hosts)
     return 0 if len(reports) == expected and all(r["passed"] for r in reports) and not cleanup_errors else 1
 
 

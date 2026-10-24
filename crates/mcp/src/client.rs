@@ -39,8 +39,7 @@ fn daemon_target(
     });
     let token = env("IPHONE_USE_TOKEN").or_else(|| {
         // Only a daemon on this Mac can be the one the plist describes.
-        let local =
-            base_url.starts_with("http://127.0.0.1:") || base_url.starts_with("http://localhost:");
+        let local = loopback_url(&base_url);
         local
             .then(|| {
                 plist(&label, "IPHONE_USE_AGENT_TOKEN")
@@ -49,6 +48,17 @@ fn daemon_target(
             .flatten()
     });
     (base_url, token)
+}
+
+/// Classify the parsed authority, not a URL prefix: loopback traffic must not
+/// leave the Mac through a GUI proxy, and remote URLs must not inherit a local token.
+fn loopback_url(value: &str) -> bool {
+    let Ok(url) = reqwest::Url::parse(value) else { return false; };
+    if !matches!(url.scheme(), "http" | "https") { return false; }
+    let Some(host) = url.host_str() else { return false; };
+    host.trim_end_matches('.').eq_ignore_ascii_case("localhost")
+        || host.trim_start_matches('[').trim_end_matches(']').parse::<std::net::IpAddr>()
+            .is_ok_and(|address|address.is_loopback())
 }
 
 /// One `EnvironmentVariables` value from `~/Library/LaunchAgents/<label>.plist`.
@@ -344,10 +354,13 @@ impl DaemonClient {
 
     fn http(&self) -> &Client {
         self.client.get_or_init(|| {
-            Client::builder()
+            let mut builder = Client::builder()
                 .connect_timeout(self.connect_timeout)
-                .timeout(self.request_timeout)
-                .build()
+                .timeout(self.request_timeout);
+            if loopback_url(&self.base_url) {
+                builder = builder.no_proxy();
+            }
+            builder.build()
                 .expect("reqwest client construction is infallible")
         })
     }
@@ -1291,6 +1304,16 @@ pub(crate) fn query_path(path: &str, params: &[(&str, String)]) -> String {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    #[test]
+    fn loopback_proxy_and_token_boundary_uses_the_parsed_authority() {
+        for url in ["http://127.0.0.1:44321", "http://127.12.3.4:9", "https://localhost", "http://LOCALHOST.:9", "http://[::1]:9"] {
+            assert!(super::loopback_url(url), "{url}");
+        }
+        for url in ["http://127.0.0.1:9@evil.example", "http://localhost.evil.example:9", "http://192.168.1.2:44321", "https://example.com", "file://localhost/tmp", "bad"] {
+            assert!(!super::loopback_url(url), "{url}");
+        }
+    }
+
     use super::*;
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};

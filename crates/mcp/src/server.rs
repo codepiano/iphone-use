@@ -635,6 +635,7 @@ pub struct FlowReportParams {
 #[derive(Clone)]
 pub struct PhoneHandler {
     daemon: DaemonClient,
+    host: crate::screen::Host,
     /// The most recent failed `phone_flow_run`, kept so `phone_flow_report`
     /// can file an issue with the real failure instead of a retelling.
     last_flow_failure: std::sync::Arc<std::sync::Mutex<Option<crate::contrib::ReportContext>>>,
@@ -860,6 +861,7 @@ impl PhoneHandler {
     ) -> Self {
         Self {
             daemon,
+            host: crate::screen::Host::from_env(),
             last_flow_failure: std::sync::Arc::new(std::sync::Mutex::new(None)),
             progress: std::sync::Arc::default(),
             profile,
@@ -1386,7 +1388,7 @@ impl PhoneHandler {
         let text = match self.daemon.status().await {
             Ok(status) => {
                 let mut summary = crate::screen::status_summary(&status, self.daemon.owner());
-                summary["panel"] = serde_json::json!(crate::screen::screen_uri());
+                summary["panel"] = serde_json::json!(self.host.screen_uri());
                 summary.to_string()
             }
             Err(e) => format!("panel opened; status failed: {e:#}"),
@@ -2998,7 +3000,7 @@ impl ServerHandler for PhoneHandler {
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<rmcp::model::ListToolsResult, rmcp::ErrorData> {
         Ok(rmcp::model::ListToolsResult {
-            tools: listed_tools(&self.profile),
+            tools: crate::screen::adapt_tools(listed_tools(&self.profile), self.host),
             meta: None,
             next_cursor: None,
         })
@@ -3010,20 +3012,38 @@ impl ServerHandler for PhoneHandler {
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<rmcp::model::ListResourcesResult, rmcp::ErrorData> {
         Ok(rmcp::model::ListResourcesResult::with_all_items(
-            crate::screen::resources(),
+            crate::screen::resources_for(self.host),
         ))
     }
 
     async fn read_resource(
         &self,
         request: rmcp::model::ReadResourceRequestParams,
-        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+        context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<rmcp::model::ReadResourceResult, rmcp::ErrorData> {
-        match crate::screen::read(&request.uri) {
+        if let Some(side) = crate::screen::resource_frame_side(self.host, &request.uri) {
+            if self.profile.refusal(crate::screen::FRAME_TOOL).is_some() {
+                return Err(rmcp::ErrorData::resource_not_found("frame access is disabled by IPHONE_USE_MCP_TOOLS", None));
+            }
+            // This shares the exact read-only frame path and privacy checks used by
+            // tools/call. A new MCP process reads the existing daemon; it never
+            // starts a worker or changes the current owner.
+            let frame = tokio::select! {
+                biased;
+                _ = context.ct.cancelled() => return Err(rmcp::ErrorData::internal_error("frame read cancelled", None)),
+                frame = tokio::time::timeout(std::time::Duration::from_secs(8), self.phone_screen_frame(
+                    Parameters(ScreenFrameParams {max_side:Some(side), fresh:Some(false)}))) => frame
+                    .map_err(|_| rmcp::ErrorData::internal_error("frame read timed out", None))?,
+            };
+            return Ok(rmcp::model::ReadResourceResult::new(vec![rmcp::model::ResourceContents::TextResourceContents {
+                uri:request.uri, mime_type:Some("application/json".into()),
+                text:frame.structured_content.unwrap_or_else(||serde_json::json!({"ok":false,"frame":null,"error":"frame unavailable"})).to_string(), meta:None,
+            }]));
+        }
+        match crate::screen::read_for(self.host, &request.uri) {
             Some(contents) => Ok(rmcp::model::ReadResourceResult::new(vec![contents])),
             None => Err(rmcp::ErrorData::resource_not_found(
-                format!("unknown resource {}", request.uri),
-                None,
+                format!("unknown resource {}", request.uri), None,
             )),
         }
     }

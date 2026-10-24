@@ -34,6 +34,10 @@ impl ScriptedDaemon {
     }
 
     fn delayed(status: &'static str, body: Vec<u8>, delay: Duration) -> Self {
+        Self::routed(status, body, delay, None)
+    }
+
+    fn routed(status: &'static str, body: Vec<u8>, delay: Duration, status_body: Option<Vec<u8>>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         listener.set_nonblocking(true).unwrap();
@@ -79,6 +83,9 @@ impl ScriptedDaemon {
                                 break;
                             }
                         }
+                        let body = if request.starts_with(b"GET /agent/status ") {
+                            status_body.as_ref().unwrap_or(&body)
+                        } else { &body };
                         let head = format!(
                             "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                             body.len()
@@ -135,15 +142,22 @@ impl McpChild {
     }
 
     fn start_with(daemon_url: &str, structured: &str) -> Self {
-        let mut child = Command::new(binary())
+        Self::start_options(daemon_url, structured, &[])
+    }
+
+    fn start_options(daemon_url: &str, structured: &str, options: &[(&str, &str)]) -> Self {
+        let mut command = Command::new(binary());
+        command
             .env("IPHONE_USE_URL", daemon_url)
             .env("IPHONE_USE_MCP_STRUCTURED", structured)
             .env_remove("IPHONE_USE_TOKEN")
+            .env_remove("IPHONE_USE_MCP_HOST")
+            .env_remove("IPHONE_USE_MCP_TOOLS")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("spawn the MCP server");
+            .stderr(Stdio::null());
+        for (name, value) in options { command.env(name, value); }
+        let mut child = command.spawn().expect("spawn the MCP server");
         let reader = BufReader::new(child.stdout.take().expect("stdout"));
         let mut session = Self { child, reader };
         session.send(&serde_json::json!({
@@ -690,4 +704,90 @@ fn malformed_recovery_image_keeps_the_failure_without_an_image_block() {
         .unwrap()
         .iter()
         .any(|b| b["type"] == "image"));
+}
+
+#[test]
+fn host_panels_have_distinct_resources_and_only_one_opener() {
+    for host in ["workbuddy", "doubao"] {
+        let daemon = ScriptedDaemon::start("200 OK", br#"{"ok":true,"drivable":true}"#.to_vec());
+        let mut child = McpChild::start_options(&daemon.url, "slim", &[("IPHONE_USE_MCP_HOST", host)]);
+        child.send(&serde_json::json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}));
+        let listed = child.read_reply(2);
+        let tools = listed["result"]["tools"].as_array().unwrap();
+        let screen = tools.iter().find(|t|t["name"]=="phone_screen").unwrap();
+        let status = tools.iter().find(|t|t["name"]=="phone_status").unwrap();
+        assert!(status.pointer("/_meta/ui/resourceUri").is_none());
+        assert!(screen["_meta"]["ui"]["resourceUri"].as_str().unwrap().contains(host));
+        if host == "workbuddy" { assert_eq!(screen["_meta"]["workbuddy"]["ui"]["launchSurface"], "panel"); }
+        let uri = screen["_meta"]["ui"]["resourceUri"].clone();
+        child.send(&serde_json::json!({"jsonrpc":"2.0","id":3,"method":"resources/list"}));
+        assert_eq!(child.read_reply(3)["result"]["resources"][0]["uri"], uri);
+        child.send(&serde_json::json!({"jsonrpc":"2.0","id":4,"method":"resources/read","params":{"uri":uri}}));
+        let page=child.read_reply(4);
+        let html=page["result"]["contents"][0]["text"].as_str().unwrap();
+        assert!(html.contains(if host=="workbuddy" {"RESOURCE_FRAMES = true"} else {"RESOURCE_FRAMES = false"}));
+        assert!(!html.contains("__IU_"));
+        assert!(daemon.requests.lock().unwrap().is_empty(), "discovery must not wake a phone");
+    }
+}
+
+#[test]
+fn workbuddy_frame_resources_survive_process_restart_without_control_or_policy_bypass() {
+    use base64::Engine as _;
+    let png=include_bytes!("fixtures/recovery.png").to_vec();
+    let status=br#"{"ok":true,"drivable":true,"owner":"somebody-else"}"#.to_vec();
+    let daemon=ScriptedDaemon::routed("200 OK",png.clone(),Duration::ZERO,Some(status));
+    for nonce in [1,2] {
+        let mut child=McpChild::start_options(&daemon.url,"off",&[("IPHONE_USE_MCP_HOST","workbuddy"),("IPHONE_USE_MCP_TOOLS","phone_screen")]);
+        child.send(&serde_json::json!({"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":format!("ui://iphone-use/frame-v1/600/{nonce}")}}));
+        let response=child.read_reply(2);
+        let body:serde_json::Value=serde_json::from_str(response["result"]["contents"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(body["owner"],"somebody-else");
+        assert_eq!(base64::engine::general_purpose::STANDARD.decode(body["frame"]["data"].as_str().unwrap()).unwrap(),png);
+        for uri in ["ui://iphone-use/frame-v1/600/home","ui://iphone-use/frame-v1/1001/1","ui://iphone-use/frame-v1/600/1?fresh=1","ui://iphone-use/frame-v1/600/18446744073709551616"] {
+            child.send(&serde_json::json!({"jsonrpc":"2.0","id":3,"method":"resources/read","params":{"uri":uri}}));
+            assert!(child.read_reply(3).get("error").is_some());
+        }
+    }
+    let before=daemon.requests.lock().unwrap().len();
+    assert_eq!(before,4,"two independent MCP processes each read status and a frame");
+    assert!(daemon.requests.lock().unwrap().iter().all(|r|r.starts_with("GET /agent/status ")||r.starts_with("GET /agent/screenshot?max_side=600 ")));
+    for (host,profile) in [("workbuddy","phone_status"),("generic","all"),("doubao","all")] {
+        let mut child=McpChild::start_options(&daemon.url,"slim",&[("IPHONE_USE_MCP_HOST",host),("IPHONE_USE_MCP_TOOLS",profile)]);
+        child.send(&serde_json::json!({"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"ui://iphone-use/frame-v1/600/1"}}));
+        assert!(child.read_reply(2).get("error").is_some());
+    }
+    assert_eq!(daemon.requests.lock().unwrap().len(),before,"resource read bypassed profile or host restriction");
+}
+
+#[test]
+fn workbuddy_private_frames_are_withheld_and_capture_errors_remain_errors() {
+    for private in [false,true] {
+        let daemon=ScriptedDaemon::routed(if private {"200 OK"} else {"503 Service Unavailable"}, include_bytes!("fixtures/recovery.png").to_vec(),Duration::ZERO,
+            Some(serde_json::json!({"ok":true,"drivable":true,"screen_private_secs":if private {60} else {0}}).to_string().into_bytes()));
+        let mut child=McpChild::start_options(&daemon.url,"full",&[("IPHONE_USE_MCP_HOST","workbuddy")]);
+        child.send(&serde_json::json!({"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"ui://iphone-use/frame-v1/600/1"}}));
+        let response=child.read_reply(2);
+        let body:serde_json::Value=serde_json::from_str(response["result"]["contents"][0]["text"].as_str().unwrap()).unwrap();
+        assert!(body["frame"].is_null());
+        if private {assert_eq!(body["private_secs"],60);} else {assert_eq!(body["ok"],false);assert!(!body["error"].is_null());}
+    }
+}
+
+#[test]
+fn local_daemon_frames_ignore_gui_proxy_environment() {
+    let daemon=ScriptedDaemon::routed("200 OK",include_bytes!("fixtures/recovery.png").to_vec(),Duration::ZERO,
+        Some(br#"{"ok":true,"drivable":true}"#.to_vec()));
+    let mut child=McpChild::start_options(&daemon.url,"full",&[
+        ("IPHONE_USE_MCP_HOST","workbuddy"),
+        ("HTTP_PROXY","http://127.0.0.1:1"),("http_proxy","http://127.0.0.1:1"),
+        ("HTTPS_PROXY","http://127.0.0.1:1"),("https_proxy","http://127.0.0.1:1"),
+        ("ALL_PROXY","http://127.0.0.1:1"),("all_proxy","http://127.0.0.1:1"),
+        ("NO_PROXY",""),("no_proxy","")]);
+    child.send(&serde_json::json!({"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"ui://iphone-use/frame-v1/600/1"}}));
+    let response=child.read_reply(2);
+    let body:serde_json::Value=serde_json::from_str(response["result"]["contents"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(body["ok"],true,"{body}");
+    assert!(body["frame"]["data"].is_string(),"{body}");
+    assert_eq!(daemon.requests.lock().unwrap().len(),2);
 }

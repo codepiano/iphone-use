@@ -2,8 +2,7 @@
 
 MCP stdio server that wraps the `iphone-use` daemon's agent HTTP API,
 giving MCP clients (Claude Desktop, Claude Code, etc.) native tool access
-to a real iPhone. The daemon drives the phone through WebDriverAgent running
-on it.
+to a real iPhone. The daemon drives the phone through its own XCTest runner.
 
 ## Prerequisites
 
@@ -37,6 +36,7 @@ cargo build --release -p iphone-use-mcp
 |---|---|---|
 | `IPHONE_USE_URL` | `http://127.0.0.1:44321` | Base URL of the daemon |
 | `IPHONE_USE_TOKEN` | _(none)_ | Bearer token / password (omit for open-mode daemons) |
+| `IPHONE_USE_MCP_HOST` | `generic` | Explicit host adapter: `workbuddy` uses a read-only frame resource and one panel opener; `doubao` keeps tool frames and one opener. [Candidate setup and acceptance limits](../../docs/mcp-hosts.md). |
 | `IPHONE_USE_MCP_TOOLS` | `all` | Which tools are listed and callable: `all`, `readonly`, or a comma list of tool names (see [Tool profiles](#tool-profiles-and-annotations)) |
 | `IPHONE_USE_MCP_TOKEN` | _(none)_ | With `--listen`: the bearer token HTTP clients must send; required for a non-loopback address (see [MCP over HTTP](#mcp-over-http)) |
 | `IPHONE_USE_MCP_PREWARM` | `0` | Set `1` to opt into phone pre-warming on MCP startup/status. Discovery does not contact the daemon by default. |

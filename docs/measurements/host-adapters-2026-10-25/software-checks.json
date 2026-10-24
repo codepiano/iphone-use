@@ -1,0 +1,45 @@
+{
+  "scope": "candidate protocol/installer/panel-script checks, not actual WorkBuddy or Doubao UI acceptance",
+  "logs": {
+    "mcp": {
+      "sha256": "11462c65e0e6bef79c8ba8a2dc9a75fbb5d6675bbba064887950d66e02cc33b2",
+      "summaries": [
+        "test result: ok. 233 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 34.23s",
+        "test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.47s"
+      ]
+    },
+    "installer": {
+      "sha256": "93cd7ea2cffd2bb254005edc3de36f77bc5c3ef7c47b76e115a2a34b8f92fe34",
+      "summaries": [
+        "ok 1 - absent clients are skipped silently",
+        "ok 2 - a new config file is written",
+        "ok 3 - existing configs are merged, backed up and left alone on a rerun",
+        "ok 4 - a foreign entry and an unreadable file are left unchanged",
+        "ok 5 - a named instance is registered with its env",
+        "ok 6 - IPHONE_USE_NO_CLIENT_SETUP=1 skips the desktop clients",
+        "ok 7 - WorkBuddy adapter preserves config, backup, instance and idempotency",
+        "ok 8 - WorkBuddy foreign and invalid configs remain unchanged",
+        "ok 9 - WorkBuddy honors client setup opt-out",
+        "ok 10 - the test hook refuses to run without its sentinel",
+        "1..10"
+      ]
+    },
+    "panel": {
+      "sha256": "8fabcd3091fa06c3357918148a02f20897e2fdb163027ceb92bd348f01dff511",
+      "summaries": [
+        "ok - generic/Doubao tools: draw, private hold, controls, cache nonce, hidden polling",
+        "ok - WorkBuddy resources: draw, private hold, controls, cache nonce, hidden polling"
+      ]
+    },
+    "build": {
+      "sha256": "cb948a8145392eda43eec9312d928cf55fa6cacc5193a9a171c113414e29bc93",
+      "summaries": []
+    },
+    "proxy_reproduction": {
+      "sha256": "6707d8f6f42061a0cd449db6cce93d01045b9922269cce33be47eefaefd794cf",
+      "summaries": [
+        "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.40s"
+      ]
+    }
+  }
+}
