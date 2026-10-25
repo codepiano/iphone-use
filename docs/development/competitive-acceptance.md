@@ -76,6 +76,11 @@ Limits to close before claiming input superiority:
   that method cannot provide an in-flight cancellation guarantee. Keep this
   [artifact observation](../measurements/paired-pilot-2026-10-25/event-request-invalidation-27.0.json)
   separate from physical behavior and from other possible cancellation routes.
+- Subsequent [physical character-event probes](../measurements/guarded-character-probes-2026-10-25/README.md)
+  retain two rejected designs. Per-character text events reach the character-20
+  focus fault without spilling to B, but fail ordinary replacement budgets.
+  Key events fail the intended Unicode values and never reach their focus fault.
+  Both prototypes were removed; neither resolves the default-path limitation.
 - Old runners without the capability keep their existing input behavior;
   they must not be described as protected.
 - Ordinary short text on `ipu:atomicText` binds, optionally clears, types and

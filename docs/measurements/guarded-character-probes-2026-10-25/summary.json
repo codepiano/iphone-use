@@ -1,0 +1,53 @@
+{
+  "scope": "Rejected isolated native prototypes; default production implementation restored",
+  "source_base": "417aae4a5685b3d44f2882bee2bfd83ef74fb835",
+  "device": "iPhone17ProMax/iOS27.2, local network",
+  "text_event_probe": {
+    "focus_shift_at_20": {
+      "a": 20,
+      "b": 0,
+      "requested_text_complete": false
+    },
+    "decision": "reject: budget expiry and incomplete ordinary replacements",
+    "ordinary_requests": [
+      {
+        "requested_characters": 64,
+        "final_characters": 40,
+        "exact": false
+      },
+      {
+        "requested_characters": 501,
+        "final_characters": 41,
+        "exact": false
+      }
+    ]
+  },
+  "key_event_probe": {
+    "focus_probe_a": 17,
+    "focus_probe_b": 0,
+    "focus_trigger_reached": false,
+    "decision": "reject: failed text semantics; not a passed focus-fault test",
+    "ordinary_requests": [
+      {
+        "requested_characters": 501,
+        "final_characters": 13,
+        "exact": false
+      },
+      {
+        "requested_unicode_scalars": 8,
+        "final_characters": 0,
+        "exact": false
+      }
+    ]
+  },
+  "profile": {
+    "eight_characters_exact": true,
+    "synthesis_calls_including_focus_tap": 9,
+    "native_total_ms": 2386,
+    "actual_synthesis_wait_ms_including_tap": 2064.6,
+    "declared_synthesis_hold_ms": 1810.0
+  },
+  "comparability": "Exploratory samples, no resource gate or latency superiority claim. Declared event duration differs from actual wait.",
+  "default_path_changed": false,
+  "remaining": "Find a native route retaining Unicode input semantics and original-field checks without this per-event wait cost; clear-time target recovery also remains open."
+}

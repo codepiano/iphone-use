@@ -1,0 +1,50 @@
+{
+  "owned_apps": [
+    {
+      "bundle": "com.leeguoo.iphone-use.acceptance.e73.fixture",
+      "exit_code": 0
+    },
+    {
+      "bundle": "com.leeguoo.iphone-use.acceptance.e73.xctrunner",
+      "exit_code": 0
+    }
+  ],
+  "owned_apps_absent_in_independent_inventory": true,
+  "original_runner_and_remote_still_present": true,
+  "listeners": [
+    {
+      "cohort": "iphone-use-guard-probe-20261025",
+      "kind": "relay_port",
+      "listener_present": false
+    },
+    {
+      "cohort": "iphone-use-guard-probe-20261025",
+      "kind": "daemon_port",
+      "listener_present": false
+    },
+    {
+      "cohort": "iphone-use-guard-key-probe-20261025",
+      "kind": "relay_port",
+      "listener_present": false
+    },
+    {
+      "cohort": "iphone-use-guard-key-probe-20261025",
+      "kind": "daemon_port",
+      "listener_present": false
+    }
+  ],
+  "default_service": {
+    "mode": "offline",
+    "owner": null,
+    "drivable": false
+  },
+  "cleanup_errors": [],
+  "header_proxy_processes_present": false,
+  "local_runner_source_restored_to_head": true,
+  "remote_runner_source_restored_to_baseline": true,
+  "restored_source_sha256": {
+    "IPURBridge.h": "218ea3b678308870a7409b22b88623809789a6b7088488174ea4b5a77f836f3c",
+    "IPURBridge.m": "95a157bec70a31c0e8c63a1af030ccffc18185ae739c83124355f2adf9be9a2b",
+    "RunnerRoutes.swift": "22ca5d7453db50a9388880e7db8925936a614492f98210c01feec129d62526ba"
+  }
+}
