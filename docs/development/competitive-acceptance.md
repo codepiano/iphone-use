@@ -177,9 +177,11 @@ independently; private on/off forces a fresh video subscription. [Continuous vie
 adds a 20-second native run across HTTP expiry and two independent MCP viewers,
 plus idle-competition and decoder-stall fixes. [Actual Chrome replay](../measurements/browser-video-2026-10-25/README.md)
 now verifies native AU decoding, real canvas pixels, decoder reuse, privacy
-clear/resume and PNG fallback in both synthetic host modes. The full native-to-
-MCP-to-browser live pipeline, installed-host presentation, physical rotation
-and long soak remain unverified.
+clear/resume and PNG fallback in both synthetic host modes. [Live Simulator viewing](../measurements/live-browser-2026-10-25/README.md)
+subsequently verifies actual native/daemon/stdio-MCP/browser delivery of six
+changing App markers in both modes, plus real private holds and no native input.
+The host shell is synthetic. Installed product hosts, physical modes/rotation,
+live outage-to-PNG recovery and controlled long soaks remain unverified.
 List diagnostics additionally preserve coverage and produce one fresh image over
 stdio; private on/off after a swipe ACK preserves one confirmed gesture and
 sends no later source request. The first counter-instrumentation failure and the

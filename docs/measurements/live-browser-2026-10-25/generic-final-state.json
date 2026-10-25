@@ -1,0 +1,32 @@
+{
+  "oracle": {
+    "counter": 3003,
+    "label": "Live frame 3003",
+    "nonce": "f051e62d80816bc9"
+  },
+  "stats": {
+    "generic": {
+      "calls": 1289,
+      "tool_calls": 1289,
+      "resource_reads": 0,
+      "video_packets": 1372,
+      "video_bytes": 2061045,
+      "png_frames": 0,
+      "clear_frames": 32,
+      "errors": 0,
+      "panel_sha256": "36e5a5587ba96b25d661b3ea7573141366287a0c19e1e3cf48cac2e593817a43"
+    },
+    "workbuddy": {
+      "calls": 0,
+      "tool_calls": 0,
+      "resource_reads": 0,
+      "video_packets": 0,
+      "video_bytes": 0,
+      "png_frames": 0,
+      "clear_frames": 0,
+      "errors": 0,
+      "panel_sha256": "08e44f48c2188d5c1c1ce65ecef3a666584aa038fba51c1347c063644cd88998"
+    }
+  },
+  "owner": "owned-browser-control"
+}

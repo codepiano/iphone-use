@@ -1,0 +1,143 @@
+{
+  "scope": "actual browser canvas exports; independent App receipt and fresh local Vision OCR",
+  "markers": [
+    {
+      "host_mode": "generic",
+      "expected_counter": 1001,
+      "app_receipt": {
+        "counter": 1001,
+        "label": "Live frame 1001",
+        "nonce": "4d06ed5668120377"
+      },
+      "ocr": [
+        {
+          "confidence": 1,
+          "text": "Live frame 1001",
+          "x": 0.05782312907007465,
+          "y": 0.8828125000113775
+        }
+      ],
+      "png": "generic-1001.png",
+      "size": [
+        588,
+        1280
+      ],
+      "sha256": "6fdae681aed421e16b21aaf51ddb531e9e1f8ec72cdb6afabd89619bfc9e6332"
+    },
+    {
+      "host_mode": "generic",
+      "expected_counter": 2002,
+      "app_receipt": {
+        "counter": 2002,
+        "label": "Live frame 2002",
+        "nonce": "97ae22899b73a43d"
+      },
+      "ocr": [
+        {
+          "confidence": 1,
+          "text": "Live frame 2002",
+          "x": 0.0578231290830988,
+          "y": 0.8843750000094289
+        }
+      ],
+      "png": "generic-2002.png",
+      "size": [
+        588,
+        1280
+      ],
+      "sha256": "54b79ce5b9cc3f96944fb255e5b0505f463039c184bb86c9ecd8f0e3d9093170"
+    },
+    {
+      "host_mode": "generic",
+      "expected_counter": 3003,
+      "app_receipt": {
+        "counter": 3003,
+        "label": "Live frame 3003",
+        "nonce": "f051e62d80816bc9"
+      },
+      "ocr": [
+        {
+          "confidence": 1,
+          "text": "Live frame 3003",
+          "x": 0.05782312908163271,
+          "y": 0.8828125000099312
+        }
+      ],
+      "png": "generic-3003.png",
+      "size": [
+        588,
+        1280
+      ],
+      "sha256": "6d4a3a4e5fa93c3477c641958015fe795b376c0d47a7894bbf808b680f2f0c44"
+    },
+    {
+      "host_mode": "workbuddy",
+      "expected_counter": 4004,
+      "app_receipt": {
+        "counter": 4004,
+        "label": "Live frame 4004",
+        "nonce": "bac4e06d2cd8fd70"
+      },
+      "ocr": [
+        {
+          "confidence": 1,
+          "text": "Live frame 4004",
+          "x": 0.05782312908163266,
+          "y": 0.8843750000094289
+        }
+      ],
+      "png": "resource-4004.png",
+      "size": [
+        588,
+        1280
+      ],
+      "sha256": "28f7c8bf2d4c1a54afc334f909f3dd4b63fb30c0f77f134a0c568967ec84d45e"
+    },
+    {
+      "host_mode": "workbuddy",
+      "expected_counter": 5005,
+      "app_receipt": {
+        "counter": 5005,
+        "label": "Live frame 5005",
+        "nonce": "d581a638e14c2da3"
+      },
+      "ocr": [
+        {
+          "confidence": 1,
+          "text": "Live frame 5005",
+          "x": 0.05782312908308623,
+          "y": 0.882812500010016
+        }
+      ],
+      "png": "resource-5005.png",
+      "size": [
+        588,
+        1280
+      ],
+      "sha256": "9b9d89e83cf4f2c5c232502a44ade6ff679bb8ea0671bd2b46bbdf6a13d63420"
+    },
+    {
+      "host_mode": "workbuddy",
+      "expected_counter": 6006,
+      "app_receipt": {
+        "counter": 6006,
+        "label": "Live frame 6006",
+        "nonce": "63eb8cb72ac106a8"
+      },
+      "ocr": [
+        {
+          "confidence": 1,
+          "text": "Live frame 6006",
+          "x": 0.05782312908163271,
+          "y": 0.8828125000099312
+        }
+      ],
+      "png": "resource-6006.png",
+      "size": [
+        588,
+        1280
+      ],
+      "sha256": "ed8a4e5bad7efe5a5d3f893c988cd6753b1f04fdbe403b0e32e0492bc79a0c62"
+    }
+  ]
+}

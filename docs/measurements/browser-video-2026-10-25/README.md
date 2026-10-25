@@ -80,10 +80,19 @@ the producer. Source checks now use here-strings, preserving every assertion
 without an upstream writer. The named-install fake identity/auth cases pass;
 product installer behavior was not changed. New-head CI is tracked separately.
 
+## Subsequent live viewing
+
+[Live owned-Simulator viewing](../live-browser-2026-10-25/README.md) now links the
+actual Runner/daemon/stdio peers to this panel in Chrome and verifies changing
+App markers, privacy isolation and fresh post-hold images. It uses a synthetic
+host shell, not actual client products. The captured-AU results above remain a
+separate component test; their counters are not live throughput measurements.
+
 ## Remaining acceptance
 
-Actual client products and their sandbox/trust behavior, live native-to-MCP-to-
-browser transport, physical USB/Wi-Fi, physical orientation, long sessions and
-controlled paired tasks remain open. A recorded AU replay cannot establish task
+Actual client products and their sandbox/trust behavior, physical USB/Wi-Fi,
+physical orientation, live outage-to-PNG recovery, controlled long sessions and
+paired tasks remain open. The subsequent live bridge covers an owned Simulator,
+not these wider modes. A recorded AU replay cannot establish task
 success, live throughput or complete competitive superiority. The full scope
 remains in docs/development/competitive-acceptance.md.

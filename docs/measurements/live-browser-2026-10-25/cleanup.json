@@ -1,0 +1,9 @@
+{
+  "browser_verified_absent": true,
+  "live_fixture_exit_code": 0,
+  "startup_fixture_exit_code": 0,
+  "owned_simulators_absent": true,
+  "private_directories_absent": true,
+  "native_input_requests": 0,
+  "other_browser_sessions_untouched": true
+}

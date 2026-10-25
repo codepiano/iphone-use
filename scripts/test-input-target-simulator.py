@@ -41,6 +41,24 @@ import CryptoKit
   private weak var secondField: UITextField?
   private var shifted = false
   private var fieldReceiptGeneration = 0
+  private weak var liveTitle: UILabel?
+  private var liveTimer: Timer?
+  private var liveNonce: String?
+  @objc private func updateLiveFixture(_ timer: Timer?) {
+    let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    let command = documents.appendingPathComponent("live-video-command.json")
+    guard let data = try? Data(contentsOf: command),
+          let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let counter = body["counter"] as? Int, (1...999999).contains(counter),
+          let nonce = body["nonce"] as? String, nonce != liveNonce else { return }
+    let label = "Live frame \(counter)"
+    liveTitle?.text = label
+    liveNonce = nonce
+    let receipt: [String: Any] = ["counter": counter, "nonce": nonce, "label": label]
+    if let data = try? JSONSerialization.data(withJSONObject: receipt, options: [.sortedKeys]) {
+      try? data.write(to: documents.appendingPathComponent("live-video-state.json"), options: .atomic)
+    }
+  }
   @objc private func shiftFocusIfRequested(_ field: UITextField) {
     let marker = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("input-started.count")
     fieldReceiptGeneration += 1
@@ -118,6 +136,12 @@ import CryptoKit
     ])
     window = UIWindow(windowScene: scene)
     window?.rootViewController = controller; window?.makeKeyAndVisible()
+    if ProcessInfo.processInfo.arguments.contains("--live-video-fixture") {
+      liveTitle = title
+      liveTimer = Timer.scheduledTimer(timeInterval: 0.1, target: self,
+        selector: #selector(updateLiveFixture(_:)), userInfo: nil, repeats: true)
+      updateLiveFixture(nil)
+    }
     DispatchQueue.main.async {
       first.becomeFirstResponder()
       if ProcessInfo.processInfo.arguments.contains("--long-value-fixture") {

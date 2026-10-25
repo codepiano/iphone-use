@@ -1,0 +1,57 @@
+{
+  "scope": "owned Simulator -> native Runner -> daemon -> stdio MCP -> browser host bridge; readiness is not browser acceptance",
+  "simulator": "D75E71A8-0CF9-461C-9DF2-F1D8A6AE27ED",
+  "initial_oracle": {
+    "counter": 1001,
+    "label": "Live frame 1001",
+    "nonce": "a0991c706ba07469"
+  },
+  "owner_before": null,
+  "shutdown_reason": "requested",
+  "final_oracle": {
+    "counter": 1001,
+    "label": "Live frame 1001",
+    "nonce": "a0991c706ba07469"
+  },
+  "stats": {
+    "generic": {
+      "calls": 0,
+      "tool_calls": 0,
+      "resource_reads": 0,
+      "video_packets": 0,
+      "video_bytes": 0,
+      "png_frames": 0,
+      "clear_frames": 0,
+      "errors": 0,
+      "panel_sha256": "36e5a5587ba96b25d661b3ea7573141366287a0c19e1e3cf48cac2e593817a43"
+    },
+    "workbuddy": {
+      "calls": 0,
+      "tool_calls": 0,
+      "resource_reads": 0,
+      "video_packets": 0,
+      "video_bytes": 0,
+      "png_frames": 0,
+      "clear_frames": 0,
+      "errors": 0,
+      "panel_sha256": "08e44f48c2188d5c1c1ce65ecef3a666584aa038fba51c1347c063644cd88998"
+    }
+  },
+  "cleanup_errors": [],
+  "sources": {
+    "scripts/serve-mcp-live-browser-fixture.py": "d0fdfda50da59429030d987bb996c25e7f68a27f323c74a1373180424a54657a",
+    "scripts/test-input-target-simulator.py": "95baca16a3d670c85b5034fd8c667a696e7c5142ec0c8511d7b275a2cba3ba6a",
+    "crates/mcp/src/screen.html": "efd37a22505a3029725d5d42dd864472300b1cdf6c88aaf8319d68713a9597ac",
+    "crates/mcp/src/screen.rs": "8e3de7725846528e72b972bdf6ed268f7ed64f0a4745d490de44badd6c287e0b",
+    "crates/mcp/src/screen_video.rs": "3d55de064a6b32a474581d11ee790a2a5a1d7a51709866b56b81f795885257f4",
+    "crates/server/src/video.rs": "e8e2c86a6ea515be473bd9995752bd933e4c7367e6e9bb42483d48277752e67c",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerRoutes.swift": "17d765505d5fbd1f29885a2564713520c29bd97052be7a1a21ba93c4eb9b500e",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerH264.swift": "ef1fe1dcfaaa2fbefa0beca2157318335c9ccc121c02dbd0554993908356c0cf"
+  },
+  "daemon_sha256": "da412830d2006e558cfe172c89c8989d60f84d4ca3d4ac2648bf70d9a2b8d53d",
+  "mcp_sha256": "dcb34546a82ac94f8c31dd23c31a82653c1f720d69ca0866f79add3dfa4f8923",
+  "xctestrun_sha256": "b451ce398fa218d683575378eb95649465ac9fa2908bbc95c13c3bad146d2f25",
+  "fixture_sha256": "41e6b3c67bbb1fc9c1ed404f951ac897fd8964187866d86d458608aabf262a75",
+  "runner_binary_sha256": "1d250f0ed48128278fadbd1065ff57cd683a490a6dbe1a1539cf1413a1ce15bf",
+  "native_input_requests": 0
+}

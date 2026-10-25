@@ -1,0 +1,20 @@
+{
+  "scope": "main live run retains executed source hash; final startup smoke includes only stronger instance/UDID/process checks",
+  "main_harness_delta": "two own-instance/UDID/process admission assertions; no change to frame bridge",
+  "executed_harness_reconstruction_matches": true,
+  "current_sources": {
+    "scripts/serve-mcp-live-browser-fixture.py": "d0fdfda50da59429030d987bb996c25e7f68a27f323c74a1373180424a54657a",
+    "scripts/test-input-target-simulator.py": "95baca16a3d670c85b5034fd8c667a696e7c5142ec0c8511d7b275a2cba3ba6a",
+    "scripts/read-live-panel-counter.py": "a13d571fdbd298860737e6943149956dcca0e015dbe1d8dc7b2d2a6821a198d6",
+    "scripts/ocr-panel-image.swift": "f8531fa88336526f6d140a27699ca60c7ce5cea4f79470e46327267cb281702c"
+  },
+  "assets": {
+    "generic-1001.png": "6fdae681aed421e16b21aaf51ddb531e9e1f8ec72cdb6afabd89619bfc9e6332",
+    "generic-2002.png": "54b79ce5b9cc3f96944fb255e5b0505f463039c184bb86c9ecd8f0e3d9093170",
+    "generic-3003.png": "6d4a3a4e5fa93c3477c641958015fe795b376c0d47a7894bbf808b680f2f0c44",
+    "resource-4004.png": "28f7c8bf2d4c1a54afc334f909f3dd4b63fb30c0f77f134a0c568967ec84d45e",
+    "resource-5005.png": "9b9d89e83cf4f2c5c232502a44ade6ff679bb8ea0671bd2b46bbdf6a13d63420",
+    "resource-6006.png": "ed8a4e5bad7efe5a5d3f893c988cd6753b1f04fdbe403b0e32e0492bc79a0c62"
+  },
+  "ocr_binary_sha256": "588f4edeaf1534dfaced476129f9f7eb0cd34a3a02e91314b1aca206ff2737f1"
+}

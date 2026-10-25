@@ -1,0 +1,18 @@
+{
+  "scope": "fixture/harness checks, not a new production release or paired-product benchmark",
+  "python_compile": {
+    "passed": true,
+    "sources": {
+      "scripts/serve-mcp-live-browser-fixture.py": "d0fdfda50da59429030d987bb996c25e7f68a27f323c74a1373180424a54657a",
+      "scripts/read-live-panel-counter.py": "a13d571fdbd298860737e6943149956dcca0e015dbe1d8dc7b2d2a6821a198d6",
+      "scripts/test-input-target-simulator.py": "95baca16a3d670c85b5034fd8c667a696e7c5142ec0c8511d7b275a2cba3ba6a"
+    }
+  },
+  "ocr_source_matches_compiled_input": true,
+  "live_fixture_exit_code": 0,
+  "final_startup_fixture_exit_code": 0,
+  "observer_deadline_negative_exit_code": 1,
+  "native_runner_rebuilt_this_turn": false,
+  "production_rust_sources_changed_this_turn": false,
+  "native_runner_daemon_mcp_binary_hashes": "see live-results.json and startup-results.json"
+}

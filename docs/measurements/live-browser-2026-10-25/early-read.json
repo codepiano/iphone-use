@@ -1,0 +1,79 @@
+{
+  "scope": "first asynchronous read after App acknowledged 5005 still showed 4004; not accepted",
+  "expected_counter": 5005,
+  "ocr": [
+    {
+      "confidence": 1,
+      "text": "13:30",
+      "x": 0.12244898000485908,
+      "y": 0.9500000001897322
+    },
+    {
+      "confidence": 1,
+      "text": "Live frame 4004",
+      "x": 0.05782312908163266,
+      "y": 0.8843750000094289
+    },
+    {
+      "confidence": 1,
+      "text": "Draft placeholder",
+      "x": 0.07482992877551027,
+      "y": 0.820312500203125
+    },
+    {
+      "confidence": 1,
+      "text": "a",
+      "x": 0.08843537400793651,
+      "y": 0.22031250013020842
+    },
+    {
+      "confidence": 1,
+      "text": "d",
+      "x": 0.2823129250283447,
+      "y": 0.22031250018229165
+    },
+    {
+      "confidence": 1,
+      "text": "g",
+      "x": 0.4795918365929705,
+      "y": 0.2156250001953125
+    },
+    {
+      "confidence": 1,
+      "text": "h",
+      "x": 0.5816326528911564,
+      "y": 0.22187500016927086
+    },
+    {
+      "confidence": 1,
+      "text": "k",
+      "x": 0.7789115644314868,
+      "y": 0.22031250015624992
+    },
+    {
+      "confidence": 1,
+      "text": "Z",
+      "x": 0.19047619030612245,
+      "y": 0.15781250012276793
+    },
+    {
+      "confidence": 1,
+      "text": "n",
+      "x": 0.6768707481505102,
+      "y": 0.1578125001171875
+    },
+    {
+      "confidence": 1,
+      "text": "m",
+      "x": 0.7687074828474246,
+      "y": 0.15781250006696435
+    },
+    {
+      "confidence": 1,
+      "text": "123",
+      "x": 0.03061224471979267,
+      "y": 0.09687500004464289
+    }
+  ],
+  "recovery": "only read observations retried; counter was not rewritten; final actual canvas contains 5005"
+}
