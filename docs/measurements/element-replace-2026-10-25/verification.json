@@ -1,0 +1,15 @@
+{
+  "scope": "independent post-run file/hash and owned-resource checks",
+  "runtime_source_hashes_match": true,
+  "daemon_mcp_fixture_hashes_match": true,
+  "owned_simulator_absent": true,
+  "private_state_directories_absent": true,
+  "error_type_absent": true,
+  "required_true_case_count": 8,
+  "additional_sources": {
+    "crates/server/src/setup/coordination.rs": "0c1996aee853752776350eebef7b83e5d5f7dc85c8867e7f988fba624cd7374f",
+    "crates/server/tests/element_replace.rs": "6d8a023f77329108b7417a1d2e6f2c57ef7656145aa15ffb969904c86bc1e504",
+    "docs/agent-reference.md": "2fc33871dba838eed284d01a477f6d3fbdf277b0e0a6cb8788cd5f9568c6a663",
+    "skills/iphone-use/SKILL.md": "41730d658ffd4ad057929b10f69a302b00cdc46e95f3a5e0cded97b5daba7f74"
+  }
+}

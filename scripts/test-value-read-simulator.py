@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Short native value-read regression against App-owned seeded state, no personal phone."""
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import importlib.util
 import json
@@ -28,8 +29,11 @@ def main():
     parser.add_argument('--out',required=True,type=Path)
     parser.add_argument('--daemon',type=Path)
     parser.add_argument('--mcp',type=Path)
+    parser.add_argument('--replacement',action='store_true',help='also exercise native/daemon bound replacement and interrupted tails')
     parser.add_argument('--probe',action='store_true',help='record baseline without accepting completeness')
-    args=parser.parse_args();out=args.out.resolve();out.mkdir(mode=0o700,parents=True,exist_ok=False)
+    args=parser.parse_args()
+    if args.replacement and not args.daemon:parser.error('--replacement requires --daemon')
+    out=args.out.resolve();out.mkdir(mode=0o700,parents=True,exist_ok=False)
     xctestrun=args.xctestrun.resolve(strict=True);token=secrets.token_hex(32)
     with socket.socket() as listener:listener.bind(('127.0.0.1',0));port=listener.getsockname()[1]
     env={k:v for k,v in os.environ.items() if not k.startswith(('IPHONE_USE_','PHONE_REMOTE_','IPU_','TEST_RUNNER_IPU_','SIMCTL_CHILD_'))}
@@ -104,9 +108,11 @@ def main():
             with socket.socket() as listener:listener.bind(('127.0.0.1',0));daemon_port=listener.getsockname()[1]
             daemon_env=dict(env);daemon_env.update(IPHONE_USE_HOST='127.0.0.1',IPHONE_USE_PORT=str(daemon_port),IPHONE_USE_INSTANCE='value-'+udid[:8].lower(),TMPDIR=str(runtime),IPHONE_USE_STATE_DIR=str(state),IPHONE_USE_SIMULATOR=udid,IPHONE_USE_RUNNER_URL=f'http://127.0.0.1:{port}',IPHONE_USE_RUNNER_MJPEG_URL=f'http://127.0.0.1:{port}',IPHONE_USE_RUNNER_MANAGED='0',IPHONE_USE_AGENT_TOKEN=token,IPHONE_USE_PASSWORD='fixture-'+token,IPHONE_USE_AUTO_FOCUS='0',IPHONE_USE_IDLE_RELEASE_SECS='0',IPHONE_USE_FLOWS_NO_AUTO_UPDATE='1')
             with (out/'daemon.log').open('w') as log:daemon=subprocess.Popen([str(args.daemon.resolve()),'serve'],env=daemon_env,stdout=log,stderr=log,start_new_session=True)
-            def api(path,body=None):
+            def api(path,body=None,control=False):
                 data=None if body is None else json.dumps(body).encode()
-                request=urllib.request.Request(f'http://127.0.0.1:{daemon_port}{path}',data=data,headers={'Authorization':'Bearer '+token,'Content-Type':'application/json','X-Phone-Owner':'value-reader'})
+                headers={'Authorization':'Bearer '+token,'Content-Type':'application/json','X-Phone-Owner':'value-reader'}
+                if control:headers['X-Phone-Control']='1'
+                request=urllib.request.Request(f'http://127.0.0.1:{daemon_port}{path}',data=data,headers=headers)
                 try:
                     with opener.open(request,timeout=20) as response:return response.status,json.load(response)
                 except urllib.error.HTTPError as error:return error.code,json.load(error)
@@ -148,6 +154,77 @@ def main():
             focused_id=focused.get('ELEMENT',focused.get('element-6066-11e4-a52e-4f735466cecf'))
             assert call(check_prefix+'/element/'+focused_id+'/attribute/focused')[0] is True
             result['daemon_full_and_bounded_matches']=True;result['owner_lease_unchanged']=True;result['focus_unchanged']=True
+            if args.replacement:
+                def find(identifier):
+                    node,_=call(check_prefix+'/element',{'using':'predicate string','value':"identifier == '"+identifier+"'"})
+                    return node.get('ELEMENT',node.get('element-6066-11e4-a52e-4f735466cecf'))
+                def read_field(identifier):
+                    return call(check_prefix+'/element/'+find(identifier)+'/attribute/value')[0] or ''
+                first=find('field-a')
+                bound,_=call(check_prefix+'/ipu/element/'+first+'/replace',{'text':'native-prefix'})
+                call(check_prefix+'/wda/keys',{'value':['后续'],'inputTarget':bound['inputTarget']})
+                assert read_field('field-a')=='native-prefix后续'
+                call(check_prefix+'/ipu/element/'+find('field-a')+'/replace',{'text':'invalid\n'},expected=400)
+                assert read_field('field-a')=='native-prefix后续'
+                call(check_prefix+'/ipu/element/'+find('field-secure')+'/replace',{'text':'blocked'},expected=400)
+                assert call(check_prefix+'/element/'+find('field-a')+'/attribute/focused')[0] is True
+                bound,_=call(check_prefix+'/ipu/element/'+find('field-a')+'/replace',{'text':'original'})
+                call(check_prefix+'/element/'+find('field-b')+'/click',{})
+                refused,_=call(check_prefix+'/wda/keys',{'value':['blocked'],'inputTarget':bound['inputTarget']},expected=400)
+                assert read_field('field-a')=='original' and read_field('field-b')=='🙂🙂value'
+                result['replacement_native']={'prefix_and_tail':True,'newline_before_clear_refused':True,'secure_focus_unchanged':True,'external_command_invalidates_target':True}
+                def replacement(identifier,text):
+                    code,screen=api('/agent/elements?ocr=off');assert code==200
+                    index=next(index for index,row in enumerate(screen['elements']) if row.get('identifier')==identifier)
+                    return api('/agent/input',{'type':'set_value','snapshot':screen['snapshot'],'element':index,'value':text},control=True)
+                text='queue-deadline-'+'字'*486
+                assert len(text)==501
+                before=(out/'runner.log').read_text().count('/replace ->')
+                code,receipt=replacement('field-a',text)
+                assert code==200 and receipt.get('ok') is True,receipt
+                # Daemon uses its own Runner session; resolve a fresh probe session for observations.
+                session,_=call('/session',{});check_prefix='/session/'+session['sessionId']
+                assert read_field('field-a')==text
+                until=time.monotonic()+5
+                while True:
+                    replacement_oracle=json.loads(oracle_path.read_text())
+                    if replacement_oracle.get('characters')==501 and replacement_oracle.get('sha256')==hashlib.sha256(text.encode()).hexdigest():break
+                    assert time.monotonic()<until,'App-owned replacement oracle mismatch'
+                    time.sleep(0.05)
+                result['replacement_oracle']=replacement_oracle
+                assert (out/'runner.log').read_text().count('/replace ->')==before+1
+                # Clear both fields, then switch focus inside the first native prefix.
+                assert replacement('field-a','')[0]==200
+                assert replacement('field-b','')[0]==200
+                before=(out/'runner.log').read_text().count('/wda/keys ->')
+                code,changed=replacement('field-a','shift-focus-test-'+'x'*484)
+                assert code!=200 and changed.get('outcome')=='unknown',changed
+                assert (out/'runner.log').read_text().count('/wda/keys ->')==before
+                session,_=call('/session',{});check_prefix='/session/'+session['sessionId']
+                assert len(read_field('field-a'))==20 and len(read_field('field-b'))==180
+                until=time.monotonic()+15
+                while not api('/agent/status')[1].get('drivable'):
+                    assert time.monotonic()<until,'fresh work requires recovered drivable status'
+                    time.sleep(0.1)
+                assert replacement('field-a','')[0]==200
+                # A real App input event starts the hold, never a guessed sleep.
+                marker=oracle_path.parent/'input-started.count';marker.unlink(missing_ok=True)
+                before=(out/'runner.log').read_text().count('/wda/keys ->')
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    pending=pool.submit(replacement,'field-a','privacy-prefix-'+'字'*486)
+                    until=time.monotonic()+15
+                    while not marker.exists():
+                        assert not pending.done() and time.monotonic()<until,'replacement did not reach fixture input event'
+                        time.sleep(0.01)
+                    assert api('/agent/hold',{'secs':60,'private':True},control=True)[0]==200
+                    code,private=pending.result(timeout=20)
+                assert private.get('native_mutations_confirmed')==1 and private.get('native_mutations_uncertain')==0,private
+                assert private.get('outcome')=='partial' and private.get('ok') is False,private
+                assert (out/'runner.log').read_text().count('/wda/keys ->')==before
+                assert api('/agent/hold',{'secs':0},control=True)[0]==200
+                session,_=call('/session',{});check_prefix='/session/'+session['sessionId']
+                assert len(read_field('field-a'))==200
+                result['replacement_cases']={'native_prefix_and_bound_tail':True,'native_newline_before_clear_refused':True,'native_secure_before_focus_refused':True,'native_target_invalidation_refused':True,'daemon_501_character_replacement':True,'daemon_empty_clear':True,'mid_prefix_focus_change_unknown_without_tail':True,'private_after_app_input_event_preserves_one_ack_without_tail':True,'private_partial_receipt':{k:private.get(k) for k in ['ok','outcome','native_mutations_confirmed','native_mutations_uncertain','retry_safe']}}
         if not args.probe:assert value==expected,'selected value is incomplete'
     except Exception as error:
         result.update(error_type=type(error).__name__,error=str(error),traceback=traceback.format_exc(limit=5))
@@ -176,10 +253,12 @@ def main():
         result['sources']={name:hashlib.sha256((ROOT/name).read_bytes()).hexdigest() for name in ['scripts/test-value-read-simulator.py','scripts/test-input-target-simulator.py','runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m','runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.h','runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerElements.swift','runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerRoutes.swift','crates/server/src/http.rs','crates/server/src/runner.rs','crates/mcp/src/client.rs','crates/mcp/src/server.rs','crates/mcp/src/compact.rs']}
         for key,path in [('daemon_binary_sha256',args.daemon),('mcp_binary_sha256',args.mcp)]:
             if path:result[key]=hashlib.sha256(path.resolve().read_bytes()).hexdigest()
+        for key,path in [('fixture_binary_sha256',out/'InputGuard.app/InputGuard'),('fixture_source_sha256',out/'fixture.swift')]:
+            if path.exists():result[key]=hashlib.sha256(path.read_bytes()).hexdigest()
         result['xctestrun_sha256']=hashlib.sha256(xctestrun.read_bytes()).hexdigest()
         result['runner_binary_sha256']=hashlib.sha256((xctestrun.parent/'Debug-iphonesimulator/iPhoneUse-Runner.app/PlugIns/iPhoneUse.xctest/iPhoneUse').read_bytes()).hexdigest()
         (out/'results.json').write_text(json.dumps(result,indent=2)+'\n')
     print(json.dumps(result))
-    return 0 if not result.get('error') and not cleanup and (args.probe or result.get('full_value_matches')) else 1
+    return 0 if 'error_type' not in result and not cleanup and (args.probe or result.get('full_value_matches')) and (not args.replacement or result.get('replacement_cases')) else 1
 
 if __name__=='__main__':raise SystemExit(main())

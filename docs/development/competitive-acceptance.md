@@ -65,8 +65,11 @@ Limits to close before claiming input superiority:
   fields refuse input. Older compatible text routes stop on failed clearing,
   but do not acquire this atomic field contract.
 - Typing binds the focused field at dispatch. An earlier caller snapshot/locator
-  is not an explicit target argument to `phone_type`; separate editing-key and
-  `set_value` paths still need review.
+  is not an explicit target argument to `phone_type`. The candidate now adds
+  snapshot-bound `set_value` prefix/chunks on `ipu:elementReplace`; see
+  [replacement evidence](../measurements/element-replace-2026-10-25/README.md).
+  Separate editing-key paths, occluded/AX-poor fields and physical replacements
+  still require acceptance.
 - Foreground MCP cancellation now observes its request token and drops the HTTP
   call. Actual stdio + daemon + runner checks observe one current chunk finishing,
   without later chunks or replay; raw TCP observations are also recorded. This
@@ -160,7 +163,9 @@ model network requests, and readiness of supplied records is not superiority.
 [read/stream privacy](../measurements/privacy-transitions-2026-10-25/README.md)
 [input privacy](../measurements/input-privacy-2026-10-25/README.md)
 [action observations](../measurements/observation-scope-2026-10-25/README.md)
-and [native admission](../measurements/native-scope-2026-10-25/README.md)
+[native admission](../measurements/native-scope-2026-10-25/README.md),
+[selected value reads](../measurements/value-read-2026-10-25/README.md)
+and [selected replacement](../measurements/element-replace-2026-10-25/README.md)
 retain exact staged source/binary hashes and earlier failures.
 The latest combined Simulator run passes 39 cases through the actual daemon,
 runner and stdio MCP. It includes private input interruption and valid fresh
@@ -187,6 +192,6 @@ matching the App-owned hash. Bulk previews keep their 512-character size and
 carry a provider truncation marker. Intentional limits report completeness and
 UTF-16 counts; secure fields refuse. This proves the owned Simulator fixture,
 not provider completeness on every app or physical-device support.
-Physical acceptance, other action/key/set_value and observation/vault paths,
+Physical acceptance, other action/key and observation/vault paths,
 remaining opaque-action/flow/vault/log, recovery/host/video work, distribution and comparative task trials
 remain open. The broader goal is not complete.

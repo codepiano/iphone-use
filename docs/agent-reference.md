@@ -179,8 +179,10 @@ Ordinary holds without `private:true` retain continuation, including fresh work
 started after a previous private deadline expired; cleaning up that inactive
 deadline is not another private transition. Compatible short
 input keeps its existing failure/deadline behavior and also rechecks between
-active-field lookup, clearing and typing. Other action/key/set_value and
-mutation-observation paths still require separate acceptance.
+active-field lookup, clearing and typing. Snapshot-bound replacement on
+`ipu:elementReplace` also retains one native target across clear, prefix and
+subsequent chunks; other action/key and mutation-observation paths still require
+separate acceptance.
 
 **Pre-warm.** A released phone may already be coming back when you look:
 `warming:true` means the daemon started the bring-up ahead of time. MCP startup
@@ -367,7 +369,7 @@ Coordinates are normalized `[0,1]` (`0,0` top-left).
 {"type":"tap_locator","locator":{"identifier":"save"}}  // label/identifier/kind/value/focused/enabled/visible
 {"type":"tap","x":0.5,"y":0.3}                          // last resort
 {"type":"text","text":"Health"}                         // into the FOCUSED field; up to 20000 chars (see long text below)
-{"type":"set_value","element":5,"snapshot":"…","value":"你好"}  // write a field directly; 409 value_not_applied → tap + text instead (web views)
+{"type":"set_value","element":5,"snapshot":"…","value":"你好"}  // replace a selected field; inspect any failure before retrying
 {"type":"key","name":"return"}                          // return|enter|send|go|search fire Return; escape, space, tab, delete/backspace, arrows
 {"type":"keyboard"}                                     // dismiss the keyboard
 {"type":"shortcut","name":"home"}                       // home | spotlight (switcher is unsupported)
@@ -1508,3 +1510,27 @@ content holds metadata only, in all output modes. Native clients can use
 GET /session/:sid/element/:id/value?max_utf16=... for the structured contract.
 The compatible attribute/value route uses the full AX attribute when its
 snapshot was truncated and reports X-Value-Complete / X-Value-Source headers.
+
+### Snapshot-bound text replacement
+
+`set_value` replaces a nonsecure TextField, SearchField or TextView selected by a
+fresh element/snapshot. Secure fields require human input. A newline in a
+single-line target refuses before clearing; use an explicit key to submit.
+On runners advertising `ipu:elementReplace`, the daemon sends a single native
+request that focuses that selected element once, binds it, clears it and writes
+at most 200 Unicode scalars. Remaining text is split at conservative grapheme
+boundaries into bounded chunks using the same native target token. Every chunk
+checks identity, foreground and focus. Owner/privacy admission is rechecked at
+each subsequent request. No text or clear is retried through the legacy route.
+
+Focus/clear/prefix uncertainty is terminal, even when a later value resembles
+the requested text. An acknowledged prefix remains a confirmed native request;
+scope loss before the tail preserves that acknowledgement and refuses later
+requests. This is not per-character interruption: the already dispatched native
+prefix or chunk can finish. The server does not expose a replacement continuation
+token for automatic retries; inspect the original field before a new replacement.
+Older runners keep their existing clear/type behavior, but a clear failure now
+stops immediately instead of appending. They do not gain native target binding.
+A changed unexpected or unavailable final readback is unknown, never retry-safe
+no_effect. An acknowledged write with an unchanged original value reports
+value_not_applied; inspect status and the field before starting new work.

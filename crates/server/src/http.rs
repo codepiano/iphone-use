@@ -7150,8 +7150,8 @@ async fn tap_snapshot_element(
 }
 
 /// `{"type":"set_value","element":N,"snapshot":"…","value":"…"}` — write a text
-/// field's contents directly through runner's `element/:id/value` instead of the
-/// focus-tap-then-type dance. Clears first so the value REPLACES stale text;
+/// field's contents using a bound native prefix/chunks when supported, or the
+/// legacy clear/type path. A clear failure always stops;
 /// an empty string means "clear the field".
 /// Text inputs that `set_value` may resolve by frame when the row carries no
 /// label and no identifier.
@@ -7167,6 +7167,13 @@ async fn set_value_snapshot_element(
         .to_string();
     let (rows, index, reused) = fetch_snapshot_row_reusing(w, value).await?;
     let row = &rows[index];
+    if row.kind == "SecureTextField" {
+        return Err(SnapshotElementTapError::Refused("secure_value_requires_human", "Replace secure fields manually; nothing was sent"));
+    }
+    if !TEXT_INPUT_KINDS.contains(&row.kind.as_str()) { return Err(SnapshotElementTapError::InvalidTarget); }
+    if row.kind != "TextView" && (text.contains('\n') || text.contains('\r')) {
+        return Err(SnapshotElementTapError::Refused("newline_requires_multiline_field", "Use a multiline field or an explicit submit key; nothing was sent"));
+    }
     let element_id = if snapshot_row_locator(row).is_some() {
         let element_id = resolve_snapshot_row_element(w, &rows, index).await?;
         if reused && !verify_reused_row(w, &element_id, row).await? {
@@ -7181,62 +7188,34 @@ async fn set_value_snapshot_element(
     } else {
         return Err(SnapshotElementTapError::InvalidTarget);
     };
-    if text.is_empty() {
-        // Clearing IS the requested mutation — report its real outcome.
-        return w.clear_element(&element_id).await.map_err(|error| {
-            if runner_error_is_missing_element(&error) {
-                SnapshotElementTapError::NotFound
-            } else {
-                SnapshotElementTapError::AfterDispatch(error)
-            }
-        });
-    }
-    let secure = row.kind == "SecureTextField";
-    let before = if secure {
-        None
-    } else {
-        w.element_value(&element_id).await.ok().flatten()
+    let before = w.element_value(&element_id).await.ok().map(|value|value.unwrap_or_default());
+    let typed = match w.replace_element_if_supported(&element_id, &text).await {
+        Ok(true) => Ok(()),
+        Err(error) => return Err(SnapshotElementTapError::AfterDispatch(error)),
+        Ok(false) => {
+            // The legacy clear may already have changed focus or text. Any failure is terminal:
+            // a replacement must never silently turn into an append or retry a different field.
+            w.clear_element(&element_id).await.map_err(SnapshotElementTapError::AfterDispatch)?;
+            if text.is_empty() { return Ok(()); }
+            w.type_into(&element_id, &text).await
+        }
     };
-    // Clear-then-type is one intentional compound action (same contract as
-    // `text` with `clear:true`): the clear is best-effort, the type is still
-    // dispatched at most once.
-    if let Err(error) = w.clear_element(&element_id).await {
-        tracing::warn!("runner clear_element before set_value: {error:#}");
-    }
-    let typed = w.type_into(&element_id, &text).await;
-    if secure {
-        // A secure field reads back as bullets; nothing to compare.
-        return typed.map_err(set_value_dispatch_error);
-    }
-    // Read the field back. Web inputs (WKWebView, Chrome) and some custom
-    // fields acknowledge a direct value write and keep their old contents
-    // (hardware-reported: a PayPay chat textarea answered ok, a Rakuten
-    // e-NAVI number field answered outcome_unknown, neither changed).
-    let after = w.element_value(&element_id).await.ok().flatten();
-    match (&typed, after.as_deref()) {
-        (_, Some(now)) if same_text(now, &text) => Ok(()),
-        // The write failed and the field still holds what it held: not applied.
-        (Err(_), Some(now)) if before.as_deref().is_some_and(|was| was == now) => Err(
+    // An uncertain write must never be promoted by a later read of only this field:
+    // another field may have received part of the text. No fallback or automatic replay.
+    typed.map_err(SnapshotElementTapError::AfterDispatch)?;
+    let after = w.element_value(&element_id).await;
+    match after {
+        Ok(Some(ref now)) if same_text(now, &text) => Ok(()),
+        Ok(None) if text.is_empty() => Ok(()),
+        Ok(ref value) if before.as_deref().is_some_and(|was| was == value.as_deref().unwrap_or_default()) => Err(
             SnapshotElementTapError::NoEffect("value_not_applied", SET_VALUE_NOT_APPLIED_HINT),
         ),
-        (Ok(()), Some(_)) => Err(SnapshotElementTapError::NoEffect(
-            "value_not_applied",
-            SET_VALUE_NOT_APPLIED_HINT,
-        )),
-        // No readback: keep the dispatch outcome as runner reported it.
-        _ => typed.map_err(set_value_dispatch_error),
+        _ => Err(SnapshotElementTapError::AfterDispatch(anyhow::anyhow!(
+            "replacement acknowledged but final value changed unexpectedly or is unavailable; inspect the original field; do not replay wholesale"))),
     }
 }
 
-const SET_VALUE_NOT_APPLIED_HINT: &str = "runner acknowledged the write but the field reads back a different value — web inputs and some custom fields ignore direct value writes, and autocorrect can rewrite text. Tap the field to focus it, send {\"type\":\"text\",\"text\":…}, then read the field again";
-
-fn set_value_dispatch_error(error: anyhow::Error) -> SnapshotElementTapError {
-    if runner_error_is_missing_element(&error) {
-        SnapshotElementTapError::NotFound
-    } else {
-        SnapshotElementTapError::AfterDispatch(error)
-    }
-}
+const SET_VALUE_NOT_APPLIED_HINT: &str = "the write was acknowledged but the original field still reads as before. Inspect the original field and current status before a new replacement or focused text with clear:true; do not replay automatically";
 
 /// Field contents equal up to formatting the field adds itself: spacing and
 /// separators the caller did not type (a phone field that shows 090-1234-5678
@@ -9967,17 +9946,24 @@ async fn owned_agent_action(
             if unlock {unlock_before_action(state,w,deadline).await;}
             direct_agent_action(w,&state.runner_actionable,action,detail,deadline).await
         }).await;
-        if guard.denied() {
-            let counts=guard.counts();
+        let counts=guard.counts();
+        if guard.denied() || (counts.approved>0 && outcome.as_ref().is_some_and(|result|*result!=RunnerControlOutcome::Applied)) {
             let metadata=detail.get_or_insert_with(||serde_json::json!({}));
             metadata["native_mutations_confirmed"]=counts.confirmed.into();
             metadata["native_mutations_uncertain"]=counts.uncertain().into();
+        }
+        if guard.denied() {
             if outcome==Some(RunnerControlOutcome::Applied)&&counts.confirmed>0&&counts.uncertain()==0 {
                 return (RunnerControlOutcome::Applied,None);
             }
             if counts.uncertain()>0 {return (RunnerControlOutcome::Failed,None);}
             if counts.confirmed>0 {return (RunnerControlOutcome::NativePartial{confirmed:counts.confirmed},None);}
             return (RunnerControlOutcome::Refused(guard.reason(),"scope changed before native input; nothing was sent. Check status and coordinate with the current owner before new work"),None);
+        }
+        // A refused later request cannot erase an acknowledged/unknown native prefix.
+        if matches!(outcome.as_ref(),Some(RunnerControlOutcome::RunnerRejected|RunnerControlOutcome::NotSent)) {
+            if counts.uncertain()>0 {return (RunnerControlOutcome::Failed,None);}
+            if counts.confirmed>0 {return (RunnerControlOutcome::NativePartial{confirmed:counts.confirmed},None);}
         }
         return (outcome.unwrap_or(RunnerControlOutcome::NotSent),None);
     }

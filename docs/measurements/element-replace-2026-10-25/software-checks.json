@@ -1,0 +1,50 @@
+{
+  "scope": "candidate software checks; not physical-device acceptance",
+  "logs": {
+    "server": {
+      "sha256": "8e4e68f32f70a7412dd6c37d6ea81e01e6f5a8e1a0ccfd4d30d67911502433a2",
+      "summaries": [
+        "test result: ok. 893 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 4.91s",
+        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.96s",
+        "test result: ok. 107 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.86s",
+        "test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.61s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.72s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.55s",
+        "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.24s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.19s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.80s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.42s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.05s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.25s",
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 58s"
+      ]
+    },
+    "clippy": {
+      "sha256": "8b8f128b2b0fb62cd3b786e62c53a4fd20f83176e9b467483b5d480ddecccb63",
+      "summaries": [
+        "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 29.04s"
+      ]
+    },
+    "unsigned_ios": {
+      "sha256": "f3e8f75957b84803f367b4f83600505b11bd32c56dd04416707ef2bbbc5e6fec",
+      "summaries": [
+        "runner ci-check: names coherent across project, the setup engine and uninstall.sh",
+        "unit check: 278 checks passed",
+        "ipu-runner build: succeeded (unsigned) in 9s \u2014 log: /var/folders/6q/d9jv4cjx39zd38m0fp6lv50c0000gn/T//iphone-use-runner-ci.43989/DerivedData/../build-unsigned.log",
+        "runner ci-check: OK"
+      ]
+    },
+    "rust_build": {
+      "sha256": "f4be6f34e22196be9e107e7b744667cb403621ed9fb1172d444c9597d77182bc",
+      "summaries": [
+        "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 52.24s"
+      ]
+    },
+    "simulator_build": {
+      "sha256": "c550d8e6493d991fdb09aa8faeaf6388a4cc154c730ee83f470ddde36d80527e",
+      "summaries": [
+        "ipu-runner build: succeeded (simulator) in 6s \u2014 log: /tmp/iphone-use-element-replace-build/DerivedData/../build-simulator.log"
+      ]
+    }
+  }
+}

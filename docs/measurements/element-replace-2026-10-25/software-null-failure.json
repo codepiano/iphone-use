@@ -1,0 +1,22 @@
+{
+  "scope": "retained failed software gate; no final candidate acceptance from this run",
+  "log_sha256": "16668d834d7f50d3692b76c37edecb48ad99bf948a9a5a20d42d32eb43e8563b",
+  "failed_test": "setup::coordination::tests::a_spawned_child_does_not_keep_the_parent_guard_alive",
+  "failure": "launchd/helper children must not inherit the interactive lock",
+  "summary": [
+    "test result: FAILED. 892 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 4.75s"
+  ],
+  "note": "full server library stopped the cargo invocation before HTTP tests; coordination source was not edited by this change",
+  "parallel_recheck": {
+    "log_sha256": "8180fee01f580862669252fe4df60d0d2790e2fff1cb94655371f0e9c15ae47c",
+    "summary": [
+      "test result: FAILED. 892 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 4.80s"
+    ]
+  },
+  "isolated_coordination": {
+    "log_sha256": "f89b2f2465828b8b48ac3c00de71aa80e806a5a444cdd6b653b6fc47d83499ff",
+    "summary": [
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 891 filtered out; finished in 0.00s"
+    ]
+  }
+}

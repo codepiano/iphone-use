@@ -115,6 +115,7 @@ extension RunnerTests {
       }
       if match(parts, "wda/apps/terminate") != nil { return try terminateApp(request) }
       if match(parts, "ipu/text") != nil { return try atomicText(request) }
+      if let id = match(parts, "ipu/element/:id/replace")?.first { return try replaceElementText(id, request) }
       if match(parts, "wda/keys") != nil { return try runnerKeys(request) }
       if match(parts, "wda/keyboard/dismiss") != nil { return try dismissKeyboard(request) }
       if match(parts, "url") != nil { return try openURL(request) }
@@ -143,6 +144,7 @@ extension RunnerTests {
       "ipu:valueRead": true,
       "ipu:inputContinuation": true,
       "ipu:atomicText": true,
+      "ipu:elementReplace": true,
       "browserName": NSNull(),
       "CFBundleIdentifier": NSNull(),
     ]
@@ -1092,6 +1094,46 @@ extension RunnerTests {
         throw RunnerError.failed("field was cleared but text input could not be confirmed; outcome unknown")
       }
       throw error
+    }
+  }
+
+  /// Focus the explicitly selected field once, then bind clear and the first bounded chunk.
+  /// Further chunks use this same native token; no re-focusing or fallback after uncertainty.
+  private func replaceElementText(_ id: String, _ request: HTTPRequest) throws -> HTTPResponse {
+    let body = try request.jsonObject()
+    guard let text = body["text"] as? String, text.unicodeScalars.count <= 200 else {
+      throw RunnerError.invalidArgument("replacement prefix needs at most 200 Unicode scalars; nothing was sent")
+    }
+    IPURBridge.invalidateRequestCache()
+    let selected = try freshNode(id)
+    guard ["XCUIElementTypeTextField", "XCUIElementTypeSearchField", "XCUIElementTypeTextView"].contains(selected.type) else {
+      throw RunnerError.invalidArgument("replacement_requires_nonsecure_editable_field; nothing was sent")
+    }
+    if (text.contains("\n") || text.contains("\r")) && selected.type != "XCUIElementTypeTextView" {
+      throw RunnerError.invalidArgument("newline_requires_multiline_field; nothing was sent")
+    }
+    guard selected.pid > 0, selected.pid == foreground().pid, selected.axElement != nil,
+          selected.isEnabled, selected.isVisible(screen: windowSizePoints()) else {
+      throw RunnerError.invalidArgument("replacement_target_unavailable; nothing was sent")
+    }
+    do {
+      _ = try focusForTyping(id)
+      IPURBridge.invalidateRequestCache()
+      let original = try freshNode(id)
+      guard original.type == selected.type, original.identifier == selected.identifier,
+            selected.identifier != nil || original.label == selected.label else {
+        throw RunnerError.failed("replacement target changed while focusing")
+      }
+      let token = elements.register(original)
+      inputBinding = token
+      _ = try checkedInputTarget(token)
+      _ = try clearBoundInput(token)
+      if !text.isEmpty { _ = try boundKeys(text, token: token, frequency: 60) }
+      return .value(["inputTarget": token])
+    } catch {
+      inputBinding = nil
+      // Focusing or clearing may already have happened, even if typing did not start.
+      throw RunnerError.failed("replacement focus/clear/text could not be confirmed; outcome unknown; inspect the original field")
     }
   }
 

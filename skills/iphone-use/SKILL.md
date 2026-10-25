@@ -110,7 +110,12 @@ the current screen. The same finger stays down through each dwell;
 Flow drafts retain the full path. Verify the end screen before the next action.
 
 All actions, including swipe, drag, picker, set_value and the scroll variants,
-are listed in the reference: *Actions catalogue*.
+are listed in the reference: *Actions catalogue*. `set_value` replaces one fresh
+snapshot-bound nonsecure field. Supporting native runners bind its clear and
+all text chunks to the selected field; old runners stop if clearing fails.
+A failed/partial/unknown replacement is not safe to replay wholesale. Read the
+original field and current status first. Secure fields require human input;
+newlines in a single-line replacement refuse before clearing.
 
 HTTP `/agent/input` supplies defaults for omitted scroll anchors and `dx`.
 MCP `phone_scroll` and `phone_run_steps` scroll steps require all four fields.

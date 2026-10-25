@@ -88,6 +88,7 @@ pub struct RunnerClient {
     continuation_input: bool,
     atomic_text: bool,
     value_read: bool,
+    element_replace: bool,
     input_continuation: crate::input_continuation::Store,
     /// Last `GET /window/size` answer and when it was read. Every coordinate
     /// gesture needs the size to map normalized points, and the read costs
@@ -350,6 +351,7 @@ impl RunnerClient {
             continuation_input: false,
             atomic_text: false,
             value_read: false,
+            element_replace: false,
             input_continuation: Default::default(),
             window: None,
             posted_at: None,
@@ -720,6 +722,7 @@ impl RunnerClient {
                 .and_then(|v| v.pointer("/value/capabilities/ipu:inputContinuation").and_then(serde_json::Value::as_bool)) == Some(true);
             self.atomic_text = serde_json::from_str::<serde_json::Value>(&text).ok()
                 .and_then(|v| v.pointer("/value/capabilities/ipu:atomicText").and_then(serde_json::Value::as_bool)) == Some(true);
+            self.element_replace = serde_json::from_str::<serde_json::Value>(&text).ok().and_then(|v|v.pointer("/value/capabilities/ipu:elementReplace").and_then(serde_json::Value::as_bool))==Some(true);
             self.value_read = serde_json::from_str::<serde_json::Value>(&text).ok().and_then(|v|v.pointer("/value/capabilities/ipu:valueRead").and_then(serde_json::Value::as_bool))==Some(true);
             self.window = None;
             self.no_alert_at = None;
@@ -1050,6 +1053,27 @@ impl RunnerClient {
             .context("POST element/value")?;
         ensure_runner_success(response, "POST element/value").await?;
         Ok(())
+    }
+
+    /// Replace a selected field on supporting runners. False is capability absence only;
+    /// any dispatched failure stops without falling back to the legacy clear/type path.
+    pub async fn replace_element_if_supported(&mut self, id: &str, text: &str) -> Result<bool> {
+        let sid = self.ensure_session().await?.to_string();
+        if !self.element_replace { return Ok(false); }
+        anyhow::ensure!(text.chars().count() <= 1000, "replacement exceeds 1000 Unicode scalars");
+        let pieces = crate::text_input::split(text, crate::text_input::CHUNK_CHARS);
+        anyhow::ensure!(pieces.iter().all(|piece|piece.chars().count() <= 200), "replacement grapheme exceeds the bounded native chunk; nothing sent");
+        let prefix = pieces.first().copied().unwrap_or("");
+        let response = self.post_req(format!("{}/session/{}/ipu/element/{}/replace",self.base,sid,id))
+            .json(&serde_json::json!({"text":prefix})).send_signed(&self.auth).await?;
+        let result = ensure_runner_success(response,"POST bound element replacement").await?;
+        let token = result.get("inputTarget").and_then(serde_json::Value::as_str)
+            .filter(|token| !token.is_empty() && token.len() <= 128)
+            .ok_or_else(||anyhow!("replacement acknowledged without an input target; no further text sent"))?;
+        for chunk in pieces.iter().skip(1) {
+            self.keys_to_target(chunk,token,Duration::from_secs(20)).await?;
+        }
+        Ok(true)
     }
 
     /// Clear a specific element's text (`POST .../element/:id/clear`). Unlike
@@ -2487,7 +2511,8 @@ impl RunnerClient {
             serde_json::Value::String(s) => Some(s),
             serde_json::Value::Number(n) => Some(n.to_string()),
             serde_json::Value::Bool(b) => Some(b.to_string()),
-            _ => None,
+            serde_json::Value::Null => None,
+            _ => anyhow::bail!("GET element/attribute/value returned a nonscalar value"),
         })
     }
 
@@ -2606,6 +2631,7 @@ impl RunnerClient {
         self.continuation_input = false;
         self.atomic_text = false;
         self.value_read = false;
+        self.element_replace = false;
         self.window = None;
         self.no_alert_at = None;
         self.last_tree = None;
