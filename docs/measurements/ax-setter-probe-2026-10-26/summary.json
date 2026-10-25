@@ -1,0 +1,25 @@
+{
+  "scope": "Isolated native route on owned iPhone 17 Simulator, iOS26.2, Xcode27.0, M4. Not physical, public MCP, model or comparative latency acceptance.",
+  "decision": "reject_default_input_replacement",
+  "observations": {
+    "initial_cases": 5,
+    "delegate_cohort_cases": 9,
+    "direct_assignment_exact": 7,
+    "ordinary_typing_veto_controls": 2,
+    "delegate_veto_bypassed_fields": [
+      "TextField",
+      "TextView"
+    ],
+    "textview_change_notifications": 0,
+    "shift_trigger_length": 500,
+    "twentieth_character_fault_reached": false
+  },
+  "reason": "AX Value assignment bypasses shouldChange delegates; TextView omits delegate didChange and textDidChange notifications. Exact value and ACK do not prove ordinary input semantics.",
+  "unchanged_product": "No experimental route or AX assignment shipped. Original 200-character in-flight input limitation remains.",
+  "source_base": "a727d99bd15b41d2b3be47c29ea601d9a20d2902",
+  "setup_failures": [
+    "Attempt1 module import failed before fixture operations; stopped services and deleted owned Simulator.",
+    "Attempt2 daemon not yet drivable; no fixture/input operations; stopped services and deleted owned Simulator."
+  ],
+  "static_tool_limit": "REA binary_session reported cleanup_pending true; no native analysis session was opened. Ordinary local LLVM inspection of Xcode27.2 beta2 iPhoneOS arm64 identified the setter/RPC; this differs from executed Xcode27.0 Simulator client and is not runtime or REA decompilation evidence."
+}

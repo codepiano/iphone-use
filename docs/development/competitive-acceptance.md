@@ -25,8 +25,10 @@ The subsequent [physical iPhone 17 Pro Max/iOS 27.2 lane](../measurements/physic
 uses the same owned fixture over the local network. Twelve native entry/fault
 checks and a separate 16-record ABBA cohort plus two focus-shift probes retain
 independent App hashes. Ordinary 500-character replacements are 2/2 for each
-participant. Full reading favors the dedicated native operation; clear-time
-focus recovery favors reference. Both fail the mid-input focus-change task.
+participant. Full reading favors the dedicated native operation; the strict native default
+stops at clear-time focus handoff while reference completes it. A later explicit
+selected-field recovery candidate completes the two recorded native handoffs;
+see the later acceptance below. Both still fail the mid-input focus-change task.
 This adds one-device functional evidence, without a speed/model/release win or
 broader physical-device coverage claim.
 
@@ -66,7 +68,8 @@ Limits to close before claiming input superiority:
   calls and native invalidation for intervening commands. Its current native
   capability is `ipu:inputContinuation`; older `guardedInput`-only runners do
   not provide the continuation contract. Actual daemon/runner continuation
-  acceptance is recorded below; physical-device testing remains open.
+  acceptance is recorded below; cross-call physical continuation and app/session
+  switches remain open beyond the same-App physical replacement fixture.
 - Native postflight detects an observed focus/app change during a chunk and
   reports that chunk as unknown. The simulator covers this with a 20/180 split
   between two fields. This does not prove per-character isolation, rapid
@@ -88,6 +91,12 @@ Limits to close before claiming input superiority:
   Default stopping remains; new content and occluders refuse, old Runners refuse
   requested recovery before replacement input. The same final lane still records
   A20/B180 on input-time focus change, so the segment-isolation gap remains.
+- A subsequent [direct AX Value assignment experiment](../measurements/ax-setter-probe-2026-10-26/README.md)
+  addresses unfocused fields and completes bulk Unicode replacements on a
+  Simulator, but bypasses App delegate vetoes; TextView changes omit normal
+  change notifications. Ordinary typing controls honor the same vetoes. That
+  prototype was rejected for default input and is not shipped. Its focus fault
+  triggers after 500 characters, so it does not close the character-20 gap.
 - Old runners without the capability keep their existing input behavior;
   they must not be described as protected.
 - Ordinary short text on `ipu:atomicText` binds, optionally clears, types and
@@ -105,7 +114,10 @@ Limits to close before claiming input superiority:
   without later chunks or replay; raw TCP observations are also recorded. This
   is not a per-character immediate-stop guarantee. Physical transports, real
   host cancellation and default long-input pacing still need acceptance.
-- No physical-device acceptance or comparative speed result is available yet.
+- Physical evidence now covers the single iPhone 17 Pro Max/iOS 27.2 fixture
+  lane linked above, including strict stopping and opt-in clear-time recovery.
+  It does not establish physical cross-App continuation, a comparative speed
+  win, broader devices/transports, actual model tasks or release acceptance.
 
 The clearing candidate reads the original AX value and selection. Values of at
 most 100 UTF-16 units whose selection reaches the end use only the deletion keys
