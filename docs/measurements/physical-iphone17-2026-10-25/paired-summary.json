@@ -1,0 +1,39 @@
+{
+  "scope": "One physical iPhone 17 Pro Max/iOS27.2 over localNetwork; model-free public stdio MCP operations, independent App-owned hashes. Small functional cohort; no speed/model/release/overall superiority conclusion.",
+  "abba_order": [
+    "native",
+    "reference",
+    "reference",
+    "native"
+  ],
+  "abba_records": 16,
+  "separate_focus_shift_order": [
+    "native",
+    "reference"
+  ],
+  "separate_focus_shift_records": 2,
+  "matched_typing_frequency": 60,
+  "reference_settle_seconds": 0,
+  "reference_verify": false,
+  "fresh_required_field_inventory": {
+    "native": "2/2",
+    "reference": "2/2"
+  },
+  "ordinary_500_character_replacement": {
+    "native": "2/2 exact",
+    "reference": "2/2 exact"
+  },
+  "long_value_read": {
+    "native": "2/2 exact, 6015 characters",
+    "reference": "tested pua_find: 512 characters in both runs"
+  },
+  "app_changes_focus_after_clear": {
+    "native": "0/2 requested replacements; both guarded stops, A empty/B unchanged",
+    "reference": "2/2 requested replacements; refocuses A, B unchanged"
+  },
+  "app_changes_focus_at_character_20": {
+    "native": "A20/B180; stops remaining300; full requested input fails",
+    "reference": "A20/B480; full requested input fails"
+  },
+  "cleanup_errors": []
+}

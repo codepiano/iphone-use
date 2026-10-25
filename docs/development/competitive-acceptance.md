@@ -21,9 +21,18 @@ Baseline inspected on 2026-10-24:
   task-latency win, real model turns or physical-device superiority. The
   reference's published timings are not independent measurements.
 
+The subsequent [physical iPhone 17 Pro Max/iOS 27.2 lane](../measurements/physical-iphone17-2026-10-25/README.md)
+uses the same owned fixture over the local network. Twelve native entry/fault
+checks and a separate 16-record ABBA cohort plus two focus-shift probes retain
+independent App hashes. Ordinary 500-character replacements are 2/2 for each
+participant. Full reading favors the dedicated native operation; clear-time
+focus recovery favors reference. Both fail the mid-input focus-change task.
+This adds one-device functional evidence, without a speed/model/release win or
+broader physical-device coverage claim.
+
 | Area | Required outcome | Evidence still required |
 | --- | --- | --- |
-| Input target | Long input and continuation retain the original field, app and session; loss of focus stops without refocusing or replay | Protocol tests, simulator and physical app/field-switch cases; continuation across calls |
+| Input target | Long input and continuation retain the original field, app and session; loss of focus stops without refocusing or replay | Physical app/session/continuation switches beyond the same-App field fixture; in-flight segment isolation remains open |
 | Partial delivery | Confirmed, uncertain and unsent portions remain distinct, including clear, timeout, cancellation and batches | HTTP and MCP entry tests with injected failures, then device readback |
 | Recovery | Occlusion, no progress, missing targets and failed postconditions provide a fresh bounded screenshot and useful recovery; original errors survive capture failure | Entry tests, on-device popups and custom drawn UI |
 | Reading | Native and WebView content stays usable, with bounded output and explicit truncation/coverage | Same-page samples, Chinese lists, AX-poor screens, hidden and covered rows |
@@ -32,7 +41,7 @@ Baseline inspected on 2026-10-24:
 | Setup/recovery | Fresh setup, upgrade, existing setup reuse, signing errors and reconnect have actionable outcomes | Disposable install tests and free/paid signing with devices |
 | Hosts | Codex, Claude, Cursor/Desktop and domestic hosts work through their actual tool and panel paths | WorkBuddy/Doubao candidate adapters now have protocol and installer checks; live host trust, rendering, reuse and task acceptance remain open |
 | Viewing/control | Live view, human takeover, capture-hidden UI, gestures and pause/resume work reliably | Browser, MCP panel and iOS controller acceptance; measured bandwidth/latency |
-| Deployment modes | USB, Wi-Fi, multiple phones, old supported iOS and simulator keep documented behavior | Separate acceptance per mode/version; do not generalize one phone's results |
+| Deployment modes | USB, Wi-Fi, multiple phones, old supported iOS and simulator keep documented behavior | One iPhone/iOS27.2 local-network functional lane is recorded; USB, other versions/phones and longer sessions still need separate acceptance |
 | Privacy/access | No unexpected collection; authentication, owner isolation and limits remain enforced | Read-only/security regressions, wrong-owner and concurrent-control tests |
 | Distribution | Actual downloaded release installs, discovers tools and operates the phone | Artifact hashes, signing/notarization, entry tests and physical acceptance |
 

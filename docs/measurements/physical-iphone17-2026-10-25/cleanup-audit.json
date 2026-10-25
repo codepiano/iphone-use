@@ -1,0 +1,34 @@
+{
+  "owned_apps": [
+    {
+      "bundle": "com.leeguoo.iphone-use.acceptance.e73.fixture",
+      "uninstall_exit_code": 0
+    },
+    {
+      "bundle": "com.leeguoo.iphone-use.acceptance.e73.xctrunner",
+      "uninstall_exit_code": 0
+    },
+    {
+      "bundle": "com.leeguoo.iphone-use.acceptance.e73.wda.xctrunner",
+      "uninstall_exit_code": 0
+    }
+  ],
+  "owned_apps_absent_in_independent_inventory": true,
+  "original_runner_and_remote_app_still_installed": true,
+  "listeners": [
+    {
+      "kind": "relay_port",
+      "listener_present": false
+    },
+    {
+      "kind": "daemon_port",
+      "listener_present": false
+    }
+  ],
+  "default_service_after": {
+    "drivable": false,
+    "owner": null,
+    "mode": "offline"
+  },
+  "cleanup_errors": []
+}

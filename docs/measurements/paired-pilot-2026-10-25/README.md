@@ -201,3 +201,9 @@ products; no task is dispatched after failed fixture setup.
 Physical transports, real installed hosts, wider App/provider/version coverage,
 broader performance acceptance, actual model tasks and downloaded-release
 acceptance remain open. The broader competitive goal is not complete.
+
+A subsequent [physical iPhone 17 Pro Max/iOS 27.2 functional lane](../physical-iphone17-2026-10-25/README.md)
+records native entry/fault checks and a separate same-device comparison over the
+local network. It preserves the native current-segment misdirection and
+reference's clear-time recovery advantage. Keep it separate from this Simulator
+cohort, resource-gated timings and the still-open broader coverage.
