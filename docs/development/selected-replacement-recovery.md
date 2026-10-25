@@ -63,3 +63,9 @@ The script runs inside `scripts/test-simulator-smoke.sh` after gesture acceptanc
 its state/receipt verdicts also run without a device through
 `python3 scripts/test-replacement-recovery-verdict.py`, including rejection of
 the actual retained misclick. See the [CI-path run and cleanup evidence](../measurements/recovery-ci-2026-10-26/README.md).
+
+Startup/next-case/cleanup gates now wait only on metadata for explicit native
+idle within a bounded setup budget; a pending MCP response, missing idle state,
+owner/privacy change or permanent busy still refuses resets and writes. No
+uncertain operation is replayed. [Hosted startup failure and subsequent M4
+validation](../measurements/recovery-idle-2026-10-26/README.md) retain both results.

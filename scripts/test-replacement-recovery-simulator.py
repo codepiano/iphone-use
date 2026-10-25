@@ -123,6 +123,32 @@ def require_target(daemon, args):
     return status
 
 
+
+def wait_for_native_idle(daemon, args, peer=None, phase="setup", timeout=15):
+    """Poll only metadata; never reset/replay while a request remains pending."""
+    deadline = time.monotonic() + timeout
+    polls = 0
+    while True:
+        if peer is not None and peer.pending is not None:
+            raise RuntimeError("MCP request remains pending; no fixture reset")
+        require_target(daemon, args)
+        native, _ = drag.runner_call(args, "/status")
+        busy = native.get("value", {}).get("busy")
+        if busy is False:
+            if polls:
+                print(json.dumps({"idle_phase":phase,"busy_polls":polls,"native_idle":True}), flush=True)
+            return native
+        if busy is not True:
+            raise RuntimeError("native idle status unavailable; no fixture reset")
+        polls += 1
+        if polls == 1:
+            print(json.dumps({"idle_phase":phase,"native_idle":False,"busy_ms":native.get("value",{}).get("busyMs")}), flush=True)
+        left = deadline - time.monotonic()
+        if left <= 0:
+            raise RuntimeError("native request did not become idle within setup budget; no fixture reset")
+        time.sleep(min(.2, left))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", required=True)
@@ -144,10 +170,8 @@ def main():
     running = json.loads(pair.fixture.command("xcrun", "simctl", "list", "devices", "--json"))
     if not any(x["udid"].lower() == args.udid.lower() and x["state"] == "Booted" for rows in running["devices"].values() for x in rows):
         raise RuntimeError("requested booted Simulator is not present")
-    native, _ = drag.runner_call(args, "/status")
-    if native.get("value", {}).get("busy") is not False:
-        raise RuntimeError("native runner is not idle; no fixture installed")
-    existing = subprocess.run(["xcrun", "simctl", "get_app_container", args.udid, BUNDLE, "data"], capture_output=True)
+    wait_for_native_idle(daemon, args, phase="before_install")
+    existing = subprocess.run(["xcrun", "simctl", "get_app_container", args.udid, BUNDLE, "data"], capture_output=True, timeout=30)
     if existing.returncode == 0:
         raise RuntimeError("fixture already installed; do not overwrite another run")
     args.out.mkdir(parents=True, mode=0o700, exist_ok=False)
@@ -184,10 +208,8 @@ def main():
             return json.loads(receipt.read_text()) if receipt.exists() else {}
         for number, case in enumerate(CASES):
             name, seed, target, length, recover, fault, advance, shift = case
-            require_target(daemon, args)
-            native, _ = drag.runner_call(args, "/status")
-            if peer.pending is not None or native.get("value", {}).get("busy") is not False:
-                raise RuntimeError("previous native request is not proven idle; no fixture reset")
+            wait_for_native_idle(daemon, args, peer, phase="before_"+name)
+            print(json.dumps({"case_started":name}), flush=True)
             trial = "recovery-" + str(number) + "-" + uuid.uuid4().hex[:8]
             setup = {"trial":trial, "seed":seed, "advance":advance, "shift":shift, "clear_fault":fault}
             temp = documents / "paired-reset.json.tmp"
@@ -213,8 +235,7 @@ def main():
             reply = call("phone_set_value", arguments)
             # No transport timeout is retried. A received refusal is followed
             # only by readonly idle/stability checks, then a distinct trial.
-            native, _ = drag.runner_call(args, "/status")
-            if native.get("value", {}).get("busy") is not False: raise RuntimeError("native operation remains active")
+            wait_for_native_idle(daemon, args, peer, phase="after_"+name)
             until = time.monotonic() + 2
             after = state()
             while True:
@@ -228,6 +249,7 @@ def main():
             field = "b" if target == "field-b" else "a"
             reports.append({"case":name,"trial":trial,"before":before,"after":after,"reply":reply,"matched_expected_observation":not errors,"errors":errors,"requested_text_match":after.get("fields",{}).get(field,{}).get("sha256") == wanted,"kind":"known_limit_observation" if shift else "replacement" if name in [x[0] for x in CASES[1:6]] else "expected_stop"})
             (args.out / "result.json").write_text(json.dumps({"cases":reports},ensure_ascii=False,indent=2)+"\n")
+            print(json.dumps({"case":name,"matched_expected_observation":not errors,"kind":reports[-1]["kind"]}), flush=True)
             if errors: raise RuntimeError(name + ": " + "; ".join(errors))
     except Exception as error:
         harness_error = str(error)
@@ -242,10 +264,9 @@ def main():
                 except Exception as stopped: cleanup_errors.append("MCP stop: " + str(stopped))
         else: pending = False
         try:
-            require_target(daemon, args)
-            native, _ = drag.runner_call(args, "/status")
-            if pending or native.get("value", {}).get("busy") is not False:
-                raise RuntimeError("fixture cleanup deferred: native delivery not proven idle")
+            if pending:
+                raise RuntimeError("fixture cleanup deferred: MCP delivery remains pending")
+            wait_for_native_idle(daemon, args, phase="before_cleanup")
             if installed: pair.fixture.command("xcrun", "simctl", "uninstall", args.udid, BUNDLE)
         except Exception as error: cleanup_errors.append(str(error))
         try:

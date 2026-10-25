@@ -6,6 +6,8 @@ import importlib.util
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch, Mock
+from types import SimpleNamespace
 
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('recovery_verdict',ROOT/'scripts/test-replacement-recovery-simulator.py')
@@ -55,5 +57,62 @@ class VerdictTests(unittest.TestCase):
         r=copy.deepcopy(self.records['late-focus']);r['after']['fields']['a']['sha256']=recovery.digest('shift-focus-test-'+'字'*483)
         r['reply']['result']['structuredContent']['outcome']='applied'
         self.assertTrue(self.verdict('late-focus',r),"a complete original cannot hide text leaked to B")
+
+class IdleGateTests(unittest.TestCase):
+    def setUp(self):
+        self.args=SimpleNamespace(owner='test',udid='owned-simulator')
+        self.daemon=Mock()
+        self.daemon.require_simulator.return_value={'owner':'test','screen_private_secs':0}
+        self.clock=0.0
+
+    def sleep(self,seconds):self.clock+=seconds
+
+    def run_gate(self,responses,peer=None,timeout=.3):
+        with patch.object(recovery.drag,'runner_call',side_effect=responses) as call, \
+             patch.object(recovery.time,'monotonic',side_effect=lambda:self.clock), \
+             patch.object(recovery.time,'sleep',side_effect=self.sleep), patch('builtins.print'):
+            value=recovery.wait_for_native_idle(self.daemon,self.args,peer,timeout=timeout)
+        return value,call
+
+    def test_busy_startup_can_settle_before_any_reset(self):
+        value,call=self.run_gate([({'value':{'busy':True}},{}),({'value':{'busy':False}}, {})])
+        self.assertIs(value['value']['busy'],False)
+        self.assertEqual(call.call_count,2)
+        self.assertEqual(self.daemon.require_simulator.call_count,2)
+        self.assertEqual(self.clock,.2)
+        self.assertTrue(all(c.args[1]=='/status' and len(c.args)==2 for c in call.call_args_list))
+
+    def test_pending_mcp_never_polls_or_advances(self):
+        with patch.object(recovery.drag,'runner_call') as call:
+            with self.assertRaisesRegex(RuntimeError,'MCP request remains pending'):
+                recovery.wait_for_native_idle(self.daemon,self.args,SimpleNamespace(pending=1))
+        call.assert_not_called()
+        self.daemon.require_simulator.assert_not_called()
+
+    def test_permanent_busy_stops_at_budget_without_an_input_request(self):
+        with patch.object(recovery.drag,'runner_call',return_value=({'value':{'busy':True}},{})) as call, \
+             patch.object(recovery.time,'monotonic',side_effect=lambda:self.clock), \
+             patch.object(recovery.time,'sleep',side_effect=self.sleep), patch('builtins.print'):
+            with self.assertRaisesRegex(RuntimeError,'did not become idle'):
+                recovery.wait_for_native_idle(self.daemon,self.args,timeout=.3)
+        self.assertEqual(self.clock,.3)
+        self.assertTrue(all(c.args[1]=='/status' and len(c.args)==2 for c in call.call_args_list))
+
+    def test_missing_or_nonboolean_status_cannot_authorize_reset(self):
+        for busy in [None,0,1,'false']:
+            with self.subTest(busy=busy),self.assertRaisesRegex(RuntimeError,'idle status unavailable'):
+                self.run_gate([({'value':{'busy':busy}}, {})])
+
+    def test_owner_or_privacy_change_stops_before_next_native_poll(self):
+        for changed in [{'owner':'other','screen_private_secs':0},{'owner':'test','screen_private_secs':1}]:
+            self.daemon.require_simulator.side_effect=[{'owner':'test','screen_private_secs':0},changed]
+            self.clock=0
+            with patch.object(recovery.drag,'runner_call',return_value=({'value':{'busy':True}},{})) as call, \
+                 patch.object(recovery.time,'monotonic',side_effect=lambda:self.clock), \
+                 patch.object(recovery.time,'sleep',side_effect=self.sleep), patch('builtins.print'):
+                with self.assertRaisesRegex(RuntimeError,'existing nonprivate Simulator lease'):
+                    recovery.wait_for_native_idle(self.daemon,self.args,timeout=.3)
+            self.assertEqual(call.call_count,1)
+
 
 if __name__=='__main__':unittest.main()
