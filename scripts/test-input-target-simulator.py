@@ -118,7 +118,15 @@ import CryptoKit
     ])
     window = UIWindow(windowScene: scene)
     window?.rootViewController = controller; window?.makeKeyAndVisible()
-    DispatchQueue.main.async { first.becomeFirstResponder() }
+    DispatchQueue.main.async {
+      first.becomeFirstResponder()
+      if ProcessInfo.processInfo.arguments.contains("--long-value-fixture") {
+        first.text = "queue-deadline-" + String(repeating: "字", count: 6000)
+        second.text = "🙂🙂value"
+        secure.text = "fixture-secure-value"
+        first.sendActions(for: .editingChanged)
+      }
+    }
   }
 }
 '''

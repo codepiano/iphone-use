@@ -181,9 +181,12 @@ adds an entry-wide 80-second budget, historical partial-row checkpoints and
 budget-limited recovery. The real queue probe returns after 80.005 seconds with
 zero dispatch and remains inactive after the independent occupying input ends;
 no owner/privacy transition masks termination. The fixture verifies 6,015
-characters by its own count/hash while AX returns only 512. Full-value AX reading
-and explicit completeness/truncation reporting remain open; this discrepancy
-must not be called input loss or complete reading.
+characters by its own count/hash while AX returns only 512. The subsequent [selected-value reader](../measurements/value-read-2026-10-25/README.md)
+reads the full 6,015-character AX attribute through Runner, daemon and stdio MCP,
+matching the App-owned hash. Bulk previews keep their 512-character size and
+carry a provider truncation marker. Intentional limits report completeness and
+UTF-16 counts; secure fields refuse. This proves the owned Simulator fixture,
+not provider completeness on every app or physical-device support.
 Physical acceptance, other action/key/set_value and observation/vault paths,
 remaining opaque-action/flow/vault/log, recovery/host/video work, distribution and comparative task trials
 remain open. The broader goal is not complete.

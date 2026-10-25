@@ -962,3 +962,31 @@ fn deadline_keeps_partial_collection_rows_in_all_output_modes() {
         assert_eq!(daemon.requests.lock().unwrap().len(), 1);
     }
 }
+
+#[test]
+fn readonly_value_text_is_complete_and_single_copy_in_all_modes() {
+    let value = "value-root-".to_string() + &"字".repeat(6015);
+    for mode in ["full", "slim", "off"] {
+        let body = serde_json::json!({"ok":true,"value":value,"source":"ax_value_attribute","complete":true,"truncated":false,"utf16_length":6026,"returned_utf16_length":6026,"limit_utf16":8192});
+        let daemon = ScriptedDaemon::start("200 OK", body.to_string().into_bytes());
+        let mut mcp =
+            McpChild::start_options(&daemon.url, mode, &[("IPHONE_USE_MCP_TOOLS", "readonly")]);
+        let reply = mcp.call_tool(
+            2,
+            "phone_read_value",
+            serde_json::json!({"identifier":"field-a"}),
+        );
+        let result = &reply["result"];
+        assert!(!result["isError"].as_bool().unwrap_or(false), "{reply}");
+        let text = result["content"][0]["text"].as_str().unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(parsed["value"], value);
+        assert_eq!(reply.to_string().matches(&value).count(), 1);
+        assert!(result["structuredContent"].get("value").is_none());
+        let requests = daemon.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert!(!requests[0]
+            .to_ascii_lowercase()
+            .contains("x-phone-control:"));
+    }
+}

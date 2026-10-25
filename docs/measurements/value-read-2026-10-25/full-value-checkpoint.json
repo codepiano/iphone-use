@@ -1,0 +1,27 @@
+{
+  "scope": "actual native runner on owned Simulator; no real-host/physical acceptance",
+  "simulator": "4FB07BD6-1C34-4DFB-9F0F-D4FF1150559A",
+  "expected_chars": 6015,
+  "observed_chars": 6015,
+  "oracle": {
+    "characters": 6015,
+    "sha256": "cd62e7be33ba3fa9f3046d6ae26c6e6c25a3fd461003f081d7c68662cfd41127"
+  },
+  "value_sha256": "cd62e7be33ba3fa9f3046d6ae26c6e6c25a3fd461003f081d7c68662cfd41127",
+  "value_headers": {
+    "X-Value-Complete": "1",
+    "X-Value-Source": "ax_value_attribute"
+  },
+  "snapshot_limits": null,
+  "full_value_matches": true,
+  "probe_only": false,
+  "cleanup_errors": [],
+  "sources": {
+    "scripts/test-value-read-simulator.py": "65e3dd87c606c06f10253d0f6580fd3e9c0cc27a281fd1933103f9db3690d3db",
+    "scripts/test-input-target-simulator.py": "86d6dc482ba67b25605b94032cdecc45204326d93ea1ae7cb22b2741ddf72f12",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m": "cca6c87ee72a1e397d6655ef03998de358281970be4d35d94c295541eb81ad00",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerRoutes.swift": "ba41dc7a3c25fe4cec1fbd7d4723775a52469b56d412fb9238fc525b8f842226"
+  },
+  "xctestrun_sha256": "b451ce398fa218d683575378eb95649465ac9fa2908bbc95c13c3bad146d2f25",
+  "runner_binary_sha256": "1ad0885df2ba80524187fa1effcba7605ed2850b2408b7ad0cf34f9ec1ee6f3b"
+}

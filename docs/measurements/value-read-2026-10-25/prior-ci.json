@@ -1,0 +1,23 @@
+{
+  "head": "18d975ef0d80c7c2ebfd91d784baea077ea8a245",
+  "runs": [
+    {
+      "id": 40153146688,
+      "workflow": "PR checks",
+      "conclusion": "success"
+    },
+    {
+      "id": 40153146624,
+      "workflow": "Plugin Security Scan",
+      "conclusion": "success"
+    },
+    {
+      "id": 40153146574,
+      "workflow": "Simulator smoke",
+      "conclusion": "failure",
+      "stage": "Smoke test",
+      "failure": "owned gesture fixture simctl terminate exceeded 30 seconds",
+      "failed_log_sha256": "d731cc2a51a8504acc60771847c413e4e63d4c3b97aeef63b1622c4f3ac832cd"
+    }
+  ]
+}

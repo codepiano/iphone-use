@@ -1,0 +1,50 @@
+{
+  "scope": "candidate software checks, not real phone or installed-host acceptance",
+  "logs": {
+    "server": {
+      "sha256": "fb949f2a7d09bafea7385a0cc7699d8fa82150c4fcd996611de1b114c80dbe19",
+      "summaries": [
+        "test result: ok. 893 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 4.90s",
+        "test result: ok. 107 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.89s",
+        "test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.19s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.73s",
+        "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.81s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.31s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.31s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.08s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.34s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.22s",
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 46s"
+      ]
+    },
+    "mcp": {
+      "sha256": "34ebc559dba7e01d85cc78abdd98339b471412738f57ec0d328a4c77920c3ffc",
+      "summaries": [
+        "test result: ok. 247 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 33.17s",
+        "test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.56s",
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 35.11s"
+      ]
+    },
+    "clippy": {
+      "sha256": "6706505e58a26d0fc724e4158a397768e610e903a2cc2afa48a1a4ead98bd60c",
+      "summaries": [
+        "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 32.22s"
+      ]
+    },
+    "native_unit": {
+      "sha256": "9939babbb8fdc5818289d870f585d4d25a7deb62d7f3fb987829506afc2e38c8",
+      "summaries": [
+        "unit check: 278 checks passed"
+      ]
+    },
+    "unsigned_ios": {
+      "sha256": "ac1b4cbeacf06b0f9e64711567871da771e88b86dc38358b8b7ea99f9ce18bfb",
+      "summaries": [
+        "runner ci-check: names coherent across project, the setup engine and uninstall.sh",
+        "unit check: 278 checks passed",
+        "ipu-runner build: succeeded (unsigned) in 8s \u2014 log: /var/folders/6q/d9jv4cjx39zd38m0fp6lv50c0000gn/T//iphone-use-runner-ci.61719/DerivedData/../build-unsigned.log",
+        "runner ci-check: OK"
+      ]
+    }
+  }
+}

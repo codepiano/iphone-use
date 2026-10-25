@@ -172,6 +172,13 @@ same read; `?image=auto` adds a screenshot only when the tree is unusable.
 MCP screen text includes at most 200 rows and 32 KiB of row text. When it
 reports omitted rows, narrow `phone_elements` with `query`/`limit`; an omitted
 target is not proven absent and a truncated list is not proven complete.
+A field marked `value_truncated` is only a snapshot preview. When the task needs
+its full value, use `phone_read_value` with one exact identifier or label from a
+fresh screen, optionally kind. It reads without focusing or taking a lease;
+secure/ambiguous/unsupported reads refuse. Check complete/truncated and source:
+complete AX value is not proof the app exposed its full document. max_utf16 bounds
+output without splitting an emoji; no value is silently promoted from a preview.
+
 Use the displayed `#N` with its snapshot: it is the original full-tree index.
 To inspect off-screen/not-drawn rows beyond the five-label summary, call
 `phone_elements` with `include_hidden: true` (combine with `query`/`limit`

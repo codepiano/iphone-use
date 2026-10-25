@@ -77,6 +77,7 @@ extension RunnerTests {
       if match(parts, "element/active") != nil { return try activeElement() }
       if match(parts, "alert/text") != nil { return try alertText() }
       if match(parts, "wda/alert/buttons") != nil { return try alertButtons() }
+      if let id = match(parts, "element/:id/value")?.first { return try elementValue(id, request: request) }
       if let id = match(parts, "element/:id/rect")?.first { return try elementRect(id) }
       if let captures = match(parts, "element/:id/attribute/:name") {
         return try elementAttribute(captures[0], captures[1])
@@ -139,6 +140,7 @@ extension RunnerTests {
       "sdkVersion": Self.systemVersion,
       "ipu:timedDragPath": true,
       "ipu:guardedInput": true,
+      "ipu:valueRead": true,
       "ipu:inputContinuation": true,
       "ipu:atomicText": true,
       "browserName": NSNull(),
@@ -345,12 +347,55 @@ extension RunnerTests {
     .value(rectValue(try freshNode(id).rect))
   }
 
+  private func fullElementValue(_ id: String, limit: Int) throws -> [String: Any] {
+    let node = try freshNode(id)
+    guard node.type != "XCUIElementTypeSecureTextField" else {
+      throw RunnerError.invalidArgument("secure_value_read_requires_human")
+    }
+    IPURBridge.invalidateRequestCache()
+    guard node.pid > 0, node.pid == foreground().pid, let ax = node.axElement else {
+      throw RunnerError.staleElement(id)
+    }
+    var error: NSString?
+    guard let result = IPURBridge.readValue(for: ax, maxUTF16: UInt(limit), error: &error) else {
+      throw RunnerError.unsupported("full AX value read unavailable")
+    }
+    IPURBridge.invalidateRequestCache()
+    let after = try freshNode(id)
+    guard after.pid == foreground().pid, after.pid == node.pid,
+          after.type == node.type, after.identifier == node.identifier,
+          node.identifier != nil || after.label == node.label,
+          after.type != "XCUIElementTypeSecureTextField" else {
+      throw RunnerError.staleElement(id)
+    }
+    return result as [String: Any]
+  }
+
+  private func elementValue(_ id: String, request: HTTPRequest) throws -> HTTPResponse {
+    let raw = request.query["max_utf16"]
+    let limit = raw.flatMap(Int.init) ?? 32768
+    guard raw == nil || Int(raw!) != nil, (1...65536).contains(limit) else {
+      throw RunnerError.invalidArgument("max_utf16 must be 1...65536")
+    }
+    return .value(try fullElementValue(id, limit: limit))
+  }
+
   private func elementAttribute(_ id: String, _ name: String) throws -> HTTPResponse {
     let node = try freshNode(id)
     let screen = windowSizePoints()
     func orNull(_ value: Any?) -> Any { value ?? NSNull() }
     switch name {
-    case "value", "wdValue": return .value(orNull(node.value))
+    case "value", "wdValue":
+      if node.type != "XCUIElementTypeSecureTextField",
+          node.attributes["value_truncated"] as? Bool == true || (node.value?.utf16.count ?? 0) >= 512 {
+        let result = try fullElementValue(id, limit: 32768)
+        return .value(orNull(result["value"]), headers: [
+          "X-Value-Complete": (result["complete"] as? Bool == true) ? "1" : "0",
+          "X-Value-Source": "ax_value_attribute",
+        ])
+      }
+      return .value(orNull(node.value), headers: ["X-Value-Source": "ax_snapshot"])
+    case "valueTruncated": return .value(orNull(node.attributes["value_truncated"]))
     case "label", "wdLabel": return .value(orNull(node.label))
     case "name", "wdName": return .value(orNull(node.name))
     case "type", "wdType": return .value(node.type)

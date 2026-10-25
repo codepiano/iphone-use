@@ -1037,6 +1037,7 @@ fn api_routes() -> Router<Arc<AppState>> {
         .route("/agent/h264/keyframe", post(agent_h264_keyframe))
         .route("/agent/elements", get(agent_elements))
         .route("/agent/activity", get(agent_activity))
+        .route("/agent/value", post(agent_value))
         .route("/agent/collect", post(agent_collect))
         .route("/agent/scroll_find", post(agent_scroll_find))
         .route("/agent/flow/draft", get(agent_flow_draft))
@@ -12679,6 +12680,178 @@ async fn agent_actions_claimed(
     agent_actions_json(StatusCode::OK, result)
 }
 
+fn value_predicate_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'"))
+}
+#[derive(Clone)]
+struct ValueReadFence {
+    state: Arc<AppState>,
+    scope: crate::input_continuation::Scope,
+}
+fn value_scope_failure() -> serde_json::Value {
+    serde_json::json!({"ok":false,"error":"value_read_scope_changed","value_omitted":true,"hint":"The value was withheld after owner/privacy changed; check current status before a fresh read"})
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ValueReadRequest {
+    identifier: Option<String>,
+    label: Option<String>,
+    kind: Option<String>,
+    max_utf16: Option<u32>,
+}
+fn valid_value_contract(value: &serde_json::Value, limit: u32) -> bool {
+    let Some(text) = value.get("value") else {
+        return false;
+    };
+    if !text.is_null() && !text.is_string() {
+        return false;
+    }
+    let returned = text.as_str().map_or(0, |v| v.encode_utf16().count()) as u64;
+    let Some(total) = value
+        .get("utf16_length")
+        .and_then(serde_json::Value::as_u64)
+    else {
+        return false;
+    };
+    returned <= limit as u64
+        && total >= returned
+        && value["source"] == "ax_value_attribute"
+        && value["limit_utf16"] == limit
+        && value["returned_utf16_length"] == returned
+        && value["complete"] == (returned == total)
+        && value["truncated"] == (returned < total)
+}
+async fn agent_value(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: String,
+) -> Response {
+    let scope = crate::input_continuation::Scope {
+        owner: String::new(),
+        epoch: state.owner_epoch.load(std::sync::atomic::Ordering::Acquire),
+        privacy_epoch: state
+            .privacy_epoch
+            .load(std::sync::atomic::Ordering::Acquire),
+    };
+    match agent_auth(&state, &headers) {
+        AgentAuth::Ok => {}
+        AgentAuth::Denied => {
+            return with_security_headers(
+                (StatusCode::UNAUTHORIZED, "unauthorized").into_response(),
+            )
+        }
+        AgentAuth::Locked => {
+            return with_security_headers(
+                (StatusCode::TOO_MANY_REQUESTS, "too many attempts").into_response(),
+            )
+        }
+    }
+    if let Some(refused) = screen_private_refusal(&state) {
+        return refused;
+    }
+    if state.released.load(std::sync::atomic::Ordering::Acquire)
+        || state.runner_lifecycle.is_transitioning()
+    {
+        return json_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            serde_json::json!({"ok":false,"error":"device_unavailable"}),
+        );
+    }
+    let request = match serde_json::from_str::<ValueReadRequest>(&body) {
+        Ok(request) => request,
+        Err(_) => return invalid_list_request("invalid value-read request".into()),
+    };
+    let selector = match (request.identifier.as_deref(), request.label.as_deref()) {
+        (Some(id), None) if !id.is_empty() && id.chars().count() <= 512 => {
+            format!("identifier == {}", value_predicate_literal(id))
+        }
+        (None, Some(label)) if !label.is_empty() && label.chars().count() <= 512 => {
+            format!("label == {}", value_predicate_literal(label))
+        }
+        _ => {
+            return invalid_list_request(
+                "give exactly one nonempty identifier or label, at most 512 characters".into(),
+            )
+        }
+    };
+    let limit = request.max_utf16.unwrap_or(8192);
+    if !(1..=65536).contains(&limit) {
+        return invalid_list_request("max_utf16 must be 1...65536".into());
+    }
+    let selector = if let Some(kind) = request.kind {
+        if kind.is_empty() || kind.len() > 80 {
+            return invalid_list_request("invalid kind".into());
+        }
+        format!(
+            "({selector}) AND type == {}",
+            value_predicate_literal(&format!(
+                "XCUIElementType{}",
+                kind.trim_start_matches("XCUIElementType")
+            ))
+        )
+    } else {
+        selector
+    };
+    let Some(runner) = &state.runner else {
+        return ControlRefusal::runner_not_configured().into_response();
+    };
+    state.touch_activity();
+    let guard = native_guard(&state, &scope);
+    let work = guard.run(async {
+        let _priority = state.begin_runner_control();
+        let mut client = runner.lock().await;
+        let ids = client.find_elements("predicate string", &selector).await?;
+        if ids.len() != 1 {
+            return Ok::<_, anyhow::Error>(Err(if ids.is_empty() {
+                "element_not_found"
+            } else {
+                "ambiguous_element"
+            }));
+        }
+        client.read_element_value(&ids[0], limit).await.map(Ok)
+    });
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(15), work).await;
+    let current = || request_scope_refusal(&state, Some(&scope)).is_none();
+    let mut response = if !current() {
+        json_response(StatusCode::CONFLICT, value_scope_failure())
+    } else {
+        match outcome {
+            Ok(Some(Ok(Ok(mut value)))) if valid_value_contract(&value, limit) => {
+                value["ok"] = true.into();
+                json_response(StatusCode::OK, value)
+            }
+            Ok(Some(Ok(Err(error)))) => json_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                serde_json::json!({"ok":false,"error":error}),
+            ),
+            Err(_) => json_response(
+                StatusCode::GATEWAY_TIMEOUT,
+                serde_json::json!({"ok":false,"error":"value_read_timeout"}),
+            ),
+            Ok(Some(Err(error)))
+                if crate::runner::runner_http_error(&error).is_some_and(|e| {
+                    e.message
+                        .as_deref()
+                        .is_some_and(|message| message.contains("secure_value_read_requires_human"))
+                }) =>
+            {
+                json_response(
+                    StatusCode::FORBIDDEN,
+                    serde_json::json!({"ok":false,"error":"secure_value_read_requires_human"}),
+                )
+            }
+            _ => json_response(
+                StatusCode::NOT_IMPLEMENTED,
+                serde_json::json!({"ok":false,"error":"full_value_unavailable","hint":"The runner did not supply a complete-value contract; upgrade it or use a permitted alternative read. No preview was promoted to a full value"}),
+            ),
+        }
+    };
+    response
+        .extensions_mut()
+        .insert(ValueReadFence { state, scope });
+    response
+}
+
 // ---------------------------------------------------------------------------
 // /agent/collect and /agent/scroll_find: read a list across pages, or look
 // for one label, swiping on the agent's behalf (see `crate::collect`).
@@ -16400,6 +16573,16 @@ struct ReadPrivacyFence {
 /// fence or lose its fixed-size timing/metrics enrichment before it is installed.
 async fn privacy_read_body_layer(request: axum::extract::Request, next: axum::middleware::Next) -> Response {
     let response = next.run(request).await;
+    if let Some(fence)=response.extensions().get::<ValueReadFence>().cloned(){
+        let (mut parts,body)=response.into_parts();
+        let bytes=match axum::body::to_bytes(body,1<<20).await{Ok(bytes)=>bytes,Err(_)=>return json_response(StatusCode::BAD_GATEWAY,value_scope_failure())};
+        parts.headers.remove(header::CONTENT_LENGTH);
+        let stream=futures_util::stream::once(async move{
+            let bytes=if request_scope_refusal(&fence.state,Some(&fence.scope)).is_some(){bytes::Bytes::from(value_scope_failure().to_string())}else{bytes};
+            Ok::<_,std::io::Error>(bytes)
+        });
+        return Response::from_parts(parts,Body::from_stream(stream));
+    }
     if let Some(fence)=response.extensions().get::<MutationObservationFence>().cloned(){
         let is_json=response.headers().get(header::CONTENT_TYPE).and_then(|v|v.to_str().ok()).is_some_and(|v|v.starts_with("application/json"));
         if is_json && axum::body::HttpBody::size_hint(response.body()).exact().is_some(){

@@ -87,6 +87,7 @@ pub struct RunnerClient {
     guarded_input: bool,
     continuation_input: bool,
     atomic_text: bool,
+    value_read: bool,
     input_continuation: crate::input_continuation::Store,
     /// Last `GET /window/size` answer and when it was read. Every coordinate
     /// gesture needs the size to map normalized points, and the read costs
@@ -348,6 +349,7 @@ impl RunnerClient {
             guarded_input: false,
             continuation_input: false,
             atomic_text: false,
+            value_read: false,
             input_continuation: Default::default(),
             window: None,
             posted_at: None,
@@ -718,6 +720,7 @@ impl RunnerClient {
                 .and_then(|v| v.pointer("/value/capabilities/ipu:inputContinuation").and_then(serde_json::Value::as_bool)) == Some(true);
             self.atomic_text = serde_json::from_str::<serde_json::Value>(&text).ok()
                 .and_then(|v| v.pointer("/value/capabilities/ipu:atomicText").and_then(serde_json::Value::as_bool)) == Some(true);
+            self.value_read = serde_json::from_str::<serde_json::Value>(&text).ok().and_then(|v|v.pointer("/value/capabilities/ipu:valueRead").and_then(serde_json::Value::as_bool))==Some(true);
             self.window = None;
             self.no_alert_at = None;
             self.device_settle = None;
@@ -968,6 +971,16 @@ impl RunnerClient {
                     .map(String::from)
             })
             .collect())
+    }
+
+    /// One explicitly selected element's full AX value. Older runners refuse;
+    /// their bounded snapshot string is never promoted to a complete value.
+    pub async fn read_element_value(&mut self, id: &str, max_utf16: u32) -> Result<serde_json::Value> {
+        let sid=self.ensure_session().await?.to_string();
+        if !self.value_read {anyhow::bail!("runner lacks ipu:valueRead");}
+        let response=self.http.get(format!("{}/session/{}/element/{}/value",self.base,sid,id))
+            .query(&[("max_utf16",max_utf16)]).send_signed(&self.auth).await?;
+        ensure_runner_success(response,"GET element value").await
     }
 
     /// Set a date/option PickerWheel to a target value (issue #23). A `scroll`
@@ -2592,6 +2605,7 @@ impl RunnerClient {
         self.guarded_input = false;
         self.continuation_input = false;
         self.atomic_text = false;
+        self.value_read = false;
         self.window = None;
         self.no_alert_at = None;
         self.last_tree = None;
@@ -2930,6 +2944,9 @@ pub struct ElementRow {
     /// switches / sliders drivable without vision.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<String>,
+    /// Provider explicitly reported a truncated snapshot value; absence is not proof of completeness.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value_truncated: Option<bool>,
     /// runner emits these flags for every source node. Keep the common healthy
     /// state sparse to avoid inflating every MCP response: `enabled:false` and
     /// `visible:false` are emitted only for exceptional nodes.
@@ -2992,6 +3009,8 @@ pub struct ElementRowJson {
     #[serde(skip_serializing_if = "Option::is_none")]
     value: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    value_truncated: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     enabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     visible: Option<bool>,
@@ -3037,6 +3056,7 @@ impl From<ElementRow> for ElementRowJson {
             rect: row.rect.map(Coordinate),
             depth: row.depth,
             value: row.value,
+            value_truncated: row.value_truncated,
             enabled: row.enabled,
             visible: row.visible,
             accessible: row.accessible,
@@ -3330,12 +3350,14 @@ fn flatten_node(
         };
         let selected = selected_attribute.or(selected);
         let traits = (options.raw_traits && !traits.is_empty()).then_some(traits);
+        let value_truncated = (kind != "SecureTextField").then(||runner_bool(node,"value_truncated").filter(|flag|*flag)).flatten();
         out.push(ElementRow {
             kind,
             label,
             identifier: non_empty_string(node, "rawIdentifier"),
             rect: [g("x"), g("y"), g("width"), g("height")],
             depth,
+            value_truncated,
             value,
             enabled,
             visible,
@@ -3729,6 +3751,18 @@ mod tests {
     use std::net::TcpListener;
 
     // Issue #257: a runner's error status keeps its own reason.
+    #[test]
+    fn value_truncation_survives_flattening_without_password_length_metadata() {
+        let source=serde_json::json!({"type":"XCUIElementTypeApplication","label":"Fixture","children":[
+            {"type":"XCUIElementTypeTextField","label":"Draft","value":"PREFIX","value_truncated":true},
+            {"type":"XCUIElementTypeSecureTextField","label":"Password","value":"secret","value_truncated":true}]});
+        let mut rows=Vec::new();flatten_tree(&source,0,&mut rows);
+        let field=rows.iter().find(|row|row.kind=="TextField").unwrap();assert_eq!(field.value_truncated,Some(true));
+        assert_eq!(serde_json::to_value(field).unwrap()["value_truncated"],true);
+        let secure=rows.iter().find(|row|row.kind=="SecureTextField").unwrap();assert_eq!(secure.value_truncated,None);
+        assert!(!serde_json::to_value(secure).unwrap().to_string().contains("secret"));
+    }
+
     #[test]
     fn runner_http_errors_keep_the_envelope_reason_and_status_text() {
         let refused = RunnerHttpError::from_body(

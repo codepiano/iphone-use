@@ -1,0 +1,7 @@
+{
+  "scope": "post-acceptance whitespace-only script cleanup; no product source or binary changes",
+  "path": "scripts/test-value-read-simulator.py",
+  "executed_source_sha256": "739dd1bf907c22df91eca7b242ec48d1605e1da964db6c5acaab826d7a3ccfa8",
+  "committed_source_sha256": "9e1cf36a6c1eec9da20145baafa2bc9fe2b4ebeca168ce66fd044ddd3a1277e9",
+  "verification": "identical whitespace-separated tokens; runtime results retain actual executed source hash"
+}

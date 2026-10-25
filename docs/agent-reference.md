@@ -1485,3 +1485,26 @@ withholds them at body publication. Optional recovery images cannot extend the
 execution deadline; budget exhaustion omits the image without replacing a
 lookup result that already completed. Server-side cancellation on client
 transport disconnect remains a separate contract.
+
+### Full selected AX values
+
+Bulk elements remain snapshots. A provider-reported `value_truncated:true` marks
+an incomplete preview; absence of a marker on an older runner does not prove
+full text. `phone_read_value` / `POST /agent/value` reads one element by exactly
+one `identifier` or exact `label`, optionally `kind`, without tapping/focusing,
+activating an app, reconnecting or taking an owner lease. Ambiguity refuses.
+
+The request can name `max_utf16` (1–65536, default 8192). The result names the
+full AX attribute source, original and returned UTF-16 lengths, complete and
+truncated. Output clips at Unicode scalar boundaries, so an emoji is not split.
+Complete describes that AX attribute, not the application's full document or
+hidden data; the app can expose a summarized accessibility value. Secure fields
+refuse. Older runners lacking ipu:valueRead refuse rather than present a preview
+as a full value. Current owner/privacy generations govern the read and its body
+publication; no native mutation is issued or replayed.
+
+The MCP result places the bounded value exactly once in its text JSON; structured
+content holds metadata only, in all output modes. Native clients can use
+GET /session/:sid/element/:id/value?max_utf16=... for the structured contract.
+The compatible attribute/value route uses the full AX attribute when its
+snapshot was truncated and reports X-Value-Complete / X-Value-Source headers.
