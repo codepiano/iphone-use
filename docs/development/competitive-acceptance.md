@@ -151,6 +151,13 @@ gesture fallback replay; it is not proof about all server/host retries or in-fli
 cancellation. The 312 native logic checks include effect-before-error and failed
 public-path controls; they are not physical acknowledgement-loss injection.
 
+The subsequent [actual HTTP/stdio MCP entry checks](../measurements/gesture-delivery-entry-2026-10-26/README.md)
+pass 42 scenarios in each of default/full MCP output modes against a scripted
+loopback Runner. Error replies, errors inside HTTP 200 and lost connections stay
+unknown/non-retryable with one native POST. Batch prefixes retain their applied
+count; the unsent suffix does not run. This is protocol-ledger evidence, not real
+UIKit delivery or physical transport failure injection.
+
 ## Failure recovery, in development
 
 Selected UI failures from `/agent/input` and `/agent/actions` now request a fresh,
