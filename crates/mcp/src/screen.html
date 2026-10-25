@@ -227,14 +227,14 @@
     return parts.join(" · ");
   }
 
-  let videoDecoder = null, videoScope = null, videoGeneration = 0;
+  let videoDecoder = null, videoScope = null, videoGeneration = 0, videoConfig = null;
   let videoRetryAt = 0, videoWatchdog = null;
   const canVideo = typeof VideoDecoder !== "undefined" && typeof EncodedVideoChunk !== "undefined";
   function clearVideo(keepPixels = false) {
     videoGeneration++;
     if (videoWatchdog) {clearTimeout(videoWatchdog);videoWatchdog=null;}
     if (videoDecoder) { try { videoDecoder.close(); } catch (_) {} }
-    videoDecoder = null; videoScope = null;
+    videoDecoder = null; videoScope = null; videoConfig = null;
     if (!keepPixels) { videoCanvas.hidden = true; videoCanvas.width = 1; videoCanvas.height = 1; }
   }
   function armVideoWatchdog() {
@@ -248,14 +248,33 @@
       stop();kick(0);
     },3000);
   }
-  function codecOf(bytes) {
-    for (let i=0; i+7<bytes.length; i++) {
-      let start = bytes[i]===0 && bytes[i+1]===0 && bytes[i+2]===1 ? i+3
-        : bytes[i]===0 && bytes[i+1]===0 && bytes[i+2]===0 && bytes[i+3]===1 ? i+4 : -1;
-      if (start>=0 && (bytes[start]&31)===7 && start+3<bytes.length)
-        return "avc1." + Array.from(bytes.slice(start+1,start+4),v=>v.toString(16).padStart(2,"0")).join("");
+  function configOf(bytes) {
+    const starts=[];
+    for(let i=0;i+3<bytes.length;i++) {
+      const prefix=bytes[i]===0&&bytes[i+1]===0&&bytes[i+2]===1?3:
+        bytes[i]===0&&bytes[i+1]===0&&bytes[i+2]===0&&bytes[i+3]===1?4:0;
+      if(prefix){if(starts.length>=256)throw new Error("too many video units");starts.push({at:i,payload:i+prefix});i+=prefix-1;}
     }
-    return null;
+    let codec=null;const parameters=[];
+    for(let i=0;i<starts.length;i++) {
+      const start=starts[i].payload,end=i+1<starts.length?starts[i+1].at:bytes.length;
+      const type=bytes[start]&31;
+      if(type!==7&&type!==8)continue;
+      if(end-start>4096||parameters.length>=16)throw new Error("oversized video parameters");
+      if(type===7&&end-start>=4)codec="avc1."+Array.from(bytes.slice(start+1,start+4),v=>v.toString(16).padStart(2,"0")).join("");
+      parameters.push(type+":"+Array.from(bytes.slice(start,end),v=>v.toString(16).padStart(2,"0")).join(""));
+    }
+    return codec?{codec,signature:parameters.sort().join("|")}:null;
+  }
+  async function decoderRoom(decoder,generation) {
+    const deadline=performance.now()+1000;
+    while(decoder.decodeQueueSize>6) {
+      if(!visible()||generation!==videoGeneration||videoDecoder!==decoder)return false;
+      if(performance.now()>=deadline)throw new Error("video decoder fell behind");
+      // Yield to the real decoder: a bounded batch can contain more than six packets.
+      await new Promise(resolve=>setTimeout(resolve,5));
+    }
+    return visible()&&generation===videoGeneration&&videoDecoder===decoder;
   }
   async function showVideo(video) {
     if (!video || video.format!=="iphone-use-h264-annexb-v1" || typeof video.scope!=="string" || !Array.isArray(video.packets)) throw new Error("invalid video batch");
@@ -268,10 +287,10 @@
       if (!visible() || generation!==videoGeneration) return;
       const bytes=Uint8Array.from(atob(packet.data),v=>v.charCodeAt(0));
       if (packet.keyframe) {
-        const codec=codecOf(bytes);
-        if (!codec) throw new Error("video keyframe has no SPS");
-        {
-          const config={codec,optimizeForLatency:true};
+        const parameters=configOf(bytes);
+        if (!parameters) throw new Error("video keyframe has no SPS");
+        if (!videoDecoder || videoConfig!==parameters.signature) {
+          const config={codec:parameters.codec,optimizeForLatency:true};
           let codecTimer;
           const support=await Promise.race([
             VideoDecoder.isConfigSupported(config),
@@ -294,11 +313,11 @@
             },
             error() { if (videoDecoder!==decoder || generation!==videoGeneration) return; clearVideo();videoRetryAt=performance.now()+1000; },
           });
-          videoDecoder=decoder;videoDecoder.configure(config);
+          videoDecoder=decoder;videoConfig=parameters.signature;videoDecoder.configure(config);
         }
       }
       if (!videoDecoder) continue;
-      if (videoDecoder.decodeQueueSize>6) throw new Error("video decoder fell behind");
+      if (!await decoderRoom(videoDecoder,generation)) return;
       videoDecoder.decode(new EncodedVideoChunk({type:packet.keyframe?"key":"delta",timestamp:packet.pts_micros,data:bytes}));
     }
   }
@@ -388,6 +407,8 @@
       if (!visible()) {clearVideo();return;}
       if (wantsVideo && expectedVideoGeneration!==videoGeneration) {delay=0;return;}
       const live = show(body);
+      // A private hold is not a codec/transport failure. Resume video promptly when public.
+      if (body.private_secs) {videoRetryAt=0;failures=0;delay=IDLE_INTERVAL_MS;return;}
       if (body.video && !body.private_secs && !body.clear_frame) {
         await showVideo(body.video);
         failures=0;delay=0;return;

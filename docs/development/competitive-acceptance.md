@@ -175,8 +175,11 @@ while refusing a later relaunch after privacy changes.
 Native H.264 packets also pass through runner/daemon/stdio resources and decode
 independently; private on/off forces a fresh video subscription. [Continuous viewing evidence](../measurements/video-endurance-2026-10-25/README.md)
 adds a 20-second native run across HTTP expiry and two independent MCP viewers,
-plus idle-competition and decoder-stall fixes. Actual browser WebCodecs,
-installed-host presentation, physical rotation and long soak remain unverified.
+plus idle-competition and decoder-stall fixes. [Actual Chrome replay](../measurements/browser-video-2026-10-25/README.md)
+now verifies native AU decoding, real canvas pixels, decoder reuse, privacy
+clear/resume and PNG fallback in both synthetic host modes. The full native-to-
+MCP-to-browser live pipeline, installed-host presentation, physical rotation
+and long soak remain unverified.
 List diagnostics additionally preserve coverage and produce one fresh image over
 stdio; private on/off after a swipe ACK preserves one confirmed gesture and
 sends no later source request. The first counter-instrumentation failure and the

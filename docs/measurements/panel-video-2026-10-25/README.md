@@ -48,6 +48,15 @@ The previous input/admission candidate `a7bf898` passed every GitHub check:
 PR checks 40141730998, security 40141731013 and Simulator smoke 40141731031.
 Those results apply to that commit, not this subsequent video candidate.
 
+## Subsequent browser acceptance
+
+[Actual Chrome replay](../browser-video-2026-10-25/README.md) supersedes the earlier
+unavailable-browser checkpoint for codec/canvas behavior only. It reproduces zero
+output with repeated decoder recreation, fixes SPS/PPS reuse and bounded queue
+pressure, and checks public/private/resume/PNG states with real VideoDecoder in
+both synthetic host transports. It replays captured native data, not live phone
+video, and does not establish real client application or physical acceptance.
+
 ## Remaining acceptance
 
 Actual WorkBuddy/Doubao/Codex rendering, physical USB/Wi-Fi capture, orientation,

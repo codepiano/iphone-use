@@ -1,0 +1,20 @@
+{
+  "scope": "actual candidate stdio resources/read; no phone/daemon request or live host rendering",
+  "mcp_binary_sha256": "dcb34546a82ac94f8c31dd23c31a82653c1f720d69ca0866f79add3dfa4f8923",
+  "panels": [
+    {
+      "host_mode": "generic",
+      "uri": "ui://iphone-use/screen-0.23.0.html",
+      "html_sha256": "36e5a5587ba96b25d661b3ea7573141366287a0c19e1e3cf48cac2e593817a43",
+      "exact_source_template_match": true,
+      "prewarm_disabled": true
+    },
+    {
+      "host_mode": "workbuddy",
+      "uri": "ui://iphone-use/screen-workbuddy-0.23.0.html",
+      "html_sha256": "08e44f48c2188d5c1c1ce65ecef3a666584aa038fba51c1347c063644cd88998",
+      "exact_source_template_match": true,
+      "prewarm_disabled": true
+    }
+  ]
+}

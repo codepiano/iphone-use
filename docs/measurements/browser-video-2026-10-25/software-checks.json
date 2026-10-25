@@ -1,0 +1,50 @@
+{
+  "scope": "candidate MCP software/build and isolated helper checks, not live host/phone acceptance",
+  "logs": {
+    "mcp": {
+      "sha256": "51351218ce689602b8c88741b96dccc83585197665ff3686d565ae83562e7050",
+      "summaries": [
+        "test result: ok. 247 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 33.19s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.63s",
+        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.95s",
+        "test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.41s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.26s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 49.83s"
+      ]
+    },
+    "clippy": {
+      "sha256": "2d8a0eb4891631c240e0f2dc81962fcb14e36efda7c41ab71614c5a7a345d4f5",
+      "summaries": [
+        "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 42.39s"
+      ]
+    },
+    "build": {
+      "sha256": "1f6e5b099ee1be7e5e3d7ea3fb77ee37fc650b9917dfa96d7c65be7b13778b70",
+      "summaries": [
+        "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.17s"
+      ]
+    },
+    "panel_emulation": {
+      "sha256": "8c53fd6675085f193083281cf50d67d9ffc4e0b1459e36c4bf8b36e312146940",
+      "summaries": [
+        "ok - generic/Doubao tools: decoder reuse, SPS/PPS changes, queue pressure/timeout, private resume, rotation, stalled decoder, late callbacks, PNG fallback, hidden teardown",
+        "ok - WorkBuddy resources: decoder reuse, SPS/PPS changes, queue pressure/timeout, private resume, rotation, stalled decoder, late callbacks, PNG fallback, hidden teardown"
+      ]
+    },
+    "host_emulation": {
+      "sha256": "8fabcd3091fa06c3357918148a02f20897e2fdb163027ceb92bd348f01dff511",
+      "summaries": [
+        "ok - generic/Doubao tools: draw, private hold, controls, cache nonce, hidden polling",
+        "ok - WorkBuddy resources: draw, private hold, controls, cache nonce, hidden polling"
+      ]
+    },
+    "named_installer": {
+      "sha256": "bd63f1d3b57fe98d7ef3ad4b80db157cc94fa9a2cec8f2e1ee69ba29d7bf3592",
+      "summaries": [
+        "1..8"
+      ]
+    }
+  }
+}

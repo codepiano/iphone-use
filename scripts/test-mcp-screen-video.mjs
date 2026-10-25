@@ -6,7 +6,7 @@ const html=fs.readFileSync(new URL('../crates/mcp/src/screen.html',import.meta.u
 for (const resources of [false,true]) {
   const elements=new Map(),events=new Map(),timers=new Map(),messages=[];
   let timerId=0,now=0,privateScreen=false,unavailable=false,scope='boot-0',draws=0,closed=0,noOutput=false,landscape=false;
-  const outputs=[];
+  const outputs=[];let configured=0,currentDecoder=null,packetsPerBatch=1,ppsVersion=1;
   const element=id=>{
     if(!elements.has(id))elements.set(id,{hidden:true,dataset:{},textContent:'',
       addEventListener(name,handler){this[name]=handler;},removeAttribute(name){delete this[name];},
@@ -15,8 +15,8 @@ for (const resources of [false,true]) {
   };
   class Decoder {
     static async isConfigSupported(){return {supported:true};}
-    constructor(callbacks){this.callbacks=callbacks;this.decodeQueueSize=0;}
-    configure(){}
+    constructor(callbacks){this.callbacks=callbacks;this.decodeQueueSize=0;currentDecoder=this;}
+    configure(){configured++;}
     close(){closed++;}
     decode(){const w=landscape?32:16,h=landscape?16:32;const run=()=>this.callbacks.output({displayWidth:w,displayHeight:h,close(){}});outputs.push(run);if(!noOutput)queueMicrotask(run);}
   }
@@ -31,7 +31,7 @@ for (const resources of [false,true]) {
       let body={drivable:true,private_secs:privateScreen?60:null};
       if(privateScreen)body={...body,clear_frame:true};
       else if(video && unavailable)body={...body,clear_frame:true,video_unavailable:true,error:'not available'};
-      else if(video)body={...body,video:{format:'iphone-use-h264-annexb-v1',scope,reset,packets:[{keyframe:true,pts_micros:1,data:Buffer.from([0,0,0,1,0x67,0x42,0,0x1f,0,0,0,1,0x65]).toString('base64')} ]}};
+      else if(video)body={...body,video:{format:'iphone-use-h264-annexb-v1',scope,reset,packets:Array.from({length:packetsPerBatch},(_,index)=>({keyframe:true,pts_micros:index+1,data:Buffer.from([0,0,0,1,0x67,0x42,0,0x1f,landscape?2:1,0,0,0,1,0x68,0xce,ppsVersion,0,0,0,1,0x65]).toString('base64')}))}};
       else body={...body,frame:{mime_type:'image/png',data:'fixture'}};
       result=resources?{contents:[{text:JSON.stringify(body)}]}:{structuredContent:body};
     }
@@ -48,9 +48,17 @@ for (const resources of [false,true]) {
   const flush=async()=>{for(let i=0;i<8;i++)await new Promise(resolve=>setImmediate(resolve));};
   const poll=async()=>{const item=[...timers].filter(([,value])=>value.delay<8000).sort((a,b)=>a[1].due-b[1].due)[0];assert(item);timers.delete(item[0]);now=Math.max(now,item[1].due);item[1].handler();await flush();};
   await flush();await poll();assert.equal(draws,1);assert.equal(element('video').hidden,false);assert.equal(element('image').hidden,true);
+  await poll();assert.equal(draws,2);assert.equal(configured,1,'identical SPS/PPS keyframes must reuse the decoder');
+  const priorOutput=outputs[outputs.length-1];ppsVersion=2;await poll();assert.equal(configured,2,'PPS changes reconfigure even with the same SPS/codec');
+  const afterPps=draws;priorOutput();assert.equal(draws,afterPps,'old configuration output cannot restore pixels');
+  const beforeQueue=draws;currentDecoder.decodeQueueSize=7;packetsPerBatch=8;
+  await poll();assert.equal(draws,beforeQueue,'backpressure waits before dropping any batch packets');
+  currentDecoder.decodeQueueSize=0;await poll();assert.equal(draws,beforeQueue+8);assert.equal(configured,2,'a burst of IDR frames does not restart decoding');
+  packetsPerBatch=1;
+
   privateScreen=true;await poll();assert.equal(element('video').hidden,true);assert.equal(element('video').width,1);
   const previous=draws;for(const output of outputs)output();assert.equal(draws,previous,'late decoder callbacks after private hold must not render');
-  privateScreen=false;scope='boot-2';now=31000;await poll();assert.equal(draws,previous+1);assert(closed>0);
+  privateScreen=false;scope='boot-2';await poll();assert.equal(draws,previous+1);assert(closed>0);
   const oldOutput=outputs[outputs.length-1];
   landscape=true;await poll();assert.equal(element('video').width,32);assert.equal(element('video').height,16);
   const rendered=draws;oldOutput();assert.equal(draws,rendered,'a closed portrait decoder cannot overwrite the landscape frame');
@@ -61,7 +69,10 @@ for (const resources of [false,true]) {
   await poll();assert.equal(element('image').src,'data:image/png;base64,fixture');
   noOutput=false;now+=31000;
   unavailable=true;await poll();assert.equal(element('video').hidden,true);await poll();assert.equal(element('image').src,'data:image/png;base64,fixture');
+  unavailable=false;now+=31000;await poll();currentDecoder.decodeQueueSize=7;
+  await poll();now+=1001;await poll();assert.equal(element('video').hidden,true,'backpressure timeout clears video');
+  await poll();assert.equal(element('image').src,'data:image/png;base64,fixture');
   events.get('pagehide')();const reads=messages.length;for(const [id,timer]of [...timers])if(timer.delay<8000){timers.delete(id);timer.handler();}await flush();assert.equal(messages.length,reads);
   assert.equal(element('video').hidden,true);assert(!JSON.stringify(messages).includes('Bearer'));
-  console.log(`ok - ${resources?'WorkBuddy resources':'generic/Doubao tools'}: native packets, privacy, rotation, stalled decoder, late callbacks, reset, PNG fallback, hidden teardown`);
+  console.log(`ok - ${resources?'WorkBuddy resources':'generic/Doubao tools'}: decoder reuse, SPS/PPS changes, queue pressure/timeout, private resume, rotation, stalled decoder, late callbacks, PNG fallback, hidden teardown`);
 }

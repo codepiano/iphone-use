@@ -1,0 +1,175 @@
+{
+  "scope": "actual Chrome WebCodecs/canvas, captured native AU replayed by synthetic MCP host; not live transport or real host product acceptance",
+  "before": {
+    "configured": 4517,
+    "decoded": 4517,
+    "outputs": 0,
+    "errors": [],
+    "supports": [
+      {
+        "codec": "avc1.4d401f",
+        "supported": true
+      },
+      {
+        "codec": "avc1.4d401f",
+        "supported": true
+      },
+      {
+        "codec": "avc1.4d401f",
+        "supported": true
+      },
+      {
+        "codec": "avc1.4d401f",
+        "supported": true
+      },
+      {
+        "codec": "avc1.4d401f",
+        "supported": true
+      }
+    ],
+    "started": 110714.20000001788
+  },
+  "independent_flush_decode": {
+    "frames": [
+      {
+        "width": 602,
+        "height": 1310
+      }
+    ],
+    "errors": []
+  },
+  "modes": {
+    "generic-final": {
+      "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
+      "mode": "tools",
+      "batchPackets": 8,
+      "probe": {
+        "configured": 1,
+        "decoded": 312,
+        "outputs": 311,
+        "errors": [],
+        "supports": [
+          {
+            "codec": "avc1.4d401f",
+            "supported": true
+          }
+        ],
+        "started": 763.9000000059605,
+        "lastOutput": {
+          "width": 602,
+          "height": 1310
+        }
+      },
+      "video": {
+        "width": 602,
+        "height": 1310,
+        "hidden": false
+      }
+    },
+    "generic-resume-final": {
+      "resumeObservedMs": 2081.699999988079,
+      "privateCycleRendered": true,
+      "probe": {
+        "configured": 1,
+        "decoded": 16,
+        "outputs": 16,
+        "errors": [],
+        "supports": [
+          {
+            "codec": "avc1.4d401f",
+            "supported": true
+          }
+        ],
+        "started": 763.9000000059605,
+        "lastOutput": {
+          "width": 602,
+          "height": 1310
+        }
+      }
+    },
+    "generic-fallback-final": {
+      "mode": "tools",
+      "pngFallback": {
+        "canvasHidden": true,
+        "imageHidden": false,
+        "width": 602,
+        "height": 1310,
+        "complete": true
+      }
+    },
+    "resource-final": {
+      "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
+      "mode": "resources",
+      "batchPackets": 8,
+      "probe": {
+        "configured": 1,
+        "decoded": 528,
+        "outputs": 528,
+        "errors": [],
+        "supports": [
+          {
+            "codec": "avc1.4d401f",
+            "supported": true
+          }
+        ],
+        "started": 687,
+        "lastOutput": {
+          "width": 602,
+          "height": 1310
+        }
+      },
+      "host": {
+        "toolCalls": 0,
+        "resourceReads": 134
+      },
+      "video": {
+        "width": 602,
+        "height": 1310,
+        "hidden": false
+      }
+    },
+    "resource-private-final": {
+      "mode": "resources",
+      "privateCleared": true
+    },
+    "resource-resume-final": {
+      "resumeObservedMs": 2121.7999999821186,
+      "mode": "resources",
+      "probe": {
+        "configured": 1,
+        "decoded": 16,
+        "outputs": 16,
+        "errors": [],
+        "supports": [
+          {
+            "codec": "avc1.4d401f",
+            "supported": true
+          }
+        ],
+        "started": 687,
+        "lastOutput": {
+          "width": 602,
+          "height": 1310
+        }
+      },
+      "host": {
+        "toolCalls": 0,
+        "resourceReads": 70
+      }
+    },
+    "resource-fallback-final": {
+      "mode": "resources",
+      "host": {
+        "toolCalls": 0,
+        "resourceReads": 137
+      },
+      "pngFallback": {
+        "canvasHidden": true,
+        "imageHidden": false,
+        "width": 602,
+        "height": 1310,
+        "complete": true
+      }
+    }
+  }
+}
