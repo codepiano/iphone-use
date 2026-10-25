@@ -85,9 +85,11 @@ captures leave the original failure intact. MCP returns one image block without
 base64 duplication in text or structured output.
 
 [Recovery evidence](../measurements/recovery-image-2026-10-25/README.md) records
-software checks and the actual candidate integration results. Dedicated
-`scroll_find`/`collect` recovery, physical popups and custom-drawn screens, and
-image rendering in real hosts remain open.
+software checks and the actual candidate integration results. [List recovery](../measurements/list-recovery-2026-10-25/README.md) adds
+`scroll_find`/`collect` diagnostics and entry/read/send/publication scope guards.
+Physical popups, real scrolling apps, custom-drawn screens, overall queued
+traversal deadlines, server-side cancellation after disconnect and image
+rendering in real hosts remain open.
 
 ## Candidate host adapters
 
@@ -161,7 +163,7 @@ model network requests, and readiness of supplied records is not superiority.
 [action observations](../measurements/observation-scope-2026-10-25/README.md)
 and [native admission](../measurements/native-scope-2026-10-25/README.md)
 retain exact staged source/binary hashes and earlier failures.
-The latest combined Simulator run passes 35 cases through the actual daemon,
+The latest combined Simulator run passes 38 cases through the actual daemon,
 runner and stdio MCP. It includes private input interruption and valid fresh
 work after expiry, alongside the prior target/cancellation/recovery/host checks.
 The native admission case additionally preserves one termination acknowledgement
@@ -171,6 +173,10 @@ independently; private on/off forces a fresh video subscription. [Continuous vie
 adds a 20-second native run across HTTP expiry and two independent MCP viewers,
 plus idle-competition and decoder-stall fixes. Actual browser WebCodecs,
 installed-host presentation, physical rotation and long soak remain unverified.
+List diagnostics additionally preserve coverage and produce one fresh image over
+stdio; private on/off after a swipe ACK preserves one confirmed gesture and
+sends no later source request. The first counter-instrumentation failure and the
+corrected 38-case run are retained separately.
 Physical acceptance, other action/key/set_value and observation/vault paths,
 remaining opaque-action/flow/vault/log, recovery/host/video work, distribution and comparative task trials
 remain open. The broader goal is not complete.

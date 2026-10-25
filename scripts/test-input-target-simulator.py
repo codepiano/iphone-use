@@ -13,6 +13,8 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
+import traceback
 import secrets
 import select
 import shutil
@@ -193,6 +195,7 @@ def main():
     parser.add_argument("--input-privacy", action="store_true", help="verify pending and in-flight typing across private holds")
     parser.add_argument("--observation-scope", action="store_true", help="verify applied input keeps its receipt while stale observations are withheld")
     parser.add_argument("--native-scope", action="store_true", help="verify no late relaunch after acknowledged termination")
+    parser.add_argument("--list-recovery", action="store_true", help="verify scoped list diagnostics and interruption after native swipe ACK")
     parser.add_argument("--video", action="store_true", help="verify native H.264 via WorkBuddy resources and independent ffmpeg decode (requires --hosts)")
     parser.add_argument("--runtime", default="com.apple.CoreSimulator.SimRuntime.iOS-27-0")
     parser.add_argument("--device-type", default="com.apple.CoreSimulator.SimDeviceType.iPhone-17")
@@ -206,6 +209,8 @@ def main():
     video_peers = []
     daemon_binary = args.daemon.resolve(strict=True) if args.daemon else None
     mcp_binary = args.mcp.resolve(strict=True) if args.mcp else None
+    if args.list_recovery and not (daemon_binary and mcp_binary):
+        raise RuntimeError("--list-recovery requires --daemon and --mcp")
     if args.video and (not args.hosts or not shutil.which("ffmpeg")):
         raise RuntimeError("--video requires --hosts and ffmpeg")
     if args.native_scope and not daemon_binary:
@@ -1053,8 +1058,56 @@ def main():
                     "independent_processes":2,"other_viewer_reset":False,"final_viewer_count":0,
                     "native_key_requests":0,"owner_unchanged":True})
 
+            if args.list_recovery:
+                env=dict(environment)
+                env.update(IPHONE_USE_URL=f"http://127.0.0.1:{daemon_port}",IPHONE_USE_TOKEN=tok,
+                    IPHONE_USE_OWNER="input-continuation-fixture",IPHONE_USE_MCP_HOST="generic",
+                    IPHONE_USE_MCP_TOOLS="phone_scroll_find,phone_collect_list",IPHONE_USE_MCP_STRUCTURED="full")
+                peer=VideoPeer(mcp_binary,env,out/"mcp.log")
+                video_peers.append(peer)
+                peer.initialize()
+                before_actions=route_count("/actions")
+                for find in [True,False]:
+                    result=peer.request("tools/call",{"name":"phone_scroll_find" if find else "phone_collect_list",
+                        "arguments":{"label":"__list_recovery_missing__","max_swipes":0} if find else {"row_kind":"Slider","max_pages":1}})["result"]
+                    verdict=result.get("structuredContent",{})
+                    assert verdict.get("swipes")==0 and verdict.get("native_mutations_confirmed")==0,verdict
+                    assert bool(result.get("isError"))==find,result
+                    if find:assert verdict.get("found") is False and verdict.get("error")=="element_not_found",verdict
+                    else:assert verdict.get("complete") is False and verdict.get("stop_reason")=="no_rows",verdict
+                    images=[block for block in result.get("content",[]) if block.get("type")=="image"]
+                    assert len(images)==1,result
+                    assert base64.b64decode(images[0]["data"],validate=True).startswith(b"\x89PNG\r\n\x1a\n")
+                    assert "png_base64" not in json.dumps(verdict)
+                    assert all("png_base64" not in block.get("text","") for block in result.get("content",[]))
+                    assert route_count("/actions")==before_actions
+                    reports.append({"case":"stdio-scroll-find-fresh-diagnostic-without-swipe" if find else "stdio-collect-no-rows-fresh-diagnostic-keeps-incomplete",
+                        "passed":True,"image_blocks":1,"native_swipes":0,"original_verdict_preserved":True})
+                before_actions=route_count("/actions")
+                source_reads=lambda:sum(bool(re.search(r"ipu-runner: GET (?:/session/[^/ ]+)?/source(?:\?[^ ]*)? ->",line)) for line in log_path.read_text(errors="replace").splitlines())
+                before_reads=source_reads()
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    pending=pool.submit(api,"/agent/scroll_find",{"label":"__list_recovery_missing__","max_swipes":1})
+                    until=time.monotonic()+10
+                    while route_count("/actions")==before_actions:
+                        if pending.done() or time.monotonic()>=until:raise RuntimeError("list did not acknowledge native swipe")
+                        time.sleep(0.01)
+                    assert api("/agent/hold",{"secs":60,"private":True})[0]==200
+                    assert api("/agent/hold",{"secs":0})[0]==200
+                    status,receipt=pending.result(timeout=15)
+                (out/"list-scope-receipt.json").write_text(json.dumps({"status":status,"receipt":receipt},indent=2)+"\n")
+                assert status==409 and receipt.get("outcome")=="partial",receipt
+                assert receipt.get("swipes")==1 and receipt.get("native_mutations_confirmed")==1 and receipt.get("native_mutations_uncertain")==0,receipt
+                assert receipt.get("retry_safe") is False and receipt.get("observation_omitted") is True,receipt
+                assert all(key not in receipt for key in ["snapshot","rows","target","candidates","image"]),receipt
+                assert route_count("/actions")==before_actions+1,{"before_actions":before_actions,"after_actions":route_count("/actions")}
+                assert source_reads()==before_reads+1,{"before_reads":before_reads,"after_reads":source_reads()}
+                reports.append({"case":"list-private-transition-preserves-swipe-ack-without-post-scope-read","passed":True,
+                    "native_swipes_confirmed":1,"native_mutations_uncertain":0,"later_source_reads":0,"retry_safe":False})
+                peer.close()
+
     except Exception as error:
-        reports.append({"case": "harness-or-current-case", "passed": False, "error": str(error)})
+        reports.append({"case": "harness-or-current-case", "passed": False, "error": str(error),"error_type":type(error).__name__,"traceback":traceback.format_exc(limit=5)})
     finally:
         for peer in video_peers:
             try:peer.close()
@@ -1092,7 +1145,7 @@ def main():
         if daemon_binary:
             files.extend(map(Path, ["crates/server/src/http.rs", "crates/server/src/runner.rs", "crates/server/src/input_continuation.rs", "crates/server/src/recovery.rs", "crates/server/src/video.rs", "crates/server/src/observation.rs", "crates/server/src/native_scope.rs", "crates/server/src/timing.rs"]))
         if mcp_binary:
-            files.extend(map(Path, ["crates/mcp/src/server.rs", "crates/mcp/src/client.rs", "crates/mcp/src/screen.rs", "crates/mcp/src/screen.html", "crates/mcp/src/screen_video.rs"]))
+            files.extend(map(Path, ["crates/mcp/src/server.rs", "crates/mcp/src/client.rs", "crates/mcp/src/screen.rs", "crates/mcp/src/screen.html", "crates/mcp/src/screen_video.rs", "crates/mcp/src/compact.rs"]))
         manifest = {"scope": "actual XCTest runner on disposable iOS Simulator; not physical-device evidence",
             "simulator": udid, "runtime": args.runtime, "cases": reports, "observations": observations, "cleanup_errors": cleanup_errors,
             "xctestrun_sha256": hashlib.sha256(xctestrun.read_bytes()).hexdigest(),
@@ -1104,7 +1157,7 @@ def main():
             manifest["mcp_binary_sha256"] = hashlib.sha256(mcp_binary.read_bytes()).hexdigest()
         (out / "results.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(json.dumps({"cases": reports, "observations": observations, "cleanup_errors": cleanup_errors}))
-    expected = (20 if mcp_binary else 19 if daemon_binary else 6) + ((3 if mcp_binary else 2) if args.recovery else 0) + 2 * int(args.hosts) + 3 * int(args.input_privacy) + 2 * int(args.observation_scope) + int(args.native_scope) + 4 * int(args.video)
+    expected = (20 if mcp_binary else 19 if daemon_binary else 6) + ((3 if mcp_binary else 2) if args.recovery else 0) + 2 * int(args.hosts) + 3 * int(args.input_privacy) + 2 * int(args.observation_scope) + int(args.native_scope) + 4 * int(args.video) + 3 * int(args.list_recovery)
     return 0 if len(reports) == expected and all(r["passed"] for r in reports) and not cleanup_errors else 1
 
 

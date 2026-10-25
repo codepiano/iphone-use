@@ -12663,29 +12663,37 @@ struct RunnerPager<'a> {
     w: &'a mut crate::runner::RunnerClient,
     screen: Option<(f64, f64)>,
     first_page: Option<crate::collect::Page>,
+    swipes: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl crate::collect::Pager for RunnerPager<'_> {
     async fn read(&mut self) -> anyhow::Result<crate::collect::Page> {
-        if let Some(page) = self.first_page.take() {
-            return Ok(page);
-        }
-        // Source reads are idempotent: one more try on a fresh session, as a
-        // failed read on /agent/elements gets.
-        let rows = match self.w.elements().await {
-            Ok(rows) => rows,
-            Err(_) => {
-                self.w.invalidate_session();
-                self.w.elements().await?
+        crate::native_scope::read(async {
+            if let Some(page) = self.first_page.take() {
+                return Ok(page);
             }
-        };
-        if self.screen.is_none() {
-            self.screen = self.w.window_size().await.ok();
-        }
-        Ok(crate::collect::Page {
-            rows,
-            screen: self.screen,
+            // Source reads are idempotent: one more try on a fresh session, as a
+            // failed read on /agent/elements gets.
+            let rows = match self.w.elements().await {
+                Ok(rows) => rows,
+                Err(error) => {
+                    if crate::native_scope::is_revoked(&error) {
+                        return Err(error);
+                    }
+                    crate::native_scope::ensure_current()?;
+                    self.w.invalidate_session();
+                    self.w.elements().await?
+                }
+            };
+            if self.screen.is_none() {
+                self.screen = self.w.window_size().await.ok();
+            }
+            Ok(crate::collect::Page {
+                rows,
+                screen: self.screen,
+            })
         })
+        .await
     }
 
     async fn swipe(
@@ -12695,13 +12703,20 @@ impl crate::collect::Pager for RunnerPager<'_> {
     ) -> anyhow::Result<()> {
         let (_, height) = match self.screen {
             Some(screen) => screen,
-            None => self.w.window_size().await?,
+            None => crate::native_scope::read(self.w.window_size()).await?,
         };
         let region = region.unwrap_or(crate::collect::Region::FULL);
         let (x, y) = region.center();
         let dy = crate::collect::page_dy(region.h * height, direction);
         runner_scroll(self.w, x, y, 0.0, dy).await?;
-        tokio::time::sleep(crate::collect::SWIPE_SETTLE).await;
+        self.swipes
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        // The swipe ACK remains confirmed if a later read-only settle is revoked.
+        let _ = crate::native_scope::read(async {
+            tokio::time::sleep(crate::collect::SWIPE_SETTLE).await;
+            Ok(())
+        })
+        .await;
         Ok(())
     }
 }
@@ -12737,7 +12752,7 @@ async fn begin_list_control<'a>(
     runner: &'a tokio::sync::Mutex<crate::runner::RunnerClient>,
     deadline: tokio::time::Instant,
 ) -> Result<tokio::sync::MutexGuard<'a, crate::runner::RunnerClient>, Response> {
-    claim_phone_owner(state, headers)?;
+    crate::native_scope::ensure_current().map_err(|_| list_scope_error())?;
     if let Some(refusal) = control_readiness_refusal(state) {
         return Err(refusal.into_response());
     }
@@ -12759,7 +12774,9 @@ async fn begin_list_control<'a>(
             serde_json::json!({"ok": false, "error": "device_transition_in_progress", "transitioning": true, "retry_safe": true}),
         ));
     }
+    crate::native_scope::ensure_current().map_err(|_| list_scope_error())?;
     unlock_before_action(state, &mut w, deadline).await;
+    crate::native_scope::ensure_current().map_err(|_| list_scope_error())?;
     // Owner limits (`crate::guard`): these calls swipe inside the app in
     // front, and count as one action.
     let policy = crate::guard::Policy::get();
@@ -12783,6 +12800,7 @@ fn remember_page(
     headers: &HeaderMap,
     rows: Vec<crate::runner::ElementRow>,
 ) -> Option<String> {
+    if crate::native_scope::ensure_current().is_err() {return None;}
     let snapshot = element_snapshot_id(&rows).ok()?;
     let rows = Arc::new(rows);
     remember_element_snapshot(state, &snapshot, &rows);
@@ -12791,6 +12809,7 @@ fn remember_page(
 }
 
 fn first_read_failed(state: &AppState, error: &anyhow::Error) -> Response {
+    if crate::native_scope::is_revoked(error) {return list_scope_error();}
     tracing::warn!("list read failed before any swipe: {error:#}");
     mark_runner_read_path_unactionable(state);
     json_response(
@@ -12841,18 +12860,141 @@ fn list_app_refusal(
     Some(json_response(StatusCode::CONFLICT, body))
 }
 
+fn list_scope_error() -> Response {
+    json_response(
+        StatusCode::CONFLICT,
+        serde_json::json!({"ok":false,"error":"input_scope_changed","outcome":"not_sent","retry_safe":true}),
+    )
+}
+
+async fn agent_collect(state: State<Arc<AppState>>, headers: HeaderMap, body: String) -> Response {
+    scoped_list(state, headers, body, false).await
+}
+async fn agent_scroll_find(
+    state: State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: String,
+) -> Response {
+    scoped_list(state, headers, body, true).await
+}
+
+async fn scoped_list(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: String,
+    find: bool,
+) -> Response {
+    let generation = state
+        .privacy_epoch
+        .load(std::sync::atomic::Ordering::Acquire);
+    if let Err(refused) = authorize_list_call(&state, &headers) {
+        return refused;
+    }
+    if let Err(refused) = claim_phone_owner(&state, &headers) {
+        return refused;
+    }
+    let recovery = capture_recovery_scope(&state, &headers);
+    let scope = capture_input_scope(&state, &headers, generation, recovery.as_ref());
+    let progress = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let fence = MutationObservationFence {
+        state: state.clone(),
+        scope: scope.clone(),
+    };
+    let guard = scope.as_ref().map(|scope| native_guard(&state, scope));
+    let response = if request_scope_refusal(&state, scope.as_ref()).is_some() {
+        None
+    } else if let Some(guard) = &guard {
+        guard
+            .run(async {
+                if find {
+                    agent_scroll_find_claimed(
+                        State(state.clone()),
+                        headers.clone(),
+                        body,
+                        progress.clone(),
+                    )
+                    .await
+                } else {
+                    agent_collect_claimed(
+                        State(state.clone()),
+                        headers.clone(),
+                        body,
+                        progress.clone(),
+                    )
+                    .await
+                }
+            })
+            .await
+    } else {
+        None
+    };
+    let counts = guard
+        .as_ref()
+        .map(|guard| guard.counts())
+        .unwrap_or_default();
+    let confirmed_swipes = progress.load(std::sync::atomic::Ordering::Acquire);
+    let interrupted = request_scope_refusal(&state, scope.as_ref()).is_some()
+        || guard.as_ref().is_some_and(|guard| guard.denied());
+    let mut response = if interrupted {
+        recover(state.element_snapshots.lock()).clear();
+        recover(state.owner_snapshots.lock()).clear();
+        let reason = request_scope_refusal(&state, scope.as_ref())
+            .map(|v| v.0)
+            .unwrap_or("input_privacy_changed");
+        let sent = counts.confirmed > 0 || counts.uncertain() > 0;
+        let status = if counts.uncertain() > 0 {
+            StatusCode::BAD_GATEWAY
+        } else if !sent && screen_private_now(&state.private_until) {
+            StatusCode::LOCKED
+        } else {
+            StatusCode::CONFLICT
+        };
+        let error = if counts.uncertain() > 0 {
+            "outcome_unknown"
+        } else if sent {
+            "action_interrupted"
+        } else if status == StatusCode::LOCKED {
+            "screen_private"
+        } else {
+            reason
+        };
+        let body = serde_json::json!({"ok":false,"error":error,"outcome":if counts.uncertain()>0{"unknown"}else if sent{"partial"}else{"not_sent"},"retry_safe":!sent,
+            "swipes":confirmed_swipes,"native_mutations_confirmed":counts.confirmed,"native_mutations_uncertain":counts.uncertain()});
+        json_response(status, crate::observation::redact(body, reason))
+    } else {
+        let response = response.unwrap_or_else(list_scope_error);
+        let (response, body) = read_json_response(response).await;
+        if let Some(mut body) = body.filter(serde_json::Value::is_object) {
+            body["native_mutations_confirmed"] = counts.confirmed.into();
+            body["native_mutations_uncertain"] = counts.uncertain().into();
+            body["swipes"] = confirmed_swipes.into();
+            if counts.confirmed > 0 || counts.uncertain() > 0 {
+                body["retry_safe"] = false.into();
+            }
+            let (mut parts, _) = response.into_parts();
+            parts.headers.remove(header::CONTENT_LENGTH);
+            Response::from_parts(parts, Body::from(body.to_string()))
+        } else {
+            response
+        }
+    };
+    response.extensions_mut().insert(fence);
+    if let Some(recovery) = recovery {
+        response.extensions_mut().insert(recovery);
+    }
+    attach_visual_recovery(&state, &headers, response, crate::recovery::list_advice).await
+}
+
 /// `POST /agent/collect` — read rows of one kind across pages:
 /// `{"row_kind":"Cell","region":[x,y,w,h],"max_pages":6,"end_label":"…","direction":"down"}`
 /// (all optional). See [`crate::collect`] for the stop rules; `complete` is
 /// true only when `end_label` was seen.
-async fn agent_collect(
+async fn agent_collect_claimed(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     body: String,
+    progress: Arc<std::sync::atomic::AtomicU64>,
 ) -> Response {
-    if let Err(refused) = authorize_list_call(&state, &headers) {
-        return refused;
-    }
     let parsed = if body.trim().is_empty() {
         Ok(serde_json::Value::Null)
     } else {
@@ -12876,6 +13018,7 @@ async fn agent_collect(
         w: &mut w,
         screen: None,
         first_page: None,
+        swipes: progress,
     };
     use crate::collect::Pager as _;
     let page = match pager.read().await {
@@ -13095,14 +13238,12 @@ async fn run_scroll_find<P: crate::collect::Pager>(
 /// "direction":"down","region":[x,y,w,h]}`: is the label on screen and
 /// tappable? If not, swipe (at most `max_swipes`, default 1) and look again.
 /// An ambiguous, covered or undrawn match stops at once, before any swipe.
-async fn agent_scroll_find(
+async fn agent_scroll_find_claimed(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     body: String,
+    progress: Arc<std::sync::atomic::AtomicU64>,
 ) -> Response {
-    if let Err(refused) = authorize_list_call(&state, &headers) {
-        return refused;
-    }
     let request = match serde_json::from_str::<serde_json::Value>(&body)
         .map_err(|e| format!("body is not JSON: {e}"))
         .and_then(|value| crate::collect::FindRequest::from_json(&value))
@@ -13124,6 +13265,7 @@ async fn agent_scroll_find(
         w: &mut w,
         screen: None,
         first_page: None,
+        swipes: progress,
     };
     use crate::collect::Pager as _;
     let page = match pager.read().await {
@@ -13788,6 +13930,13 @@ async fn attach_failure_recovery(
     headers: &HeaderMap,
     response: Response,
 ) -> Response {
+    attach_visual_recovery(state,headers,response,crate::recovery::advice).await
+}
+
+async fn attach_visual_recovery(
+    state: &Arc<AppState>, headers: &HeaderMap, response: Response,
+    advice: fn(&serde_json::Value) -> Option<&'static str>,
+) -> Response {
     if headers
         .get("x-phone-recovery-image")
         .is_some_and(|v| v.as_bytes() == b"none")
@@ -13803,7 +13952,7 @@ async fn attach_failure_recovery(
     let Some(mut json) = json.filter(serde_json::Value::is_object) else {
         return response;
     };
-    let Some(advice) = crate::recovery::advice(&json) else {
+    let Some(advice) = advice(&json) else {
         return response;
     };
     json["recovery"] =

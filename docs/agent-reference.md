@@ -1446,3 +1446,25 @@ remain separate from viewing.
 This transport does not establish a frame-rate, bandwidth or end-to-end latency
 claim. Actual host WebCodecs support, frame presentation and physical-device
 performance still require acceptance.
+
+### List traversal scope and visual diagnostics
+
+`phone_scroll_find` and `phone_collect_list` retain the owner/privacy incarnation
+captured at request entry, including runner queue waits, metadata retries and
+each native request. Revoked read-only work is cancelled; a current swipe may
+finish and its acknowledgement is preserved. `swipes` counts acknowledged whole
+gestures separately from `native_mutations_confirmed` / `native_mutations_uncertain`
+(which can include preparatory controls). Scope loss removes rows, targets,
+candidates, snapshots and recovery images; queued response bodies recheck before
+publication. A prior owner cannot regain authority through an A-to-B-to-A name
+round trip. Permission loss does not mark the device broken.
+
+Selected missing/ambiguous/blocked lookups and incomplete no-row/no-progress,
+duplicate-page or failed traversals can include a fresh bounded recovery image.
+The existing verdict, partial rows, coverage and native delivery counts remain
+unchanged; a picture never proves full list coverage or authorizes whole-call
+replay. A found target, successful end marker and intentional page-budget stop
+do not request a diagnostic capture. Capture stays in the original owner/private
+scope, uses the existing two-second/image-size limits, and can be disabled with
+`X-Phone-Recovery-Image: none`. MCP lifts the PNG into one image block in all
+output modes, preserving unknown-dispatch/replay advice in text.

@@ -1781,7 +1781,7 @@ impl PhoneHandler {
         reached. Rows are deduplicated on (kind, label, value): identical-looking rows \
         collapse, so reconcile counts the user cares about. `complete` is true ONLY when \
         end_label was seen; no_progress or duplicate_page is not proof the list ended. Only \
-        what the accessibility tree exposes is collected. It swipes the live list, so the \
+        what the accessibility tree exposes is collected. Selected incomplete outcomes include a fresh bounded recovery image when permitted, without changing rows or coverage. It swipes the live list, so the \
         screen is left where the last page was; `snapshot` is that last page. \
         Optional `snapshot` (from a read of the target app; never filled in for you): a known \
         foreground app mismatch refuses before any swipe (app_changed, not_sent, retry_safe). \
@@ -1812,7 +1812,7 @@ impl PhoneHandler {
         is ambiguous (several on-screen matches: `candidates` with index and frame), covered \
         by another control, or not drawn. Found: `target` (index, kind, frame) plus a \
         `snapshot` for phone_tap_element. Not found: on-screen labels containing the text \
-        as `candidates`. No screenshot is taken; absence after the budget is not proof — \
+        as `candidates`. Selected lookup failures include a fresh bounded recovery image when permitted; absence after the budget is not proof — \
         look at the screen before swiping further. Optional `snapshot` (from a read of the \
         target app; never filled in for you): a known foreground app mismatch refuses before \
         any swipe (app_changed, not_sent, retry_safe). Results name the app. Requires \

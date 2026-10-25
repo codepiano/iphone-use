@@ -102,19 +102,44 @@ pub fn is_mutation(method: &Method, path: &str) -> bool {
             || path.ends_with("/elements")
             || path.ends_with("/element"))
 }
-pub fn admit(request: &reqwest::Request) -> anyhow::Result<()> {
+/// Check an already-captured scope without admitting a physical request.
+pub fn ensure_current() -> anyhow::Result<()> {
     CURRENT
         .try_with(|guard| {
             if let Some(reason) = (guard.check)() {
                 guard.revoke(reason);
-                return Err(anyhow::Error::new(Revoked));
+                Err(anyhow::Error::new(Revoked))
+            } else {
+                Ok(())
             }
-            if is_mutation(request.method(), request.url().path()) {
-                guard.approved.fetch_add(1, Ordering::AcqRel);
-            }
-            Ok(())
         })
         .unwrap_or(Ok(()))
+}
+
+/// Only read-only work may be cancelled on scope loss. A mutation retains its
+/// transport until its authoritative acknowledgement has arrived.
+pub async fn read<T>(
+    work: impl std::future::Future<Output = anyhow::Result<T>>,
+) -> anyhow::Result<T> {
+    tokio::pin!(work);
+    loop {
+        ensure_current()?;
+        tokio::select! {
+            biased;
+            value = &mut work => { ensure_current()?; return value; }
+            _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {}
+        }
+    }
+}
+
+pub fn admit(request: &reqwest::Request) -> anyhow::Result<()> {
+    ensure_current()?;
+    let _ = CURRENT.try_with(|guard| {
+        if is_mutation(request.method(), request.url().path()) {
+            guard.approved.fetch_add(1, Ordering::AcqRel);
+        }
+    });
+    Ok(())
 }
 pub fn reply(mutation: bool, status: StatusCode, body: &[u8]) {
     if !mutation {

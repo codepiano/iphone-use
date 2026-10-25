@@ -1,0 +1,61 @@
+
+running 4 tests
+test private_list_refuses_before_any_runner_request ... FAILED
+test queued_body_withholds_list_ui_after_private_transition ... FAILED
+test acknowledged_swipe_is_preserved_without_post_scope_reads ... FAILED
+test source_in_flight_is_discarded_without_late_swipe ... FAILED
+
+failures:
+
+---- private_list_refuses_before_any_runner_request stdout ----
+
+thread 'private_list_refuses_before_any_runner_request' (31542176) panicked at crates/server/tests/list_scope.rs:110:13:
+assertion `left == right` failed: {"app":"Fixture","complete":false,"coverage":"NOT proven complete: the list stopped yielding new rows (duplicate_page), which may be its end or a swipe that did not scroll it. Check the screen or pass end_label. rows are deduplicated on (kind, label, value), so identical-looking rows collapse into one; only what the accessibility tree exposes is collected.","end_label_seen":false,"ok":true,"pages":[{"new_rows":1,"page":1,"rows_seen":1},{"new_rows":0,"page":2,"rows_seen":1}],"row_count":1,"rows":[{"kind":"Cell","label":"PRIVATE_ROW","page":1}],"snapshot":"9sDEunlRE_CQ7_2MFpeoMN9R5HxSwOOd32i0URR5-VE","snapshot_note":"the snapshot is the last page's tree; rows from earlier pages are no longer on screen — find them with phone_scroll_find or a label tap","stop_reason":"duplicate_page","swipes":1,"timing":{"daemon_ms":512,"runner":[{"bytes":512,"call":"GET /source","count":2,"ms":301},{"bytes":33,"call":"POST /session","count":1,"ms":191},{"bytes":14,"call":"POST /appium/settings","count":1,"ms":204},{"bytes":14,"call":"POST /actions","count":1,"ms":196}],"runner_ms":892,"total_ms":1404}}
+  left: 200
+ right: 423
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- queued_body_withholds_list_ui_after_private_transition stdout ----
+
+thread 'queued_body_withholds_list_ui_after_private_transition' (31542279) panicked at crates/server/tests/list_scope.rs:222:13:
+{"app":"Fixture","complete":false,"coverage":"NOT complete: the page budget ran out after 1 pages; more rows may follow. rows are deduplicated on (kind, label, value), so identical-looking rows collapse into one; only what the accessibility tree exposes is collected.","end_label_seen":false,"ok":true,"pages":[{"new_rows":1,"page":1,"rows_seen":1}],"row_count":1,"rows":[{"kind":"Cell","label":"PRIVATE_ROW","page":1}],"snapshot":"9sDEunlRE_CQ7_2MFpeoMN9R5HxSwOOd32i0URR5-VE","snapshot_note":"the snapshot is the last page's tree; rows from earlier pages are no longer on screen — find them with phone_scroll_find or a label tap","stop_reason":"max_pages","swipes":0,"timing":{"daemon_ms":1,"runner":[{"bytes":256,"call":"GET /source","count":1,"ms":206}],"runner_ms":206,"total_ms":207}}
+
+---- acknowledged_swipe_is_preserved_without_post_scope_reads stdout ----
+
+thread 'acknowledged_swipe_is_preserved_without_post_scope_reads' (31542175) panicked at crates/server/tests/list_scope.rs:185:13:
+assertion `left == right` failed: {"app":"Fixture","complete":false,"coverage":"NOT proven complete: the list stopped yielding new rows (duplicate_page), which may be its end or a swipe that did not scroll it. Check the screen or pass end_label. rows are deduplicated on (kind, label, value), so identical-looking rows collapse into one; only what the accessibility tree exposes is collected.","end_label_seen":false,"ok":true,"pages":[{"new_rows":1,"page":1,"rows_seen":1},{"new_rows":0,"page":2,"rows_seen":1}],"row_count":1,"rows":[{"kind":"Cell","label":"PRIVATE_ROW","page":1}],"snapshot":"9sDEunlRE_CQ7_2MFpeoMN9R5HxSwOOd32i0URR5-VE","snapshot_note":"the snapshot is the last page's tree; rows from earlier pages are no longer on screen — find them with phone_scroll_find or a label tap","stop_reason":"duplicate_page","swipes":1,"timing":{"daemon_ms":518,"runner":[{"bytes":512,"call":"GET /source","count":2,"ms":223},{"bytes":33,"call":"POST /session","count":1,"ms":151},{"bytes":14,"call":"POST /appium/settings","count":1,"ms":208},{"bytes":14,"call":"POST /actions","count":1,"ms":782}],"runner_ms":1364,"total_ms":1882}}
+  left: Null
+ right: "partial"
+
+---- source_in_flight_is_discarded_without_late_swipe stdout ----
+
+thread 'source_in_flight_is_discarded_without_late_swipe' (31542304) panicked at crates/server/tests/list_scope.rs:145:17:
+{"app":"Fixture","complete":false,"coverage":"NOT proven complete: the list stopped yielding new rows (duplicate_page), which may be its end or a swipe that did not scroll it. Check the screen or pass end_label. rows are deduplicated on (kind, label, value), so identical-looking rows collapse into one; only what the accessibility tree exposes is collected.","end_label_seen":false,"ok":true,"pages":[{"new_rows":1,"page":1,"rows_seen":1},{"new_rows":0,"page":2,"rows_seen":1}],"row_count":1,"rows":[{"kind":"Cell","label":"PRIVATE_ROW","page":1}],"snapshot":"9sDEunlRE_CQ7_2MFpeoMN9R5HxSwOOd32i0URR5-VE","snapshot_note":"the snapshot is the last page's tree; rows from earlier pages are no longer on screen — find them with phone_scroll_find or a label tap","stop_reason":"duplicate_page","swipes":1,"timing":{"daemon_ms":507,"runner":[{"bytes":512,"call":"GET /source","count":2,"ms":1466},{"bytes":33,"call":"POST /session","count":1,"ms":159},{"bytes":14,"call":"POST /appium/settings","count":1,"ms":117},{"bytes":14,"call":"POST /actions","count":1,"ms":162}],"runner_ms":1904,"total_ms":2411}}
+
+
+failures:
+    acknowledged_swipe_is_preserved_without_post_scope_reads
+    private_list_refuses_before_any_runner_request
+    queued_body_withholds_list_ui_after_private_transition
+    source_in_flight_is_discarded_without_late_swipe
+
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.66s
+
+warning: use of deprecated method `std::sync::atomic::Atomic::<usize>::fetch_update`: renamed to `try_update` for consistency
+   --> crates/server/src/http.rs:882:11
+    |
+882 |         c.fetch_update(
+    |           ^^^^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+    |
+882 -         c.fetch_update(
+882 +         c.try_update(
+    |
+
+warning: `server` (lib) generated 1 warning (run `cargo fix --lib -p server` to apply 1 suggestion)
+   Compiling server v0.23.0 (/private/tmp/iphone-use-runner-input-target-guard/crates/server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.56s
+     Running tests/list_scope.rs (target/debug/deps/list_scope-d13e8b47d9185404)
+error: test failed, to rerun pass `-p server --test list_scope`

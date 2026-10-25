@@ -737,6 +737,18 @@ fn list_app_changed(json: &Value) -> Option<String> {
     Some(format!("App changed: {detail} swipe was sent. Read the screen again and confirm the target app is in front."))
 }
 
+fn list_delivery_note(json: &Value) -> Option<String> {
+    let confirmed = json
+        .get("native_mutations_confirmed")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let uncertain = json
+        .get("native_mutations_uncertain")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    (confirmed>0 || uncertain>0).then(||format!("native dispatch: {confirmed} acknowledged, {uncertain} uncertain; do not replay the whole list call"))
+}
+
 /// `phone_collect_list`: the verdict, then one line per collected row.
 pub fn collected_list(json: &Value) -> Option<String> {
     if let Some(refusal) = list_app_changed(json) {
@@ -751,6 +763,9 @@ pub fn collected_list(json: &Value) -> Option<String> {
         text(json, "stop_reason").unwrap_or_else(|| "?".to_string()),
         text(json, "complete").unwrap_or_else(|| "false".to_string()),
     )];
+    if let Some(note) = list_delivery_note(json) {
+        out.push(note);
+    }
     if let Some(app) = text(json, "app") {
         out[0].push_str(&format!(" in {app}"));
     }
@@ -811,6 +826,9 @@ pub fn found_label(json: &Value) -> Option<String> {
         text(json, "swipes").unwrap_or_else(|| "0".to_string()),
         text(json, "error").map_or(String::new(), |e| format!(" error={e}")),
     )];
+    if let Some(note) = list_delivery_note(json) {
+        out.push(note);
+    }
     if let Some(app) = text(json, "app") {
         out[0].push_str(&format!(" in {app}"));
     }

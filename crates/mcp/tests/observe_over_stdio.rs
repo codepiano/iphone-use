@@ -864,3 +864,69 @@ fn acknowledged_native_prefix_is_visible_even_when_no_whole_step_completed(){
   assert_eq!(daemon.requests.lock().unwrap().len(),1);
  }
 }
+
+#[test]
+fn list_diagnostics_lift_one_image_and_keep_coverage_delivery_in_all_modes() {
+    use base64::Engine as _;
+    let png =
+        base64::engine::general_purpose::STANDARD.encode(include_bytes!("fixtures/recovery.png"));
+    for mode in ["full", "slim", "off"] {
+        for find in [false, true] {
+            for uncertain in [false, true] {
+                let mut body = serde_json::json!({"ok":true,"complete":false,"rows":[],"pages":[{"page":1,"rows_seen":0,"new_rows":0}],"swipes":1,"stop_reason":"no_rows","native_mutations_confirmed":1,"native_mutations_uncertain":0,"retry_safe":false,
+            "image":{"png_base64":png,"source":"runner-capture","requested_at_ms":10,"received_at_ms":12},"recovery":{"visual_check_required":true,"replay_action":false}});
+                body["swipes"] = if uncertain {0}else{1}.into();
+                body["native_mutations_confirmed"] = if uncertain { 0 } else { 1 }.into();
+                body["native_mutations_uncertain"] = if uncertain { 1 } else { 0 }.into();
+                if find {
+                    body["ok"] = false.into();
+                    body["found"] = false.into();
+                    body["error"] = "element_not_found".into();
+                }
+                let daemon = ScriptedDaemon::start("200 OK", body.to_string().into_bytes());
+                let mut mcp = McpChild::start_with(&daemon.url, mode);
+                let reply = mcp.call_tool(
+                    2,
+                    if find {
+                        "phone_scroll_find"
+                    } else {
+                        "phone_collect_list"
+                    },
+                    if find {
+                        serde_json::json!({"label":"missing","max_swipes":0})
+                    } else {
+                        serde_json::json!({"max_pages":1})
+                    },
+                );
+                let result = &reply["result"];
+                assert_eq!(
+                    result["isError"].as_bool().unwrap_or(false),
+                    find,
+                    "{reply}"
+                );
+                assert_eq!(reply.to_string().matches(&png).count(), 1);
+                let blocks = result["content"].as_array().unwrap();
+                assert_eq!(blocks.iter().filter(|b| b["type"] == "image").count(), 1);
+                let text = blocks
+                    .iter()
+                    .filter_map(|b| b["text"].as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                assert!(
+                    text.contains(if uncertain {
+                        "1 uncertain"
+                    } else {
+                        "1 acknowledged"
+                    }) && text.contains("do not replay"),
+                    "{text}"
+                );
+                assert!(!text.contains("png_base64"));
+                if mode != "off" {
+                    assert_eq!(result["structuredContent"]["retry_safe"], false);
+                    assert_eq!(result["structuredContent"]["swipes"], if uncertain {0}else{1});
+                }
+                assert_eq!(daemon.requests.lock().unwrap().len(), 1);
+            }
+        }
+    }
+}
