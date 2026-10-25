@@ -22,6 +22,7 @@ import signal
 import socket
 import statistics
 import subprocess
+import sys
 import time
 import traceback
 import urllib.error
@@ -85,6 +86,86 @@ def payload(reply):
     return result,text,body
 
 
+def stop_operator_clients(operator):
+    errors=[]
+    for info in operator.glob('state/*/client-process-*.json'):
+        try:
+            values=json.loads(info.read_text());pid=values['supervisor_pid']
+            command=subprocess.run(['ps','-p',str(pid),'-o','args='],capture_output=True,text=True).stdout
+            wrapper=operator/'client.py'
+            if str(wrapper) in command and values['trial'] in command:
+                os.kill(pid,signal.SIGTERM)
+                until=time.monotonic()+6
+                while time.monotonic()<until:
+                    command=subprocess.run(['ps','-p',str(pid),'-o','args='],capture_output=True,text=True).stdout
+                    if str(wrapper) not in command:break
+                    time.sleep(0.1)
+                else:errors.append('owned MCP supervisor did not stop')
+        except ProcessLookupError:pass
+        except Exception as error:errors.append('MCP supervisor cleanup '+type(error).__name__)
+    return errors
+
+
+def hold_operator_fixture(block_dir, backend, argv, peer_env, documents, udid, peer, seconds):
+    """Expose only private stdio connection metadata; never launch a model."""
+    operator=block_dir/'operator';operator.mkdir(mode=0o700)
+    settings=operator/'client-env.json';wrapper=operator/'client.py'
+    names=['PATH','LANG','LC_ALL','LC_CTYPE','DEVELOPER_DIR','SDKROOT','DO_NOT_TRACK',
+           'IPHONE_USE_ANALYTICS','IPHONE_USE_URL','IPHONE_USE_TOKEN',
+           'IPHONE_USE_MCP_PREWARM','WDA_TYPING_FREQUENCY','WDA_SETTLE_SECONDS']
+    values={k:peer_env[k] for k in names if k in peer_env}
+    command=[sys.executable if argv[0]=='python3' else argv[0],*argv[1:]]
+    settings.write_text(json.dumps({'backend':backend,'argv':command,'env':values,
+                                    'state_root':str(operator/'state')}));settings.chmod(0o600)
+    wrapper.write_text('''import json,os,re,sys,signal,subprocess
+from pathlib import Path
+settings=json.loads(Path(__file__).with_name('client-env.json').read_text())
+if len(sys.argv)!=3 or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}',sys.argv[1]) or not re.fullmatch(r'[a-z][a-z0-9_]*(,[a-z][a-z0-9_]*)*',sys.argv[2]):raise SystemExit('expected trial id and explicit tool-name list')
+state=Path(settings['state_root'])/sys.argv[1];state.mkdir(mode=0o700,parents=True,exist_ok=True)
+env={k:v for k,v in os.environ.items() if not k.startswith(('IPHONE_USE_','PHONE_REMOTE_','IPU_','TEST_RUNNER_','SIMCTL_CHILD_','WDA_'))}
+env.update(settings['env']);args=settings['argv']
+if settings['backend']=='native':
+ env.update(IPHONE_USE_OWNER='paired-model-bench',IPHONE_USE_STATE_DIR=str(state),IPHONE_USE_MCP_STRUCTURED='slim',IPHONE_USE_MCP_TOOLS=sys.argv[2])
+else:
+ args=list(args);args[args.index('--state-dir')+1]=str(state)
+def interrupted(signum,frame):raise SystemExit(128+signum)
+for signum in [signal.SIGTERM,signal.SIGINT,signal.SIGHUP]:signal.signal(signum,interrupted)
+child=subprocess.Popen(args,env=env,start_new_session=True)
+(state/('client-process-'+str(os.getpid())+'.json')).write_text(json.dumps({'supervisor_pid':os.getpid(),'child_pid':child.pid,'wrapper':str(Path(__file__).resolve()),'trial':sys.argv[1]}))
+try:raise SystemExit(child.wait())
+finally:
+ if child.poll() is None:
+  try:os.killpg(child.pid,signal.SIGTERM)
+  except ProcessLookupError:pass
+  try:child.wait(timeout=5)
+  except subprocess.TimeoutExpired:
+   try:os.killpg(child.pid,signal.SIGKILL)
+   except ProcessLookupError:pass
+   child.wait(timeout=5)
+''');wrapper.chmod(0o700)
+    tools=peer.request('tools/list',{})['result']['tools']
+    ready={'scope':'owned fixture only; no model was started','backend':backend,
+           'simulator':udid,'bundle':BUNDLE,'fixture_documents':str(documents),
+           'client_argv':[sys.executable,str(wrapper)],'server_name':'iphone-use' if backend=='native' else 'iphone_use',
+           'available_tools':[t['name'] for t in tools],
+           'done_file':str(operator/'done')}
+    (operator/'ready.json').write_text(json.dumps(ready,indent=2)+'\n')
+    (operator/'ready.json').chmod(0o600)
+    finished=False
+    errors=[]
+    try:
+        until=time.monotonic()+seconds
+        while not (operator/'done').exists():
+            if time.monotonic()>=until:raise TimeoutError('operator fixture deadline; no further task dispatched')
+            time.sleep(0.2)
+        finished=True
+    finally:
+        errors=stop_operator_clients(operator)
+        settings.unlink(missing_ok=True);wrapper.unlink(missing_ok=True)
+        if errors and finished:raise RuntimeError('; '.join(errors))
+    return {'backend':backend,'completed':True,'ready_file':str(operator/'ready.json')}
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--native-xctestrun',required=True,type=Path)
@@ -94,6 +175,8 @@ def main():
     parser.add_argument('--daemon',required=True,type=Path)
     parser.add_argument('--mcp',required=True,type=Path)
     parser.add_argument('--out',required=True,type=Path)
+    parser.add_argument('--operator-hold',action='store_true',help='hold each owned backend sequentially for external approved tasks; this script never starts a model')
+    parser.add_argument('--operator-timeout',type=int,default=1800,help='owned fixture lifetime in seconds (30..3600)')
     parser.add_argument('--input-length',type=int,default=500)
     parser.add_argument('--replace-repetitions',type=int,default=1)
     parser.add_argument('--replace-seeds',default='short',help='comma-separated owned draft seeds, including middle/Unicode/length boundaries and selection fault fixtures')
@@ -110,6 +193,10 @@ def main():
     parser.add_argument('--reference-settle',type=float,default=0)
     parser.add_argument('--reference-frequency',type=int,default=60,choices=[30,60])
     args=parser.parse_args();order=args.order.split(',');tasks=args.tasks.split(',');replace_seeds=args.replace_seeds.split(',')
+    if args.operator_hold:
+        if args.reset_mode!='file':parser.error('operator mode needs --reset-mode file')
+        tasks=[]
+    if not 30<=args.operator_timeout<=3600:parser.error('invalid operator fixture lifetime')
     if not replace_seeds or len(set(replace_seeds))!=len(replace_seeds) or not set(replace_seeds)<=set(['short','middle','unicode','limit','overlimit','long','ignore-once','ignore-all','selection-mutates','selection-partial']):parser.error('invalid replace seeds')
     if not 64<=args.input_length<=2000 or not 1<=args.replace_repetitions<=30 or args.max_load<0 or not 1<=args.resource_wait_seconds<=900 or not 0<=args.boot_settle_seconds<=600 or any(x not in ['native','reference'] for x in order) or not set(tasks)<=set(['screen','long-value','replace','shift','advance','secure']) or not 1<=args.reads<=30:parser.error('invalid order/read count')
     assert fixture.command('git','-C',args.reference,'rev-parse','HEAD')==REFERENCE
@@ -304,6 +391,8 @@ def main():
             warm_args={'ocr':'off','limit':200} if backend=='native' else {'mode':'tree','max_nodes':200}
             warm_result=call('screen',warm_args,warm,True)
             if warm_result.get('returned_error'):raise RuntimeError('MCP warmup refused; no timed mutation attempted')
+            if args.operator_hold:
+                result.setdefault('operator_fixtures',[]).append(hold_operator_fixture(block_dir,backend,argv,peer_env,documents,udid,peer,args.operator_timeout))
             for i in range(args.reads if 'screen' in tasks else 0):
                 trial=f'b{block_index}-screen-{i}';launch(trial);call('screen',warm_args,trial)
             for i in range(args.reads if 'long-value' in tasks else 0):
@@ -343,6 +432,7 @@ def main():
         if peer:
             try:peer.close()
             except Exception as error:cleanup.append(type(error).__name__)
+        for operator in out.glob('block-*/operator'):cleanup.extend(stop_operator_clients(operator))
         for process in [daemon,runner]:
             try:stop(process)
             except Exception as error:cleanup.append(type(error).__name__)
@@ -351,8 +441,10 @@ def main():
                 try:fixture.command('xcrun','simctl',operation,udid)
                 except Exception as error:cleanup.append(str(error))
         for directory in out.glob('block-*'):
-            for name in ['state','runtime','reference-state']:
+            for name in ['state','runtime','reference-state','operator/state']:
                 if (directory/name).exists():shutil.rmtree(directory/name)
+            for name in ['operator/client-env.json','operator/client.py']:
+                (directory/name).unlink(missing_ok=True)
         for configured in out.glob('block-*/configured.xctestrun'):
             configured.write_bytes(configured.read_bytes().replace(token.encode(),b'[fixture token redacted]'))
         for log in out.rglob('*.log'):log.write_text(log.read_text(errors='replace').replace(token,'[fixture token redacted]'))

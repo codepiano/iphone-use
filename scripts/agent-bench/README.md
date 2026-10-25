@@ -22,6 +22,20 @@ scripts/agent-bench/run.py --from-jsonl scripts/agent-bench/out/<run>/<task>.jso
 
 - Claude gets only the iphone-use MCP server (`--strict-mcp-config`), and only
   `mcp__iphone-use__*` tools are allowed.
+- Built-in tools are removed with `--tools ""`; skills, hooks, Chrome integration
+  and session persistence are disabled for the requested benchmark profile.
+  `--allowedTools` alone only pre-approves calls, as described in the
+  [official CLI reference](https://code.claude.com/docs/en/cli-reference).
+  The current prepared profile uses CLI 2.1.310's `--restricted` flag. Normal
+  authentication remains available. This requested profile is not a capture of
+  the entire effective vendor/global system prompt.
+- All MCP schemas load upfront, with tool search disabled for both products.
+  These runs measure the provided tool interface rather than default client
+  discovery, skills or installed product-host rendering.
+- `--timeout` defaults to 180 seconds and `--max-turns` to 12. A timeout stops
+  the owned CLI process group and skips remaining selected tasks. A complete
+  final message cannot turn a timed-out execution into a pass during replay.
+- Task text goes over stdin, rather than into the process argument list.
 - `--mcp <path>` (or `IPHONE_USE_MCP`) picks another build.
 - Artifacts go to `out/<timestamp>/` (git-ignored): the stream JSONL per task
   and `results.json`.
@@ -159,3 +173,18 @@ Reported token/cost counters do not establish actual subscription billing.
 `paired_data_ready:true` means the supplied trial records pass consistency gates,
 not that either product wins or that the broader competitive goal is achieved.
 These helpers do not perform independent postcondition checks themselves.
+
+## Prepared owned-Simulator pilot
+
+[controlled-pilot.md](controlled-pilot.md) defines three immutable task prompts,
+two opposite-order pairs per task, tool profiles and independent App checks.
+It requires explicit authorization before starting independent model sessions.
+Preparation and the fixture transport smoke tests do not invoke a model.
+
+Use `--task-dir pilot-tasks --task NAME` and a private `--out-root` outside the
+repository to keep its project instructions out of the working-directory path.
+User/global or managed context can still exist; the recorded benchmark prompt
+hash identifies only the supplied neutral prompt. Context files may include
+`deny_tools`, an exact list of fully qualified names in the selected MCP
+namespace; the driver rejects other names. The requested runtime profile must
+match across a paired comparison.

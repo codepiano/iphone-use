@@ -204,6 +204,7 @@ jobs:
           python3 scripts/test-drag-simulator-verdict.py
           python3 scripts/test-agent-bench.py
           python3 scripts/test-agent-bench-paired.py
+          python3 scripts/test-agent-bench-fixture.py
           # Same gate as release-binaries.yml: the installer ships SKILL.md
           # alone, so the skill directory must hold exactly that one file
           # (agent reference lives in docs/agent-reference.md).

@@ -26,8 +26,16 @@ with tempfile.TemporaryDirectory() as temporary:
     # Real subprocess argument/file handling, with an owned deterministic fake
     # executable. No installed Claude, remote model, MCP server or phone runs.
     binary.write_text('''#!/usr/bin/env python3
-import json,sys,pathlib
+import json,sys,pathlib,os,time
 args=sys.argv[1:]
+assert sys.stdin.read()=="Read the fixture."
+assert "Read the fixture." not in args
+assert args[args.index("--tools")+1]==""
+assert "--restricted" in args and "--disable-slash-commands" in args
+assert "--no-session-persistence" in args
+assert os.environ.get("ENABLE_TOOL_SEARCH")=="false"
+settings=json.loads(args[args.index("--settings")+1])
+assert settings["disableAllHooks"] is True and settings["autoMemoryEnabled"] is False
 config=json.loads(pathlib.Path(args[args.index('--mcp-config')+1]).read_text())
 assert list(config['mcpServers'])==['iphone_use']
 assert args[args.index('--allowedTools')+1]=='mcp__iphone_use__*'
@@ -38,6 +46,8 @@ assert server['env']=={'TEST_ONLY_TOKEN':'fixture-secret'}
 print(json.dumps({'type':'system','subtype':'init','model':'fixture-model'}))
 print(json.dumps({'type':'assistant','message':{'content':[{'type':'tool_use','id':'one','name':'mcp__iphone_use__screen','input':{}}]}}))
 print(json.dumps({'type':'result','is_error':False,'num_turns':2,'duration_ms':10,'result':'iOS 27.0'}))
+sys.stdout.flush()
+if os.environ.get('BENCH_FAKE_HANG'):time.sleep(10)
 ''')
     binary.chmod(0o700)
     config=root/'reference.json'
@@ -48,6 +58,15 @@ print(json.dumps({'type':'result','is_error':False,'num_turns':2,'duration_ms':1
     previous=os.environ.get('PATH','');os.environ['PATH']=str(root)+os.pathsep+previous
     try:
         row=bench.run_task(task,out,'unused','fixture-model',config,'reference',{'pair_id':'one'})
+        hanging=root/'hanging';hanging.mkdir(mode=0o700)
+        os.environ['BENCH_FAKE_HANG']='1'
+        try:
+            timeout_row=bench.run_task(task,hanging,'unused','fixture-model',config,'reference',{'pair_id':'one'},timeout_seconds=0.5)
+        finally:os.environ.pop('BENCH_FAKE_HANG',None)
+        assert timeout_row['timed_out'] is True and timeout_row['passed'] is False
+        assert timeout_row['checks_passed'] is False and timeout_row['process_returncode']!=0
+        assert timeout_row['wall_ms']<8000 and timeout_row['answer']=='iOS 27.0'
+
         # Freeze the timestamp and start two full driver runs. Unique private
         # directories prevent one same-second trial from overwriting another.
         saved_here,saved_clock=bench.HERE,bench.datetime
@@ -103,6 +122,18 @@ print(json.dumps({'type':'result','is_error':False,'num_turns':2,'duration_ms':1
         restored=json.loads(output.getvalue())[0]
         assert code==0 and restored['passed'] is True and restored['wall_ms']==row['wall_ms']
         assert restored['trial']==row['trial'] and restored['tool_namespace']=='mcp__iphone_use__'
+        # A complete final event and even an original zero exit code do not
+        # erase the separately recorded execution deadline failure.
+        timeout_archive=root/'timeout-results.json'
+        timeout_archive.write_text(json.dumps([{**timeout_row,'process_returncode':0}]))
+        timeout_proof=root/'timeout-proof.json'
+        timeout_proof.write_text(json.dumps({'task':'task','trace_sha256':timeout_row['trace_sha256'],'verified':True,'verifier':'synthetic-fixture-oracle','evidence':'fixture-only'}))
+        output=io.StringIO()
+        with contextlib.redirect_stdout(output):
+            timeout_code=bench.main(['--from-jsonl',str(hanging/'task.jsonl'),'--task','task','--run-results',str(timeout_archive),'--verification',str(timeout_proof),'--json'])
+        timed=json.loads(output.getvalue())[0]
+        assert timeout_code==1 and timed['passed'] is False and timed['timed_out'] is True
+        assert timed['process_returncode']==0 and timed['checks_passed'] is False
         for invalid_args in [args+['--returncode','1'],['--run-results',str(archived)],args+['--context',str(config)]]:
             with contextlib.redirect_stderr(io.StringIO()):
                 try:bench.main(invalid_args);raise AssertionError('invalid replay accepted')
@@ -154,6 +185,7 @@ assert report['tasks']['fixture-task']['products']['reference']['wall_ms_median_
 
 for mutate in [lambda r:r[1]['trial']['context'].update(transport='wifi'),
                lambda r:r[1].update(resolved_model='other-model'),
+               lambda r:r[1]['trial'].update(requested_runtime_profile={'benchmark_system_prompt_sha256':'d'*64,'max_turns':3}),
                lambda r:r[1]['trial'].update(prompt_sha256='c'*64),
                lambda r:r[1]['trial']['context'].update(device='other-phone'),
                lambda r:r[1]['trial']['context'].update(position=1),

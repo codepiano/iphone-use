@@ -80,9 +80,14 @@ def compare(rows):
             raise ValueError("stored verdict disagrees with execution/verification")
         if (row.get("is_error") or row.get("outside_tools")) and row["checks_passed"]:
             raise ValueError("execution errors or outside tools cannot pass execution checks")
+        profile = trial.get("requested_runtime_profile")
+        if profile is not None and (not isinstance(profile,dict) or
+                not digest(profile.get("benchmark_system_prompt_sha256"))):
+            raise ValueError("invalid original requested runtime profile")
         signature = json.dumps({**{k: context[k] for k in CONDITIONS},
                                 "task_sha256": trial["task_sha256"],
                                 "prompt_sha256": trial["prompt_sha256"],
+                                "requested_runtime_profile": profile,
                                 "model": row["resolved_model"]}, sort_keys=True)
         if task in conditions and conditions[task] != signature:
             raise ValueError(f"conditions, model or task changed within {task}; compare strata separately")
