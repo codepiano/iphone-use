@@ -462,11 +462,10 @@ pub fn observed(json: &Value) -> Option<String> {
             .map_or(0, Vec::len);
         let unchanged = delta.get("unchanged").and_then(Value::as_u64).unwrap_or(0);
         out.push(format!("- {removed} removed · = {unchanged} unchanged"));
-    } else if let Some(rows) = json.get("elements").and_then(Value::as_array) {
+    } else {
+        let rows = json.get("elements").and_then(Value::as_array)?;
         out.push(format!("{} rows (no baseline: whole screen)", rows.len()));
         rows_block(rows, &mut out);
-    } else {
-        return None;
     }
     extra_blocks(json, &mut out);
     Some(out.join("\n"))
