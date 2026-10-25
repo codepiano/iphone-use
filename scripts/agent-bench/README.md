@@ -181,10 +181,12 @@ two opposite-order pairs per task, tool profiles and independent App checks.
 It requires explicit authorization before starting independent model sessions.
 Preparation and the fixture transport smoke tests do not invoke a model.
 
-Use `--task-dir pilot-tasks --task NAME` and a private `--out-root` outside the
+Use `--fixture-only --task-dir pilot-tasks --task NAME` and a private `--out-root` outside the
 repository to keep its project instructions out of the working-directory path.
 User/global or managed context can still exist; the recorded benchmark prompt
 hash identifies only the supplied neutral prompt. Context files may include
 `deny_tools`, an exact list of fully qualified names in the selected MCP
 namespace; the driver rejects other names. The requested runtime profile must
 match across a paired comparison.
+The fixture-only navigation/lifecycle constraint is opt-in; ordinary Settings,
+Home-screen and Notes tasks keep their normal task-scoped phone navigation.

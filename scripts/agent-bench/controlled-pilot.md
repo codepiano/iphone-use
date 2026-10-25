@@ -48,7 +48,7 @@ This is a task-specific tool surface rather than a default all-tools profile.
 
 Use the currently configured Claude CLI default, record its reported full model
 identity in every init trace and reject a mixed-model cohort. The prepared
-client is CLI 2.1.310 with MCP-only built-ins-disabled/restricted settings,
+client uses `--fixture-only` with CLI 2.1.310's MCP-only built-ins-disabled/restricted settings,
 upfront schemas, no skills/hooks/session persistence, a neutral benchmark
 system prompt, at most twelve turns and a 180-second per-session wall deadline.
 Existing model quota is consumed. No global CLI/MCP configuration is changed.
