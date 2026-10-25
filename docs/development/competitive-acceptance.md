@@ -138,6 +138,19 @@ placeholder keeps its real length and clipping metadata. Clear readback addition
 checks an empty caret and rechecks the original focused binding. Provider/physical
 coverage beyond the recorded fixtures remains open.
 
+## Gesture dispatch, in development
+
+A synthesis error used to trigger a second coordinate gesture, including W3C
+single-pointer actions. The candidate now chooses coordinate fallback only on
+capability absence before synthesis invocation. Every error after invocation
+remains unknown and stops, including errors whose text resembles a setup failure.
+The same policy covers native taps/swipes/holds, selected-element focus taps
+through `tapPoint`, alert taps and W3C plain taps. W3C delayed/held/moving/multiple
+pointer paths cannot become a plain coordinate tap. This closes automatic native
+gesture fallback replay; it is not proof about all server/host retries or in-flight
+cancellation. The 312 native logic checks include effect-before-error and failed
+public-path controls; they are not physical acknowledgement-loss injection.
+
 ## Failure recovery, in development
 
 Selected UI failures from `/agent/input` and `/agent/actions` now request a fresh,
