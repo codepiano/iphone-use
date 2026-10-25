@@ -10,11 +10,20 @@ on:
     paths:
       - crates/server/src/simulator.rs
       - crates/server/src/main.rs
+      - crates/server/src/http.rs
+      - crates/server/src/runner.rs
       - crates/mcp/src/client.rs
+      - crates/mcp/src/server.rs
       - runner/**
       - scripts/test-simulator-smoke.sh
       - scripts/test-drag-simulator.py
       - scripts/test-drag-simulator-verdict.py
+      - scripts/test-replacement-recovery-simulator.py
+      - scripts/test-replacement-recovery-verdict.py
+      - scripts/paired-bench-fixture.swift
+      - scripts/compare-native-wda-simulator.py
+      - scripts/test-input-target-simulator.py
+      - scripts/runner_auth.py
       - .github/workflows/simulator-smoke.yml
   workflow_dispatch:
 
@@ -82,3 +91,6 @@ jobs:
             ~/.iphone-use/instances/ci-sim/gesture-acceptance/fixture-build.log
             ~/.iphone-use/instances/ci-sim/gesture-acceptance/**/*.xml
             ~/.iphone-use/instances/ci-sim/gesture-acceptance/**/trace.ndjson
+            ~/.iphone-use/instances/ci-sim/replacement-recovery/result.json
+            ~/.iphone-use/instances/ci-sim/replacement-recovery/traceback.txt
+            ~/.iphone-use/instances/ci-sim/replacement-recovery/mcp.log

@@ -44,6 +44,7 @@ private final class SelectionField: UITextField {
   private var last: Data?
   private var events = ["a": 0, "b": 0, "secure": 0, "multi": 0]
   private var trigger = 0
+  private var touchesAtShift = 0
   private var initialFocus = false
   private var keyboardShown = false
   private var activeSeed = "short"
@@ -85,7 +86,7 @@ private final class SelectionField: UITextField {
     a.isEnabled = true; a.isHidden = false; a.isSecureTextEntry = false; a.touchStarts = 0; a.repopulateOnFocus = false
     a.text = seededValue(activeSeed)
     b.text = advanceOnClear ? "keep-b" : ""; multi.text = ""; secure.text = "benchmark-secure-dummy"
-    events = ["a": 0, "b": 0, "secure": 0, "multi": 0]; trigger = 0; initialFocus = false
+    events = ["a": 0, "b": 0, "secure": 0, "multi": 0]; trigger = 0; touchesAtShift = 0; initialFocus = false
   }
   private func option(_ name: String) -> String {
     let args = ProcessInfo.processInfo.arguments
@@ -119,6 +120,7 @@ private final class SelectionField: UITextField {
     if field === a && shiftFocus && trigger == 0,
        let text = a.text, text.hasPrefix("shift-focus-test-"), text.unicodeScalars.count >= 20 {
       trigger = text.unicodeScalars.count
+      touchesAtShift = a.touchStarts
       b.becomeFirstResponder()
     }
   }
@@ -148,7 +150,7 @@ private final class SelectionField: UITextField {
               "length": field.offset(from: range.start, to: range.end)]
     }
     let focus = a.isFirstResponder ? "a" : b.isFirstResponder ? "b" : secure.isFirstResponder ? "secure" : multi.isFirstResponder ? "multi" : "none"
-    let body: [String: Any] = ["trial": trial, "title": titleLabel.text ?? "", "seed": activeSeed, "pid": ProcessInfo.processInfo.processIdentifier, "foreground_active": window?.windowScene?.activationState == .foregroundActive, "initial_focus_established": initialFocus, "keyboard_did_show": keyboardShown, "selection_commands": a.selectionCommands, "advance_on_clear": advanceOnClear, "advance_triggered": clearAdvance, "clear_fault":clearFault, "a_touch_starts":a.touchStarts, "a_touches_at_clear":touchesAtClear, "overlay_present":clearOverlay != nil, "overlay_actions":overlayActions, "a_enabled":a.isEnabled, "a_hidden":a.isHidden, "a_secure":a.isSecureTextEntry, "selection": ["a": selection(a), "b": selection(b)], "fields": ["a": state(a.text ?? ""), "b": state(b.text ?? ""), "secure": state(secure.text ?? ""), "multi": state(multi.text ?? "")], "focus": focus, "events": events, "shift_trigger_length": trigger]
+    let body: [String: Any] = ["trial": trial, "title": titleLabel.text ?? "", "seed": activeSeed, "pid": ProcessInfo.processInfo.processIdentifier, "foreground_active": window?.windowScene?.activationState == .foregroundActive, "initial_focus_established": initialFocus, "keyboard_did_show": keyboardShown, "selection_commands": a.selectionCommands, "advance_on_clear": advanceOnClear, "advance_triggered": clearAdvance, "clear_fault":clearFault, "a_touch_starts":a.touchStarts, "a_touches_at_clear":touchesAtClear, "overlay_present":clearOverlay != nil, "overlay_actions":overlayActions, "a_enabled":a.isEnabled, "a_hidden":a.isHidden, "a_secure":a.isSecureTextEntry, "selection": ["a": selection(a), "b": selection(b)], "fields": ["a": state(a.text ?? ""), "b": state(b.text ?? ""), "secure": state(secure.text ?? ""), "multi": state(multi.text ?? "")], "focus": focus, "events": events, "shift_trigger_length": trigger, "a_touches_at_shift": touchesAtShift]
     guard let data = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]), data != last else { return }
     last = data
     let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]

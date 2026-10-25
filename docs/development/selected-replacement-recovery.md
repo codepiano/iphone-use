@@ -50,3 +50,16 @@ secure originals, an overlapping actionable control, App repopulation on
 refocus, failed selection and mid-text focus change. App-owned hashes, injected
 fault markers, touch counts and original-field readback are required; an error
 acknowledgement alone is not an expected-refusal pass or task completion proof.
+
+`scripts/test-replacement-recovery-simulator.py` runs the public MCP path on an
+explicitly identified, already leased managed Simulator. It refuses a physical
+target, another owner, a private screen or an active native request before setup.
+It checks original field hashes, actual injected faults, edit/touch counters and
+the covering button's action count. Transport timeouts abort; only received
+responses followed by native-idle and stable-receipt checks permit a distinct
+fixture trial. It never replays a write.
+
+The script runs inside `scripts/test-simulator-smoke.sh` after gesture acceptance;
+its state/receipt verdicts also run without a device through
+`python3 scripts/test-replacement-recovery-verdict.py`, including rejection of
+the actual retained misclick. See the [CI-path run and cleanup evidence](../measurements/recovery-ci-2026-10-26/README.md).

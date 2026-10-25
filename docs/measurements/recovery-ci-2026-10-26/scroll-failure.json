@@ -1,0 +1,195 @@
+{
+  "case": "scroll-then-tap-0",
+  "carrier": "batch",
+  "passed": false,
+  "errors": [
+    "the UIKit table did not scroll"
+  ],
+  "before": {
+    "began_editing": 0,
+    "decelerating": false,
+    "dragging": false,
+    "edits": [],
+    "offset_y": 0,
+    "run_id": "a217d93ac3f44b378397389de27b19bd",
+    "selections": [],
+    "text": ""
+  },
+  "after": {
+    "began_editing": 0,
+    "decelerating": false,
+    "dragging": false,
+    "edits": [],
+    "offset_y": 0,
+    "run_id": "a217d93ac3f44b378397389de27b19bd",
+    "selections": [
+      8
+    ],
+    "text": ""
+  },
+  "steps": [
+    {
+      "kind": "action",
+      "action": {
+        "type": "scroll",
+        "x": 0.5,
+        "y": 0.65,
+        "dx": 0,
+        "dy": 300
+      }
+    },
+    {
+      "kind": "wait_for",
+      "expect": {
+        "present": [
+          {
+            "identifier": "input-row-8",
+            "kind": "Cell"
+          }
+        ]
+      },
+      "timeout_ms": 4000
+    },
+    {
+      "kind": "action",
+      "action": {
+        "type": "tap_locator",
+        "locator": {
+          "identifier": "input-row-8",
+          "kind": "Cell"
+        }
+      }
+    }
+  ],
+  "reply": {
+    "applied_actions": 2,
+    "baseline": "jUmX7veeZeZRQfvlGPlptZE6Bp4uKpv9YSqT_lXn3cs",
+    "completed": 3,
+    "delta": {
+      "added": [
+        {
+          "element": {
+            "depth": 8,
+            "identifier": "input-result",
+            "kind": "StaticText",
+            "label": "{\"began_editing\":0,\"decelerating\":false,\"dragging\":false,\"edits\":[],\"offset_y\":0,\"run_id\":\"a217d93ac3f44b378397389de27b19bd\",\"selections\":[8],\"text\":\"\"}",
+            "rect": [
+              12,
+              116,
+              378,
+              130
+            ]
+          },
+          "index": 3
+        },
+        {
+          "element": {
+            "depth": 7,
+            "identifier": "Toolbar",
+            "kind": "Toolbar",
+            "label": "Toolbar",
+            "rect": [
+              0,
+              788,
+              402,
+              86
+            ]
+          },
+          "index": 167
+        }
+      ],
+      "changed": [],
+      "removed": [
+        3
+      ],
+      "unchanged": 168
+    },
+    "flow_suggestion": {
+      "key": "Gesture Fixture",
+      "message": "You have driven Gesture Fixture for 5 steps and no saved flow covers it. When the task is done, ask the user whether to save it as a flow so next time is one call. Only if they agree: GET /agent/flow/draft (MCP: phone_flow_draft) gives a ready draft to validate and run once; publishing to the shared registry needs their explicit OK again.",
+      "steps": 5
+    },
+    "ok": true,
+    "settle": {
+      "budget_ms": 15000,
+      "captures": 1,
+      "reason": "stable",
+      "settled": true,
+      "waited_ms": 461
+    },
+    "snapshot": "lKiDtxz9A7eqjahrQlrYFYHsIA_0lZvdEPNyu-dABrU",
+    "steps": [
+      {
+        "index": 0,
+        "kind": "action",
+        "ok": true
+      },
+      {
+        "attempts": 1,
+        "index": 1,
+        "kind": "wait_for",
+        "observation": {
+          "absent_unproven": [],
+          "application": "Gesture Fixture",
+          "application_matches": true,
+          "missing_present": [],
+          "read": true,
+          "rows": 170,
+          "sparse": false,
+          "violated_absent": []
+        },
+        "ok": true,
+        "probe_misses": 0
+      },
+      {
+        "index": 2,
+        "kind": "action",
+        "ok": true
+      }
+    ],
+    "timing": {
+      "daemon_ms": 51,
+      "runner": [
+        {
+          "bytes": 14,
+          "call": "POST /actions",
+          "count": 1,
+          "ms": 871
+        },
+        {
+          "bytes": 199607,
+          "call": "GET /source",
+          "count": 2,
+          "ms": 230
+        },
+        {
+          "bytes": 139,
+          "call": "POST /elements",
+          "count": 1,
+          "ms": 80
+        },
+        {
+          "bytes": 49,
+          "call": "GET /element/:id/rect",
+          "count": 1,
+          "ms": 2
+        },
+        {
+          "bytes": 14,
+          "call": "POST /element/:id/click",
+          "count": 1,
+          "ms": 287
+        },
+        {
+          "bytes": 114,
+          "call": "GET /wda/settle",
+          "count": 1,
+          "ms": 332
+        }
+      ],
+      "runner_ms": 1802,
+      "total_ms": 1853
+    }
+  },
+  "reply_error": null
+}
