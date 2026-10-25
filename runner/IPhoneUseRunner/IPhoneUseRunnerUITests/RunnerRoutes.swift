@@ -3,6 +3,7 @@
 // what RunnerClient sends and parses; element finds run over the private AX tree (RunnerElements.swift).
 
 import Foundation
+import CoreFoundation
 import UIKit
 import XCTest
 
@@ -145,6 +146,7 @@ extension RunnerTests {
       "ipu:inputContinuation": true,
       "ipu:atomicText": true,
       "ipu:elementReplace": true,
+      "ipu:replaceFocusRecovery": IPURBridge.focusRecoveryAvailable(),
       "browserName": NSNull(),
       "CFBundleIdentifier": NSNull(),
     ]
@@ -655,7 +657,109 @@ extension RunnerTests {
   /// only deletes before the caret, so a mid-field tap previously left an undeletable suffix.
   /// Select All is one key chord targeted at the original app; it never taps/refocuses a field.
   /// Any uncertain selection/deletion stops, without retrying a different input path.
-  private func clearBoundInput(_ token: String) throws -> HTTPResponse {
+  private enum ClearFocusPolicy { case stop, verifyOriginal, restoreOriginal }
+
+  private func checkedReplacementTarget(_ token: String, original: UINode, requireFocus: Bool) throws -> UINode {
+    IPURBridge.invalidateRequestCache()
+    elements.prune()
+    let current = try freshNode(token)
+    guard let ax = current.axElement, IPURBridge.pid(forAXElement: ax) == original.pid else {
+      throw RunnerError.failed("replacement original AX process unavailable")
+    }
+    if let refusal = InputTargetCheck.replacementRefusal(original: original, current: current,
+        foregroundPID: foreground().pid, visible: current.isVisible(screen: windowSizePoints()),
+        bindingMatches: inputBinding == token, requireFocus: requireFocus) {
+      throw RunnerError.failed("\(refusal); replacement stopped")
+    }
+    IPURBridge.invalidateRequestCache()
+    let finalPID = foreground().pid
+    guard finalPID == original.pid, inputBinding == token else {
+      throw RunnerError.failed("replacement app or binding changed during verification")
+    }
+    return current
+  }
+
+  /// Confirm empty content on the original AX handle, including the provider's
+  /// empty-placeholder representation. A value/selection/read failure never
+  /// authorizes another delete, tap elsewhere or an input fallback.
+  private func checkedClearedReplacement(_ token: String, original: UINode, requireFocus: Bool) throws -> UINode {
+    let before = try checkedReplacementTarget(token, original: original, requireFocus: requireFocus)
+    let value = try fullElementValue(token, limit: 1)
+    guard (value["utf16_length"] as? NSNumber)?.intValue == 0,
+          (value["complete"] as? NSNumber)?.boolValue == true,
+          value["value"] as? String == "", let ax = before.axElement else {
+      throw RunnerError.failed("replacement original field is not confirmed empty")
+    }
+    var error: NSString?
+    guard let range = IPURBridge.textSelection(for: ax, error: &error),
+          range["location"]?.intValue == 0, range["length"]?.intValue == 0 else {
+      throw RunnerError.failed("replacement empty selection unavailable")
+    }
+    let after = try checkedReplacementTarget(token, original: original, requireFocus: requireFocus)
+    guard (before.value ?? "").isEmpty, (after.value ?? "").isEmpty,
+          before.placeholder == after.placeholder else {
+      throw RunnerError.failed("replacement original field changed while verifying clear")
+    }
+    return after
+  }
+
+  private func replacementFocusPointAllowed(_ token: String, original: UINode, point: CGPoint) -> Bool {
+    do {
+      IPURBridge.invalidateRequestCache()
+      let front = foreground()
+      guard front.pid == original.pid, let application = front.element, let ax = original.axElement else { return false }
+      let tree = timed("RecoveryScene") {
+        IPURBridge.runnerTree(forAXElement: application, maxDepth: Self.defaultMaxDepth,
+          maxNodes: 500, extensionCallLimit: Self.defaultExtensionCalls, rememberKey: nil, includeElements: true)
+      }
+      guard (tree[IPURTreeOkKey] as? NSNumber)?.boolValue == true,
+            let truncated = tree[IPURTreeTruncatedKey] as? NSNumber, !truncated.boolValue,
+            let raw = tree[IPURTreeRootKey] as? [String: Any] else { return false }
+      let root = UINode(raw: raw, parent: nil, pid: front.pid)
+      let matches = ([root] + root.descendants()).filter {
+        $0.axElement.map { IPURBridge.sameAXElement($0, ax) } == true
+      }
+      guard matches.count == 1, let current = matches.first, current.rect.contains(point),
+            InputTargetCheck.replacementRefusal(original: original, current: current,
+              foregroundPID: front.pid, visible: current.isVisible(screen: windowSizePoints()),
+              bindingMatches: inputBinding == token, requireFocus: false) == nil,
+            !InputTargetCheck.focusPointOccluded(target: current, root: root, point: point) else { return false }
+      _ = try checkedReplacementTarget(token, original: original, requireFocus: false)
+      return true
+    } catch { return false }
+  }
+
+  /// At most one PID-targeted tap, never the ordinary gesture fallback. Only
+  /// callers that explicitly opted in may restore the cleared original target.
+  private func focusReplacementTarget(_ token: String, original: UINode, requireCleared: Bool) throws -> (node: UINode, tapped: Bool) {
+    let before = try requireCleared
+      ? checkedClearedReplacement(token, original: original, requireFocus: false)
+      : checkedReplacementTarget(token, original: original, requireFocus: false)
+    if before.isFocused { return (before, false) }
+    guard replacementFocusPointAllowed(token, original: original, point: before.center) else {
+      throw RunnerError.failed("replacement original focus point occluded or scene unavailable; nothing was tapped")
+    }
+    guard let ax = before.axElement else { throw RunnerError.failed("replacement original AX handle unavailable") }
+    if let error = IPURBridge.synthesizeFocusTap(forAXElement: ax, at: before.center, pid: before.pid,
+        allowDispatch: { self.replacementFocusPointAllowed(token, original: original, point: before.center) }) {
+      throw RunnerError.failed("replacement focus tap outcome unknown: \(error)")
+    }
+    let deadline = ProcessInfo.processInfo.systemUptime + 0.75
+    repeat {
+      let current = try checkedReplacementTarget(token, original: original, requireFocus: false)
+      if current.isFocused {
+        let confirmed = try requireCleared
+          ? checkedClearedReplacement(token, original: original, requireFocus: true)
+          : checkedReplacementTarget(token, original: original, requireFocus: true)
+        elements.renew(token, node: confirmed)
+        return (confirmed, true)
+      }
+      RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.02))
+    } while ProcessInfo.processInfo.systemUptime < deadline
+    throw RunnerError.failed("replacement original field did not regain focus; no text was sent")
+  }
+
+  private func clearBoundInput(_ token: String, focusPolicy: ClearFocusPolicy = .stop) throws -> HTTPResponse {
     let node = try checkedInputTarget(token)
     if (node.value ?? "").isEmpty {
       elements.renew(token, node: node)
@@ -732,10 +836,25 @@ extension RunnerTests {
     let readDeadline = ProcessInfo.processInfo.systemUptime + 0.75
     while true {
       IPURBridge.invalidateRequestCache()
-      guard let after = try? checkedInputTarget(token), let afterAX = after.axElement else {
-        inputBinding = nil
-        throw RunnerError.failed("guarded clear target changed; inspect the original field")
+      let after: UINode
+      do { after = try checkedInputTarget(token) }
+      catch {
+        do {
+          guard focusPolicy != .stop else { throw error }
+          // No text has started, and deletion returned successfully. Verify
+          // the actual original field before any recovery gesture.
+          _ = try checkedClearedReplacement(token, original: node, requireFocus: false)
+          if focusPolicy == .verifyOriginal {
+            return .value(NSNull(), headers: ["X-IPU-Clear-Original-Verified": "1"])
+          }
+          let recovered = try focusReplacementTarget(token, original: node, requireCleared: true)
+          return .value(NSNull(), headers: ["X-IPU-Clear-Focus-Restored": recovered.tapped ? "1" : "0"])
+        } catch {
+          inputBinding = nil
+          throw RunnerError.failed("guarded clear target changed or original clear unconfirmed; inspect the original field")
+        }
       }
+      guard let afterAX = after.axElement else { throw RunnerError.failed("guarded clear AX target unavailable") }
       var valueError: NSString?
       guard let actual = IPURBridge.readValue(for: afterAX, maxUTF16: 1, placeholder: after.placeholder, error: &valueError),
             let count = (actual["utf16_length"] as? NSNumber)?.intValue else {
@@ -1209,13 +1328,21 @@ extension RunnerTests {
     }
   }
 
-  /// Focus the explicitly selected field once, then bind clear and the first bounded chunk.
-  /// Further chunks use this same native token; no re-focusing or fallback after uncertainty.
+  /// Bind the explicitly selected original before focusing, clearing and the first chunk.
+  /// Optional clear-time recovery requires a verified empty original before text starts.
+  /// Further chunks retain this token; uncertain text/deletion is never replayed.
   private func replaceElementText(_ id: String, _ request: HTTPRequest) throws -> HTTPResponse {
     let body = try request.jsonObject()
     guard let text = body["text"] as? String, text.unicodeScalars.count <= 200 else {
       throw RunnerError.invalidArgument("replacement prefix needs at most 200 Unicode scalars; nothing was sent")
     }
+    let recoverFocus: Bool
+    if let raw = body["recoverFocusAfterClear"] {
+      guard let value = raw as? NSNumber, CFGetTypeID(value) == CFBooleanGetTypeID() else {
+        throw RunnerError.invalidArgument("recoverFocusAfterClear must be a boolean; nothing was sent")
+      }
+      recoverFocus = value.boolValue
+    } else { recoverFocus = false }
     IPURBridge.invalidateRequestCache()
     let selected = try freshNode(id)
     guard ["XCUIElementTypeTextField", "XCUIElementTypeSearchField", "XCUIElementTypeTextView"].contains(selected.type) else {
@@ -1229,19 +1356,18 @@ extension RunnerTests {
       throw RunnerError.invalidArgument("replacement_target_unavailable; nothing was sent")
     }
     do {
-      _ = try focusForTyping(id)
-      IPURBridge.invalidateRequestCache()
-      let original = try freshNode(id)
-      guard original.type == selected.type, original.identifier == selected.identifier,
-            selected.identifier != nil || original.label == selected.label else {
-        throw RunnerError.failed("replacement target changed while focusing")
-      }
-      let token = elements.register(original)
+      // Bind before focusing: a concurrent command must not be overwritten by
+      // minting a new binding after the focus wait.
+      let token = elements.register(selected)
       inputBinding = token
+      if recoverFocus { _ = try focusReplacementTarget(token, original: selected, requireCleared: false) }
+      else { _ = try focusForTyping(id) }
+      let original = try checkedReplacementTarget(token, original: selected, requireFocus: true)
+      elements.renew(token, node: original)
       _ = try checkedInputTarget(token)
-      _ = try clearBoundInput(token)
+      let clear = try clearBoundInput(token, focusPolicy: recoverFocus ? (text.isEmpty ? .verifyOriginal : .restoreOriginal) : .stop)
       if !text.isEmpty { _ = try boundKeys(text, token: token, frequency: 60) }
-      return .value(["inputTarget": token])
+      return .value(["inputTarget": token, "focusRestoredAfterClear": clear.headers["X-IPU-Clear-Focus-Restored"] == "1"], headers: clear.headers)
     } catch {
       inputBinding = nil
       // Focusing or clearing may already have happened, even if typing did not start.

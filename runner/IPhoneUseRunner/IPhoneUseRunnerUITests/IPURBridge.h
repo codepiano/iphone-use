@@ -75,6 +75,8 @@ FOUNDATION_EXPORT NSString *const IPURNodeAXElementKey;
 
 /// Pid of an XCAccessibilityElement, or 0.
 + (int)pidForAXElement:(id)element;
+/// Identity of retained AX handles, independent of label/frame matching.
++ (BOOL)sameAXElement:(id)left other:(id)right NS_SWIFT_NAME(sameAXElement(_:_:));
 
 /// Bundle id of a running process, via XCUIDevice.applicationMonitor
 /// monitoredApplicationWithProcessIdentifier:. Cached per pid.
@@ -163,8 +165,15 @@ FOUNDATION_EXPORT NSString *const IPURNodeAXElementKey;
 
 /// Whether the private event-synthesis classes and selectors are present.
 + (BOOL)eventSynthesisAvailable;
+/// Whether this runtime can perform a PID-targeted, original-element hit-tested focus tap.
++ (BOOL)focusRecoveryAvailable;
 
 + (nullable NSString *)synthesizeTapAt:(CGPoint)point pid:(int)pid;
+/// No fallback: require the original AX process and an exact hit-test match
+/// after record/orientation setup, immediately before dispatching the focus tap.
++ (nullable NSString *)synthesizeFocusTapForAXElement:(id)element atPoint:(CGPoint)point pid:(int)pid
+                                    allowDispatch:(BOOL (NS_NOESCAPE ^)(void))allowDispatch
+  NS_SWIFT_NAME(synthesizeFocusTap(forAXElement:at:pid:allowDispatch:));
 + (nullable NSString *)synthesizeLongPressAt:(CGPoint)point duration:(NSTimeInterval)duration pid:(int)pid;
 /// Linear drag interpolated by XCTest; finger lifts at `duration`.
 + (nullable NSString *)synthesizeDragFrom:(CGPoint)start

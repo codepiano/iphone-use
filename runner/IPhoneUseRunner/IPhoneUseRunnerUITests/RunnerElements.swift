@@ -314,6 +314,39 @@ struct ClassChain {
 /// non-editable nodes and unreported focus cannot authorize typing. Geometry and labels are not
 /// identities. The caller re-snapshots the retained live AX element on each chunk.
 enum InputTargetCheck {
+  /// AX point lookup alone can lag a newly installed sibling control. An
+  /// independent complete-scene check must reject overlapping actionable nodes.
+  static func focusPointOccluded(target: UINode, root: UINode, point: CGPoint) -> Bool {
+    var ancestors = Set<ObjectIdentifier>()
+    var parent = target.parent
+    while let node = parent { ancestors.insert(ObjectIdentifier(node)); parent = node.parent }
+    let actionable: Set<String> = ["XCUIElementTypeButton", "XCUIElementTypeLink", "XCUIElementTypeCell",
+      "XCUIElementTypeTextField", "XCUIElementTypeSecureTextField", "XCUIElementTypeSearchField",
+      "XCUIElementTypeTextView", "XCUIElementTypeSwitch", "XCUIElementTypeSlider", "XCUIElementTypeStepper",
+      "XCUIElementTypePickerWheel", "XCUIElementTypeDatePicker", "XCUIElementTypeKey", "XCUIElementTypeAlert",
+      "XCUIElementTypeSheet", "XCUIElementTypePopover", "XCUIElementTypeMenu", "XCUIElementTypeMenuItem"]
+    return ([root] + root.descendants()).contains { node in
+      node !== target && !ancestors.contains(ObjectIdentifier(node)) && node.rect.contains(point)
+        && (actionable.contains(node.type) || (node.type == "XCUIElementTypeOther" && node.label != nil && node.children.isEmpty))
+    }
+  }
+
+  /// Read-only proof for the retained original element. Focus may be absent only
+  /// while an explicitly requested replacement verifies its completed clear.
+  static func replacementRefusal(original: UINode, current: UINode,
+      foregroundPID: Int32, visible: Bool, bindingMatches: Bool, requireFocus: Bool) -> String? {
+    guard bindingMatches else { return "replacement_binding_changed" }
+    guard original.pid == current.pid, original.type == current.type,
+          original.identifier == current.identifier,
+          original.identifier != nil || original.label == current.label else {
+      return "replacement_identity_changed"
+    }
+    guard visible else { return "replacement_target_not_visible" }
+    return refusal(type: current.type, focused: !requireFocus || current.isFocused,
+      enabled: current.isEnabled, pid: current.pid, foregroundPID: foregroundPID,
+      live: current.axElement != nil)
+  }
+
   /// Only these bridge failures precede event dispatch. An arbitrary synthesis error may
   /// already have delivered text, so it must never trigger another typing implementation.
   static func mayFallbackAfterTextSynthesis(_ error: String, targeted: Bool) -> Bool {

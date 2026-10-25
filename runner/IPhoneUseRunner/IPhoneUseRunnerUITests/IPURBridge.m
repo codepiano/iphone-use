@@ -39,7 +39,7 @@ typedef int (*IPURMsgSendInt)(id, SEL);
 typedef long long (*IPURMsgSendLongLong)(id, SEL);
 typedef id (*IPURMsgSendObjectInt)(id, SEL, int);
 typedef id (*IPURMsgSendSnapshotRequest)(id, SEL, id, id, id, NSError **);
-typedef id (*IPURMsgSendElementAtPoint)(id, SEL, CGPoint, NSError **);
+typedef id (*IPURMsgSendHitTestSnapshot)(id, SEL, id, CGPoint, NSError **);
 typedef id (*IPURMsgSendMapAttributes)(id, SEL, id, BOOL);
 typedef void (*IPURMsgSendPerformWithOptions)(id, SEL, unsigned int, void (^)(void));
 typedef id (*IPURMsgSendInitRecordDisplay)(id, SEL, NSString *, unsigned long long, long long);
@@ -52,6 +52,19 @@ typedef void (*IPURMsgSendPathOffset)(id, SEL, double);
 typedef void (*IPURMsgSendAddPath)(id, SEL, id);
 typedef BOOL (*IPURMsgSendSynthesize)(id, SEL, NSError **);
 typedef void (*IPURMsgSendTypeText)(id, SEL, NSString *, double, unsigned long long, BOOL);
+
+static BOOL IPURPointHitTestAvailable(id client)
+{
+  @try {
+    SEL selector = NSSelectorFromString(@"hitTestElement:withPoint:error:");
+    if (![client respondsToSelector:selector]) return NO;
+    NSMethodSignature *signature = [client methodSignatureForSelector:selector];
+    return signature.numberOfArguments == 5 && signature.methodReturnType[0] == '@'
+      && [signature getArgumentTypeAtIndex:2][0] == '@'
+      && strcmp([signature getArgumentTypeAtIndex:3], @encode(CGPoint)) == 0
+      && [signature getArgumentTypeAtIndex:4][0] == '^';
+  } @catch (__unused NSException *exception) { return NO; }
+}
 
 /// A childless serialized node remembered with its depth relative to the request that produced
 /// it. The deepest level of a depth-capped request is where the AX server withheld children.
@@ -172,6 +185,12 @@ static void IPURNoopVoidMethod(Class cls, NSString *selectorName, NSMutableArray
   return IPURInt(element, @"processIdentifier");
 }
 
++ (BOOL)sameAXElement:(id)left other:(id)right
+{
+  int pid = [self pidForAXElement:left];
+  return pid > 0 && pid == [self pidForAXElement:right] && [left isEqual:right];
+}
+
 + (int)pidForApplication:(XCUIApplication *)application
 {
   return IPURInt(application, @"processID");
@@ -273,12 +292,15 @@ static BOOL IPURUseRequestCache(void)
     // Several apps report active (split screen, a PiP, an app extension): ask the AX server
     // who owns the probe point, like runner's active-app detection point.
     id axClient = [self axClient];
-    SEL hitTest = NSSelectorFromString(@"accessibilityElementForElementAtPoint:error:");
-    if (axClient != nil && [axClient respondsToSelector:hitTest]) {
+    SEL hitTest = NSSelectorFromString(@"hitTestElement:withPoint:error:");
+    if (IPURPointHitTestAvailable(axClient)) {
       NSError *error = nil;
       id hit = nil;
       @try {
-        hit = ((IPURMsgSendElementAtPoint)objc_msgSend)(axClient, hitTest, probe(), &error);
+        // iOS forwards this point query globally to its remote AX interface;
+        // the snapshot context is unused for foreground discovery. Do not call
+        // the macOS-only accessibilityElementForElementAtPoint assertion stub.
+        hit = ((IPURMsgSendHitTestSnapshot)objc_msgSend)(axClient, hitTest, nil, probe(), &error);
       } @catch (__unused NSException *exception) {
         hit = nil;
       }
@@ -1205,7 +1227,8 @@ static NSString *IPURCreateGestureRecord(NSString *name, int pid, id *record)
   }
   if (created == nil) return @"private XCTest event synthesis failed: could not create event record";
   SEL targetSelector = NSSelectorFromString(@"setTargetProcessID:");
-  if (pid > 0 && [created respondsToSelector:targetSelector]) {
+  if (pid > 0) {
+    if (![created respondsToSelector:targetSelector]) return @"targeted gesture synthesis unavailable; nothing was sent";
     ((IPURMsgSendSetLongLong)objc_msgSend)(created, targetSelector, (long long)pid);
   }
   *record = created;
@@ -1245,6 +1268,61 @@ static NSString *IPURSynthesize(id record, id path)
 + (nullable NSString *)synthesizeTapAt:(CGPoint)point pid:(int)pid
 {
   return [self synthesizeLongPressAt:point duration:0.05 pid:pid name:@"ipu-tap"];
+}
+
++ (BOOL)focusRecoveryAvailable
+{
+  @try {
+    Class record = NSClassFromString(@"XCSynthesizedEventRecord");
+    if (![self eventSynthesisAvailable] || ![record instancesRespondToSelector:NSSelectorFromString(@"setTargetProcessID:")]) return NO;
+    return IPURPointHitTestAvailable([self axClient]);
+  } @catch (__unused NSException *exception) { return NO; }
+}
+
++ (nullable NSString *)synthesizeFocusTapForAXElement:(id)element atPoint:(CGPoint)point pid:(int)pid
+                                    allowDispatch:(BOOL (NS_NOESCAPE ^)(void))allowDispatch
+{
+  @try {
+    if (![self focusRecoveryAvailable]) return @"original focus hit-test or targeting unavailable; nothing was tapped";
+    id record = nil;
+    NSString *failure = IPURCreateGestureRecord(@"ipu-original-field-focus", pid, &record);
+    if (failure != nil) return failure;
+    id path = IPURNewTouchPath(point, 0.0);
+    if (path == nil || pid <= 0 || [self pidForAXElement:element] != pid) {
+      return @"original focus target unavailable; nothing was tapped";
+    }
+    IPURLift(path, 0.05);
+    id client = [self axClient];
+    SEL selector = NSSelectorFromString(@"hitTestElement:withPoint:error:");
+    NSString *snapshotError = nil;
+    id snapshot = [self requestSnapshotForElement:element maxDepth:1 maxNodes:1 error:&snapshotError];
+    id snapshotAX = IPURKVC(snapshot, @"accessibilityElement");
+    id type = IPURKVC(snapshot, @"elementType");
+    if (snapshot == nil || snapshotAX == nil || ![snapshotAX isEqual:element]
+        || ![type respondsToSelector:@selector(integerValue)]
+        || ![@[@(XCUIElementTypeTextField), @(XCUIElementTypeSearchField), @(XCUIElementTypeTextView)] containsObject:type]
+        || ![IPURKVC(snapshot, @"enabled") boolValue]) {
+      return @"original focus snapshot changed or unavailable; nothing was tapped";
+    }
+    // Clearing can install a new sibling/overlay. Refresh the application
+    // hierarchy, not only the retained leaf, before asking who owns this point.
+    id application = [self activeApplicationElementForPID:pid];
+    NSString *applicationError = nil;
+    id applicationSnapshot = application == nil ? nil : [self requestSnapshotForElement:application
+      maxDepth:8 maxNodes:128 error:&applicationError];
+    if (applicationSnapshot == nil || [self pidForAXElement:application] != pid) {
+      return @"original focus application snapshot unavailable; nothing was tapped";
+    }
+    NSError *error = nil;
+    id hit = ((IPURMsgSendHitTestSnapshot)objc_msgSend)(client, selector, applicationSnapshot, point, &error);
+    if (error != nil || hit == nil || [self pidForAXElement:hit] != pid || ![hit isEqual:element]) {
+      return @"original focus target occluded or changed; nothing was tapped";
+    }
+    if (!allowDispatch()) return @"original focus binding or scene changed; nothing was tapped";
+    return IPURSynthesize(record, path);
+  } @catch (__unused NSException *exception) {
+    return @"original focus hit-test or synthesis raised; inspect original field";
+  }
 }
 
 + (nullable NSString *)synthesizeLongPressAt:(CGPoint)point duration:(NSTimeInterval)duration pid:(int)pid

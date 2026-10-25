@@ -178,6 +178,10 @@ pub struct SetValueParams {
     /// Complete replacement, up to 1000 Unicode characters. Empty clears the field.
     #[schemars(length(max = 1000))]
     pub value: String,
+    /// Default false. Explicitly permit one original-field refocus only after
+    /// its clear is verified and before text starts; needs a supporting native Runner.
+    #[serde(default)]
+    pub recover_focus_after_clear: Option<bool>,
     /// Default true: return the resulting screen change.
     #[serde(default)]
     pub observe: Option<bool>,
@@ -1203,20 +1207,25 @@ impl PhoneHandler {
         Unicode characters); an empty value clears it. Requires phone_status.drivable=true. The daemon checks \
         the caller's observation and focuses the selected field. Supporting native runners bind clear and \
         subsequent chunks to that original field; older runners use their existing clear/type path. Clearing \
-        failure stops input. Newlines require a multiline field, and secure fields refuse. An unknown outcome \
+        failure stops input. recover_focus_after_clear defaults false: explicitly opt in to one original-field \
+        refocus only after empty value/selection and original identity/app/binding are verified, before text starts. \
+        Requires a supporting native Runner; unsupported recovery refuses before replacement input. Empty clears \
+        never restore focus after clearing. It does not recover a focus change during typing. Newlines require a multiline field, \
+        and secure fields refuse. An unknown outcome \
         may include partial changes: inspect the original field and never replay the whole value automatically. \
         Use phone_type for appending to current focus. observe defaults true; verify the resulting value."
     )]
     async fn phone_set_value(
         &self,
-        Parameters(SetValueParams { element, snapshot, value, observe }): Parameters<SetValueParams>,
+        Parameters(SetValueParams { element, snapshot, value, recover_focus_after_clear, observe }): Parameters<SetValueParams>,
     ) -> CallToolResult {
         if snapshot.trim().is_empty() || snapshot.chars().count() > 200 || value.chars().count() > 1000 {
             return not_sent_result("invalid_replacement", "No request was sent: supply the original snapshot (1..200 characters), its field index and a value of at most 1000 characters".into());
         }
         self.progress_reset();
         let observe = observe.unwrap_or(true);
-        let action = serde_json::json!({"type":"set_value","element":element,"snapshot":snapshot,"value":value});
+        let mut action = serde_json::json!({"type":"set_value","element":element,"snapshot":snapshot,"value":value});
+        if let Some(recover) = recover_focus_after_clear { action["recover_focus_after_clear"] = serde_json::Value::Bool(recover); }
         match self.daemon.input_value_observed(&action, observe).await {
             Ok(response) => daemon_action_result(&response, observe, "replaced the selected field"),
             Err(error) => unknown_action_result("transport_error", format!("the call failed: {error:#}.")),

@@ -1,0 +1,18 @@
+{
+  "scope": "Final explicit clear-time recovery, not mid-input isolation or overall superiority",
+  "files": {
+    "build-receipt.json": "326abf42c23113a42aca88817e9990a099a9bb17fd5115830aabdca18d794aed",
+    "provenance.json": "853c572e9732c8814185f4d26eb4b2f48c707e9ddde3e9a63d3a54093ecc183b",
+    "executed-harness.tar.gz": "7da82de33964b129f493fff53558a0b36fa901b240b5bdd9a133aa3e03bc7faf",
+    "old-runner-build-receipt.json": "0caa6d3a1f88cd843788a14cd55a41a81d751676f2d4fc16dded4aceaa8942a3",
+    "simulator-independent-cleanup.json": "9cbbed2a9c535f489df964c87b70d22b45fa7cf85b4b28a1f84c5d02e5c00a24",
+    "final-summary.json": "eb34283302bad79759b623324ea52064daa5fbd0fa4596315fb3aabf971b1c01",
+    "cleanup-audit.json": "e5009b9e335637555693ad5f1acee04a185076129cbd9d489da324e00da5fae0",
+    "README.md": "b7bf200d771d7441b26cc7fb13fbb9e8b86ec6fb9b88a63b846d646df17e1772",
+    "results.json.gz": "1b89ef33d7592646666af2595e0e0ddb85f2d0f7e94e174565cf8c93db3844a3",
+    "retained-trials.json.gz": "87b2434fed7dfc5cae93660b38c23a07d169ab2bc8d54c47c5c64ae093ec5e28",
+    "validation.json": "d5d30481a1f4ff55c4ee178b562f8fa70eec3fabd917a9e627c8e25075191421",
+    "hit-test-api-inspection.json": "122f5cc272313a0059b36c0c303ac92e67a258bb9dd6b2c6e60278fc7e27ad64",
+    "validation-logs.json.gz": "aa3aa3df8e4eab6602eb5b2e6ca6a89a62a87faf571aee4fa6675bb99e7f13ef"
+  }
+}

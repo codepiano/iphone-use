@@ -104,3 +104,8 @@ test listeners are absent, and the default daemon remains offline/unowned.
 No daily App was used for a test task. USB, rotation, long sessions, other Apps,
 older iOS versions, actual model tasks, installed host panels and downloaded
 release acceptance remain open. The broader competitive goal is not complete.
+
+A later [opt-in selected-field recovery lane](../selected-replacement-recovery-2026-10-26/README.md)
+completes the two tested clear-time handoffs with additional original-field and
+scene guards. Keep its explicit policy and newer fixture/provenance separate
+from this strict-policy cohort. Input-time segment misdirection remains open.

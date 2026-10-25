@@ -162,6 +162,17 @@ delivery can include partial edits and must not trigger a replay. Original-field
 binding during clear/chunks requires a supporting native Runner; older Runners
 retain their existing clear/type behavior.
 
+For an App known to move focus when a field becomes empty, explicitly set
+`recover_focus_after_clear:true` on `phone_set_value`. Default false stops on
+focus loss. Supporting native Runners verify the original field's identity,
+foreground process, binding, empty value/selection, hit-test target and complete
+AX scene without an overlapping actionable control at the touch point;
+they may tap it once, then verify empty content again before typing. Unsupported
+recovery refuses before replacement input. Empty replacements verify the clear
+without restoring focus. This policy never recovers a focus change during
+typing or replays deletion/text. Keep it off when a focus change should stop the
+operation; inspect the original field after an unknown result.
+
 Bounded long input: `phone_type {"text":"…","budget_ms":15000}` can return a
 single-use `continue_token` at a safe chunk boundary. Continue with
 `phone_type {"continue_token":"…"}` only, without text or budget. Keep the same

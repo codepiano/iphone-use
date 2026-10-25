@@ -1024,6 +1024,21 @@ fn selected_replacement_observes_by_default_and_can_clear() {
 }
 
 #[test]
+fn selected_replacement_forwards_explicit_focus_recovery_without_substituting_binding() {
+    let daemon = ScriptedDaemon::start("200 OK", br#"{"ok":true}"#.to_vec());
+    let mut mcp = McpChild::start(&daemon.url);
+    let reply = mcp.call_tool(2, "phone_set_value", serde_json::json!({
+        "element":2,"snapshot":"original","value":"恢复后的正文","recover_focus_after_clear":true,"observe":false
+    }));
+    assert_ne!(reply["result"]["isError"],true,"{reply}");
+    let requests=daemon.requests.lock().unwrap();
+    let writes:Vec<_>=requests.iter().filter(|r|r.starts_with("POST /agent/input ")).collect();
+    assert_eq!(writes.len(),1,"{requests:?}");
+    let body:serde_json::Value=serde_json::from_str(writes[0].split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    assert_eq!(body,serde_json::json!({"type":"set_value","element":2,"snapshot":"original","value":"恢复后的正文","recover_focus_after_clear":true}));
+}
+
+#[test]
 fn selected_replacement_rejects_missing_binding_or_oversized_value_without_dispatch() {
     let daemon = ScriptedDaemon::start("200 OK", br#"{"ok":true}"#.to_vec());
     let mut mcp = McpChild::start(&daemon.url);

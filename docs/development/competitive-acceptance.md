@@ -81,6 +81,13 @@ Limits to close before claiming input superiority:
   focus fault without spilling to B, but fail ordinary replacement budgets.
   Key events fail the intended Unicode values and never reach their focus fault.
   Both prototypes were removed; neither resolves the default-path limitation.
+- An [explicit selected-field clear-time recovery option](../measurements/selected-replacement-recovery-2026-10-26/README.md)
+  subsequently completes the two tested 500-character handoffs. It requires
+  verified original emptiness, current identity/app/binding, independent complete
+  scene/overlap checks and at most one original-field tap before text starts.
+  Default stopping remains; new content and occluders refuse, old Runners refuse
+  requested recovery before replacement input. The same final lane still records
+  A20/B180 on input-time focus change, so the segment-isolation gap remains.
 - Old runners without the capability keep their existing input behavior;
   they must not be described as protected.
 - Ordinary short text on `ipu:atomicText` binds, optionally clears, types and

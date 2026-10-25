@@ -7160,11 +7160,17 @@ async fn set_value_snapshot_element(
     w: &mut crate::runner::RunnerClient,
     value: &serde_json::Value,
 ) -> Result<(), SnapshotElementTapError> {
+    let recover_focus = match value.get("recover_focus_after_clear") {
+        None => false,
+        Some(serde_json::Value::Bool(value)) => *value,
+        _ => return Err(SnapshotElementTapError::InvalidValue("recover_focus_after_clear must be a boolean")),
+    };
     let text = value
         .get("value")
         .and_then(serde_json::Value::as_str)
         .ok_or(SnapshotElementTapError::Invalid)?
         .to_string();
+    if text.chars().count() > 1_000 { return Err(SnapshotElementTapError::InvalidValue("replacement value exceeds 1000 Unicode characters")); }
     let (rows, index, reused) = fetch_snapshot_row_reusing(w, value).await?;
     let row = &rows[index];
     if row.kind == "SecureTextField" {
@@ -7188,8 +7194,12 @@ async fn set_value_snapshot_element(
     } else {
         return Err(SnapshotElementTapError::InvalidTarget);
     };
+    if recover_focus && !w.supports_replace_focus_recovery().await.map_err(SnapshotElementTapError::BeforeDispatch)? {
+        return Err(SnapshotElementTapError::Refused("replacement_focus_recovery_unsupported",
+            "This Runner cannot verify and restore a cleared original field. Update the Runner or omit recover_focus_after_clear; no replacement input was sent"));
+    }
     let before = w.element_value(&element_id).await.ok().map(|value|value.unwrap_or_default());
-    let typed = match w.replace_element_if_supported(&element_id, &text).await {
+    let typed = match w.replace_element_if_supported(&element_id, &text, recover_focus).await {
         Ok(true) => Ok(()),
         Err(error) => return Err(SnapshotElementTapError::AfterDispatch(error)),
         Ok(false) => {
@@ -11170,9 +11180,10 @@ fn validate_agent_action_value(
                     .get("value")
                     .and_then(serde_json::Value::as_str)
                     .is_none_or(|value| value.chars().count() > 1_000)
+                || action.get("recover_focus_after_clear").is_some_and(|value| !value.is_boolean())
             {
                 return invalid(
-                    "set_value needs element, snapshot, and a string value up to 1000 characters",
+                    "set_value needs element, snapshot, a string value up to 1000 characters, and an optional boolean recover_focus_after_clear",
                 );
             }
         }
@@ -23045,6 +23056,12 @@ mod tests {
 
     #[test]
     fn validate_set_value_requires_element_snapshot_and_bounded_value() {
+        for valid in [false,true] {
+            assert!(validate_action(serde_json::json!({"type":"set_value","element":2,"snapshot":"abc","value":"new","recover_focus_after_clear":valid})).is_ok());
+        }
+        for invalid in [serde_json::Value::Null,serde_json::json!(1),serde_json::json!("true")] {
+            assert!(validate_action(serde_json::json!({"type":"set_value","element":2,"snapshot":"abc","value":"new","recover_focus_after_clear":invalid})).is_err());
+        }
         assert!(validate_action(
             serde_json::json!({"type":"set_value","element":2,"snapshot":"abc","value":"你好"})
         )

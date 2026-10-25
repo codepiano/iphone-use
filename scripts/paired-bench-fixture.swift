@@ -3,6 +3,21 @@ import CryptoKit
 private final class SelectionField: UITextField {
   var selectionPolicy = ""
   var selectionCommands = 0
+  var touchStarts = 0
+  var repopulateOnFocus = false
+  override func becomeFirstResponder() -> Bool {
+    let result = super.becomeFirstResponder()
+    if result && repopulateOnFocus {
+      repopulateOnFocus = false
+      text = "App refocus draft"
+      sendActions(for: .editingChanged)
+    }
+    return result
+  }
+  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+    touchStarts += 1
+    super.touchesBegan(touches, with: event)
+  }
   override func selectAll(_ sender: Any?) {
     selectionCommands += 1
     if selectionPolicy == "ignore-all" || (selectionPolicy == "ignore-once" && selectionCommands == 1) { return }
@@ -47,6 +62,10 @@ private final class SelectionField: UITextField {
   private var secureFocus = false
   private var advanceOnClear = false
   private var clearAdvance = false
+  private var clearFault = ""
+  private var touchesAtClear = -1
+  private var clearOverlay: UIButton?
+  private var overlayActions = 0
   private var trial: String { currentTrial.isEmpty ? option("--trial") : currentTrial }
   private func resetIfRequested() {
     let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("paired-reset.json")
@@ -57,9 +76,13 @@ private final class SelectionField: UITextField {
     shiftFocus = body["shift"] as? Bool ?? false
     secureFocus = body["secure"] as? Bool ?? false
     advanceOnClear = body["advance"] as? Bool ?? false
+    clearFault = body["clear_fault"] as? String ?? ""
     clearAdvance = false
+    touchesAtClear = -1
+    clearOverlay?.removeFromSuperview(); clearOverlay = nil; overlayActions = 0
     activeSeed = body["seed"] as? String ?? "short"
     a.selectionPolicy = activeSeed; a.selectionCommands = 0
+    a.isEnabled = true; a.isHidden = false; a.isSecureTextEntry = false; a.touchStarts = 0; a.repopulateOnFocus = false
     a.text = seededValue(activeSeed)
     b.text = advanceOnClear ? "keep-b" : ""; multi.text = ""; secure.text = "benchmark-secure-dummy"
     events = ["a": 0, "b": 0, "secure": 0, "multi": 0]; trigger = 0; initialFocus = false
@@ -74,6 +97,23 @@ private final class SelectionField: UITextField {
     events[key, default: 0] += 1
     if field === a && advanceOnClear && !clearAdvance && (a.text ?? "").isEmpty {
       clearAdvance = true
+      touchesAtClear = a.touchStarts
+      if clearFault == "repopulate" {
+        a.text = "App restored draft"
+        a.sendActions(for: .editingChanged)
+      } else if clearFault == "disable" { a.isEnabled = false }
+      else if clearFault == "hide" { a.isHidden = true }
+      else if clearFault == "secure" { a.isSecureTextEntry = true }
+      else if clearFault == "refocus-repopulate" { a.repopulateOnFocus = true }
+      else if clearFault == "overlay", let view = window?.rootViewController?.view {
+        let button = UIButton(type: .system)
+        button.frame = a.convert(a.bounds, to: view)
+        button.backgroundColor = .systemRed
+        button.setTitle("Fixture action", for: .normal)
+        button.accessibilityIdentifier = "clear-overlay-action"
+        button.addTarget(self, action: #selector(overlayPressed), for: .touchUpInside)
+        view.addSubview(button); clearOverlay = button
+      }
       b.becomeFirstResponder()
     }
     if field === a && shiftFocus && trigger == 0,
@@ -82,6 +122,7 @@ private final class SelectionField: UITextField {
       b.becomeFirstResponder()
     }
   }
+  @objc private func overlayPressed() { overlayActions += 1 }
   @objc private func keyboardDidShow(_ notification: Notification) {
     keyboardShown = true
     record()
@@ -107,7 +148,7 @@ private final class SelectionField: UITextField {
               "length": field.offset(from: range.start, to: range.end)]
     }
     let focus = a.isFirstResponder ? "a" : b.isFirstResponder ? "b" : secure.isFirstResponder ? "secure" : multi.isFirstResponder ? "multi" : "none"
-    let body: [String: Any] = ["trial": trial, "title": titleLabel.text ?? "", "seed": activeSeed, "pid": ProcessInfo.processInfo.processIdentifier, "foreground_active": window?.windowScene?.activationState == .foregroundActive, "initial_focus_established": initialFocus, "keyboard_did_show": keyboardShown, "selection_commands": a.selectionCommands, "advance_on_clear": advanceOnClear, "advance_triggered": clearAdvance, "selection": ["a": selection(a), "b": selection(b)], "fields": ["a": state(a.text ?? ""), "b": state(b.text ?? ""), "secure": state(secure.text ?? ""), "multi": state(multi.text ?? "")], "focus": focus, "events": events, "shift_trigger_length": trigger]
+    let body: [String: Any] = ["trial": trial, "title": titleLabel.text ?? "", "seed": activeSeed, "pid": ProcessInfo.processInfo.processIdentifier, "foreground_active": window?.windowScene?.activationState == .foregroundActive, "initial_focus_established": initialFocus, "keyboard_did_show": keyboardShown, "selection_commands": a.selectionCommands, "advance_on_clear": advanceOnClear, "advance_triggered": clearAdvance, "clear_fault":clearFault, "a_touch_starts":a.touchStarts, "a_touches_at_clear":touchesAtClear, "overlay_present":clearOverlay != nil, "overlay_actions":overlayActions, "a_enabled":a.isEnabled, "a_hidden":a.isHidden, "a_secure":a.isSecureTextEntry, "selection": ["a": selection(a), "b": selection(b)], "fields": ["a": state(a.text ?? ""), "b": state(b.text ?? ""), "secure": state(secure.text ?? ""), "multi": state(multi.text ?? "")], "focus": focus, "events": events, "shift_trigger_length": trigger]
     guard let data = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]), data != last else { return }
     last = data
     let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
