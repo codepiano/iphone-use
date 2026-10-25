@@ -1,0 +1,29 @@
+{
+  "native-placeholder-v14b-faults": {
+    "udid": "BEC27137-676A-4BFB-B76D-12F15169E031",
+    "still_registered": false
+  },
+  "native-placeholder-v14b-repetitions": {
+    "udid": "C2EACEEF-D24F-4E3E-A4FC-879FED1A93D7",
+    "still_registered": false
+  },
+  "native-placeholder-v14b-selected": {
+    "udid": "569FBE9F-2325-4660-8073-6AA487C9838E",
+    "still_registered": false,
+    "id_source": "xcodebuild invocation in owned runner.log",
+    "runner_log_sha256": "0a5c0819cfa54f743d743239e51837bb866e529ef683d56a909d1097af29abea"
+  },
+  "native-placeholder-v14b-regression": {
+    "udid": "75411757-38BC-44BF-8EEA-11A38BE29248",
+    "still_registered": false
+  },
+  "paired-v14b-functional": {
+    "udid": "06F761A6-C27F-4C15-8186-6B02CF56D46A",
+    "still_registered": false
+  },
+  "paired-v14b-resource-gated": {
+    "run": "paired-v14b-resource-gated",
+    "udid": "954FE88D-C7F0-4D5E-8A42-63BD95B15F59",
+    "still_registered": false
+  }
+}

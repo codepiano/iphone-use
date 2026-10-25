@@ -1,0 +1,42 @@
+{
+  "phase": "complete",
+  "controller_exit": 0,
+  "source_revision": "4f70209e89ed8d369ff1952568842cfd52034968",
+  "owned_simulators": {
+    "native-placeholder-v14b-faults": {
+      "udid": "BEC27137-676A-4BFB-B76D-12F15169E031",
+      "still_registered": false
+    },
+    "native-placeholder-v14b-repetitions": {
+      "udid": "C2EACEEF-D24F-4E3E-A4FC-879FED1A93D7",
+      "still_registered": false
+    },
+    "native-placeholder-v14b-selected": {
+      "udid": "569FBE9F-2325-4660-8073-6AA487C9838E",
+      "still_registered": false
+    },
+    "native-placeholder-v14b-regression": {
+      "udid": "75411757-38BC-44BF-8EEA-11A38BE29248",
+      "still_registered": false
+    },
+    "paired-v14b-functional": {
+      "udid": "06F761A6-C27F-4C15-8186-6B02CF56D46A",
+      "still_registered": false
+    }
+  },
+  "files": {
+    "native-placeholder-v14b-unit.log": {
+      "sha256": "9939babbb8fdc5818289d870f585d4d25a7deb62d7f3fb987829506afc2e38c8",
+      "text": "unit check: 278 checks passed\n"
+    },
+    "native-placeholder-v14b-unsigned.log": {
+      "sha256": "28c90f029418bf192801c8108447d7e539296178fbd964fb6544195592b621ef",
+      "text": "ipu-runner build: unsigned compile check (CODE_SIGNING_ALLOWED=NO)\nipu-runner build: succeeded (unsigned) in 37s \u2014 log: /private/tmp/iphone-use-paired-01a16e44-20261025/native-v14b-unsigned/DerivedData/../build-unsigned.log\n/private/tmp/iphone-use-paired-01a16e44-20261025/native-v14b-unsigned/DerivedData/Build/Products/IPhoneUseRunner_iphoneos27.0-arm64.xctestrun\n"
+    },
+    "native-placeholder-v14b-build.log": {
+      "sha256": "da55151c0c794abe8ea9ff270cfb5d5fde334375e01c95aea60a0cbd9c0cea2f",
+      "text": "ipu-runner build: iOS Simulator (CODE_SIGNING_ALLOWED=NO)\nipu-runner build: succeeded (simulator) in 18s \u2014 log: /private/tmp/iphone-use-paired-01a16e44-20261025/native-build/DerivedData/../build-simulator.log\n/private/tmp/iphone-use-paired-01a16e44-20261025/native-build/DerivedData/Build/Products/IPhoneUseRunner_iphonesimulator27.0-arm64.xctestrun\n"
+    }
+  },
+  "unsigned_runner_sha256": "20c3a7217b5ffc692ec92e2e6e2feadec7c36d37bde91227bbf8492402b08342"
+}

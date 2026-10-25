@@ -359,7 +359,7 @@ extension RunnerTests {
       throw RunnerError.staleElement(id)
     }
     var error: NSString?
-    guard let result = IPURBridge.readValue(for: ax, maxUTF16: UInt(limit), error: &error) else {
+    guard let result = IPURBridge.readValue(for: ax, maxUTF16: UInt(limit), placeholder: node.placeholder, error: &error) else {
       throw RunnerError.unsupported("full AX value read unavailable")
     }
     IPURBridge.invalidateRequestCache()
@@ -370,7 +370,20 @@ extension RunnerTests {
           after.type != "XCUIElementTypeSecureTextField" else {
       throw RunnerError.staleElement(id)
     }
-    return result as [String: Any]
+    var value = result as [String: Any]
+    let matchesPlaceholder = (value.removeValue(forKey: "_value_matches_placeholder") as? NSNumber)?.boolValue == true
+    // Some providers return the placeholder as their raw Value for an empty
+    // TextField. Require both live snapshots to be empty and the same placeholder;
+    // literal user text equal to a placeholder must remain ordinary content.
+    if matchesPlaceholder, ["XCUIElementTypeTextField", "XCUIElementTypeSearchField", "XCUIElementTypeTextView"].contains(node.type),
+       (node.value ?? "").isEmpty, (after.value ?? "").isEmpty,
+       node.placeholder == after.placeholder {
+      value["value"] = ""
+      value["complete"] = true; value["truncated"] = false
+      value["utf16_length"] = 0; value["returned_utf16_length"] = 0
+      value["placeholder_shown"] = true
+    }
+    return value
   }
 
   private func elementValue(_ id: String, request: HTTPRequest) throws -> HTTPResponse {
@@ -397,6 +410,21 @@ extension RunnerTests {
         ])
       }
       return .value(orNull(node.value), headers: ["X-Value-Source": "ax_snapshot"])
+    case "selectedTextRange":
+      guard node.type != "XCUIElementTypeSecureTextField", node.pid > 0, node.pid == foreground().pid, let ax = node.axElement else {
+        throw RunnerError.invalidArgument("selection requires a current nonsecure field")
+      }
+      var error: NSString?
+      guard let range = IPURBridge.textSelection(for: ax, error: &error) else {
+        throw RunnerError.unsupported("\(error ?? "selection unavailable")")
+      }
+      IPURBridge.invalidateRequestCache()
+      let after = try freshNode(id)
+      guard after.pid == node.pid, after.pid == foreground().pid, after.type == node.type,
+            after.identifier == node.identifier, node.identifier != nil || after.label == node.label else {
+        throw RunnerError.staleElement(id)
+      }
+      return .value(range)
     case "valueTruncated": return .value(orNull(node.attributes["value_truncated"]))
     case "label", "wdLabel": return .value(orNull(node.label))
     case "name", "wdName": return .value(orNull(node.name))
@@ -633,30 +661,114 @@ extension RunnerTests {
       elements.renew(token, node: node)
       return .value(NSNull())
     }
-    guard let application = IPURBridge.application(forPID: node.pid) else {
-      throw RunnerError.invalidArgument("input_target_app_unavailable; nothing was sent")
+    var readError: NSString?
+    let keys = node.axElement.flatMap { IPURBridge.shortClearKeys(for: $0, error: &readError) }
+    if let keys {
+      if !keys.isEmpty {
+        _ = try checkedInputTarget(token)
+        // Only deletions required by the initial AX value/selection, max 100.
+        // Pick this path before dispatch, never as a retry after Select All.
+        _ = try typeIntoFocus(keys, frequency: 120, targetPID: node.pid)
+      }
+    } else {
+      var selectionError: NSString?
+      let selection = node.axElement.flatMap { IPURBridge.textSelection(for: $0, error: &selectionError) }
+      guard selection?["can_select"]?.boolValue == true, let ax = node.axElement else {
+        throw RunnerError.invalidArgument("input_target_selection_unavailable; nothing was sent")
+      }
+      var selected: [String: Any]?
+      var retryState: [String: Any]?
+      for attempt in 0..<2 {
+        if attempt == 0 { _ = try checkedInputTarget(token) }
+        else {
+          do { _ = try checkedInputTarget(token) }
+          catch {
+            inputBinding = nil
+            throw RunnerError.failed("input target changed before selection retry; clearing stopped")
+          }
+        }
+        guard let outcome = IPURBridge.selectAllText(for: ax, pid: node.pid, retryState: retryState, error: &selectionError) else {
+          inputBinding = nil
+          throw RunnerError.failed("select-all was not confirmed: \(selectionError ?? "unknown selection outcome")")
+        }
+        if (outcome["confirmed"] as? NSNumber)?.boolValue == true { selected = outcome; break }
+        guard attempt == 0, (outcome["no_effect"] as? NSNumber)?.boolValue == true else { break }
+        // Only an acknowledged, exactly unchanged selection may retry once.
+        // The next iteration rechecks field/app/session; the bridge also compares
+        // the original value/range. No text or deletion is replayed.
+        retryState = outcome
+        NSLog("ipu-runner: select-all acknowledged without effect; rechecking original target for one retry")
+      }
+      guard let selected else {
+        inputBinding = nil
+        throw RunnerError.failed("select-all had no confirmed effect; no delete was sent")
+      }
+      guard let selectedUTF16 = (selected["utf16_length"] as? NSNumber)?.intValue else {
+        inputBinding = nil
+        throw RunnerError.failed("select-all returned no value length; no delete was sent")
+      }
+      if selectedUTF16 == 0 {
+        _ = try checkedInputTarget(token)
+        return .value(NSNull())
+      }
+      NSLog("ipu-runner: guarded clear selected original AX field")
+      do { _ = try checkedInputTarget(token) }
+      catch {
+        inputBinding = nil
+        throw RunnerError.failed("input target changed during select-all; clearing stopped")
+      }
+      do {
+        guard let range = IPURBridge.textSelection(for: ax, error: &selectionError),
+              range["location"]?.intValue == 0, range["length"]?.intValue == selectedUTF16,
+              range["utf16_length"]?.intValue == selectedUTF16 else {
+          inputBinding = nil
+          throw RunnerError.failed("AX selection changed before delete; no delete was sent")
+        }
+      }
+      _ = try typeIntoFocus(XCUIKeyboardKey.delete.rawValue, frequency: 120, targetPID: node.pid)
     }
-    let issuesBefore = recordedIssues.count
-    var exception: String?
-    IPURBridge.performWithoutQuiescence(application) {
-      exception = IPURBridge.catchException { application.typeKey("a", modifierFlags: .command) }
+    // AX value publication can lag the synthesis acknowledgement. Only poll
+    // readback; never repeat deletion. Every poll retains the original binding.
+    let readDeadline = ProcessInfo.processInfo.systemUptime + 0.75
+    while true {
+      IPURBridge.invalidateRequestCache()
+      guard let after = try? checkedInputTarget(token), let afterAX = after.axElement else {
+        inputBinding = nil
+        throw RunnerError.failed("guarded clear target changed; inspect the original field")
+      }
+      var valueError: NSString?
+      guard let actual = IPURBridge.readValue(for: afterAX, maxUTF16: 1, placeholder: after.placeholder, error: &valueError),
+            let count = (actual["utf16_length"] as? NSNumber)?.intValue else {
+        inputBinding = nil
+        throw RunnerError.failed("guarded clear value read unavailable; inspect the original field")
+      }
+      var empty = count == 0 && (actual["complete"] as? NSNumber)?.boolValue == true
+      if !empty, (after.value ?? "").isEmpty,
+         (actual["_value_matches_placeholder"] as? NSNumber)?.boolValue == true {
+        // A raw placeholder is not field content. Confirm the empty caret as
+        // well; never infer emptiness from value == placeholder alone.
+        var rangeError: NSString?
+        if let range = IPURBridge.textSelection(for: afterAX, error: &rangeError),
+           range["location"]?.intValue == 0, range["length"]?.intValue == 0 {
+          do {
+            let confirmed = try checkedInputTarget(token)
+            empty = (confirmed.value ?? "").isEmpty && confirmed.placeholder == after.placeholder
+          } catch {
+            inputBinding = nil
+            throw RunnerError.failed("input target changed while confirming clear; inspect the original field")
+          }
+        }
+      }
+      if empty {
+        elements.renew(token, node: after)
+        break
+      }
+      guard ProcessInfo.processInfo.systemUptime < readDeadline else {
+        inputBinding = nil
+        throw RunnerError.failed("guarded clear incomplete; inspect the original field")
+      }
+      RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.02))
     }
-    if exception != nil || recordedIssues.count > issuesBefore {
-      inputBinding = nil
-      throw RunnerError.failed("select-all failed; clear outcome unknown")
-    }
-    do { _ = try checkedInputTarget(token) }
-    catch {
-      inputBinding = nil
-      throw RunnerError.failed("input target changed during select-all; clearing stopped")
-    }
-    _ = try typeIntoFocus(XCUIKeyboardKey.delete.rawValue, frequency: 120, targetPID: node.pid)
-    IPURBridge.invalidateRequestCache()
-    guard let after = try? checkedInputTarget(token), (after.value ?? "").isEmpty else {
-      inputBinding = nil
-      throw RunnerError.failed("guarded clear incomplete or target changed; inspect the original field")
-    }
-    elements.renew(token, node: after)
     return .value(NSNull())
   }
 

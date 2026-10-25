@@ -1,0 +1,10 @@
+{
+  "host_cores": 10,
+  "host_load": [
+    2.25048828125,
+    2.951171875,
+    11.09716796875
+  ],
+  "memory_bytes": "17179869184",
+  "swap_usage": "vm.swapusage: total = 0.00M  used = 0.00M  free = 0.00M  (encrypted)"
+}

@@ -106,8 +106,27 @@ FOUNDATION_EXPORT NSString *const IPURNodeAXElementKey;
 /// Returned strings are clipped only at scalar boundaries; metadata uses UTF-16 units.
 + (nullable NSDictionary<NSString *, id> *)readValueForAXElement:(id)element
                                                maxUTF16Length:(NSUInteger)limit
+                                                  placeholder:(nullable NSString *)placeholder
                                                         error:(NSString *_Nullable *_Nullable)error
-  NS_SWIFT_NAME(readValue(for:maxUTF16:error:));
+  NS_SWIFT_NAME(readValue(for:maxUTF16:placeholder:error:));
+
+/// Read the live value length and selected UTF-16 range, without changing selection.
++ (nullable NSDictionary<NSString *, NSNumber *> *)textSelectionForAXElement:(id)element
+                                                                    error:(NSString *_Nullable *_Nullable)error
+    NS_SWIFT_NAME(textSelection(for:error:));
+/// A bounded deletion plan for the current AX selection/value (100 UTF-16 units max).
+/// Returns only deletion keys, never field text. Nil selects no mutation path.
++ (nullable NSString *)shortClearKeysForAXElement:(id)element
+                                           error:(NSString *_Nullable *_Nullable)error
+    NS_SWIFT_NAME(shortClearKeys(for:error:));
+/// Target Select All at the original process, then verify its AX value/range.
+/// Acknowledged no-effect returns private retry state; synthesis/read errors do not.
+/// Retry state is internal only and must never be serialized or logged.
++ (nullable NSDictionary<NSString *, id> *)selectAllTextForAXElement:(id)element
+                                                               pid:(int)pid
+                                                        retryState:(nullable NSDictionary<NSString *, id> *)retryState
+                                                             error:(NSString *_Nullable *_Nullable)error
+    NS_SWIFT_NAME(selectAllText(for:pid:retryState:error:));
 
 
 /// Snapshots `axElement` through XCAXClient_iOS requestSnapshotForElement:attributes:parameters:error:

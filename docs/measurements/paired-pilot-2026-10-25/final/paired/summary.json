@@ -1,0 +1,3319 @@
+{
+  "scope": "paired model-free MCP operations; not physical-device/model/task/host superiority",
+  "reference_sha": "3ce9c080534e89fab91a237bf1c53a4a7e9d80a7",
+  "wda_sha": "d17782422d55ff1e5e0ceb74eb1fd509cc0c35b6",
+  "order": [
+    "native",
+    "reference",
+    "reference",
+    "native"
+  ],
+  "reset_mode": "file",
+  "replace_seeds": [
+    "short",
+    "middle",
+    "unicode",
+    "limit",
+    "overlimit",
+    "long"
+  ],
+  "replace_repetitions": 1,
+  "input_length": 500,
+  "tasks": [
+    "screen",
+    "long-value",
+    "replace",
+    "shift",
+    "advance",
+    "secure"
+  ],
+  "reference_frequency": 60,
+  "native_frequency": 60,
+  "selection_probe": true,
+  "native_structured": "full",
+  "reference_settle_seconds": 0,
+  "toolchain": "Xcode 27.0\nBuild version 27A266a",
+  "sdk": "27.0",
+  "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-2",
+  "host_cores": 10,
+  "max_load_gate": 0.0,
+  "resource_wait_seconds": 90,
+  "boot_settle_seconds": 0,
+  "native_build_profile": "debug candidate daemon/MCP; Debug XCTest bundles",
+  "blocks": [
+    {
+      "backend": "native",
+      "index": 0,
+      "startup_ms": 8946,
+      "stopped_before_next": true
+    },
+    {
+      "backend": "reference",
+      "index": 1,
+      "startup_ms": 2088,
+      "stopped_before_next": true
+    },
+    {
+      "backend": "reference",
+      "index": 2,
+      "startup_ms": 1690,
+      "stopped_before_next": true
+    },
+    {
+      "backend": "native",
+      "index": 3,
+      "startup_ms": 1477,
+      "stopped_before_next": true
+    }
+  ],
+  "sources_at_start": {
+    "scripts/runner_auth.py": "fa46371b9a1e88cdb3728a7a58167ddd3091c6dd7d0945473df33d7dd7e7992f",
+    "scripts/compare-native-wda-simulator.py": "86daaa9b7fabec55f712a8c02f723d54a649504f73a984ef15c5a19e3776aca0",
+    "scripts/paired-bench-fixture.swift": "8e2a6203e2e04979982688fdd572a21570e92c5994926ef7ba993018987876d6",
+    "scripts/test-input-target-simulator.py": "250f115f5ccf7c36dd12ac55c5e9521b349af113b6efb989b07ef5e45f393b96",
+    "crates/server/src/http.rs": "305ea1d61883d60a9891b672d941c47599e90693e1c5695c4dbf469b14b49081",
+    "crates/server/src/runner.rs": "02d95c6270bc7ccf3e7373b80c78d8e117d95c4534515ef55cab19744da8798d",
+    "crates/mcp/src/server.rs": "fee1344bb3bb909cf67c900097685bfec894a150d632cba822d0d5a46bc9c082",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerRoutes.swift": "22ca5d7453db50a9388880e7db8925936a614492f98210c01feec129d62526ba",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m": "95a157bec70a31c0e8c63a1af030ccffc18185ae739c83124355f2adf9be9a2b",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.h": "218ea3b678308870a7409b22b88623809789a6b7088488174ea4b5a77f836f3c"
+  },
+  "native_revision": "4f70209e89ed8d369ff1952568842cfd52034968",
+  "simulator": "06F761A6-C27F-4C15-8186-6B02CF56D46A",
+  "cleanup_errors": [],
+  "sources": {
+    "scripts/runner_auth.py": "fa46371b9a1e88cdb3728a7a58167ddd3091c6dd7d0945473df33d7dd7e7992f",
+    "scripts/compare-native-wda-simulator.py": "86daaa9b7fabec55f712a8c02f723d54a649504f73a984ef15c5a19e3776aca0",
+    "scripts/paired-bench-fixture.swift": "8e2a6203e2e04979982688fdd572a21570e92c5994926ef7ba993018987876d6",
+    "scripts/test-input-target-simulator.py": "250f115f5ccf7c36dd12ac55c5e9521b349af113b6efb989b07ef5e45f393b96",
+    "crates/server/src/http.rs": "305ea1d61883d60a9891b672d941c47599e90693e1c5695c4dbf469b14b49081",
+    "crates/server/src/runner.rs": "02d95c6270bc7ccf3e7373b80c78d8e117d95c4534515ef55cab19744da8798d",
+    "crates/mcp/src/server.rs": "fee1344bb3bb909cf67c900097685bfec894a150d632cba822d0d5a46bc9c082",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerRoutes.swift": "22ca5d7453db50a9388880e7db8925936a614492f98210c01feec129d62526ba",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m": "95a157bec70a31c0e8c63a1af030ccffc18185ae739c83124355f2adf9be9a2b",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.h": "218ea3b678308870a7409b22b88623809789a6b7088488174ea4b5a77f836f3c"
+  },
+  "sources_changed_during_run": [],
+  "runtime_binary_hashes": {
+    "native_runner": "5c997219a3875d376ff3cc719aef9dc4a7cf05cbdd29445ff661c836a12d3b9f",
+    "wda_runner": "25daa27544fef4f41c5ac5cfe237cd44569f56374258a54c2df6fd65f5b4a92a",
+    "wda_framework": "157908eb9ee88f8ed41288854410196bbb555c0e9cd9c77fcc7e672edf4855da"
+  },
+  "binaries": {
+    "daemon": "da412830d2006e558cfe172c89c8989d60f84d4ca3d4ac2648bf70d9a2b8d53d",
+    "mcp": "dcb34546a82ac94f8c31dd23c31a82653c1f720d69ca0866f79add3dfa4f8923",
+    "fixture": "d4c018987f8e6dac89d167fd1d06e88aa3155ad10f66c60c8ee7f4ff7711ae28",
+    "native_xctestrun": "b451ce398fa218d683575378eb95649465ac9fa2908bbc95c13c3bad146d2f25",
+    "wda_xctestrun": "2cebcd53dfb403ea90393df6b59ec252df0c2c18e6eb9271f3a14bd4d0a331ba"
+  },
+  "trials": [
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "screen",
+      "trial_id": "block-0-warmup",
+      "warmup": true,
+      "tool": "phone_elements",
+      "host_load": [
+        72.466796875,
+        55.388671875,
+        40.6328125
+      ],
+      "response_ms": 86.725,
+      "wire_bytes": 3644,
+      "returned_error": false,
+      "content_text_bytes": 881,
+      "image_blocks": 0,
+      "postcondition_match": true,
+      "arguments": {
+        "ocr": "off",
+        "limit": 200
+      },
+      "reply_sha256": "c8fe4d92126e0d4f7205f5909cbaedd1aafafd033496eb64c83102b1625e8d0b"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "screen",
+      "trial_id": "b0-screen-0",
+      "warmup": false,
+      "tool": "phone_elements",
+      "host_load": [
+        72.466796875,
+        55.388671875,
+        40.6328125
+      ],
+      "response_ms": 37.282,
+      "wire_bytes": 3364,
+      "returned_error": false,
+      "content_text_bytes": 751,
+      "image_blocks": 0,
+      "postcondition_match": true,
+      "arguments": {
+        "ocr": "off",
+        "limit": 200
+      },
+      "reply_sha256": "6aa5c1e49dc6a972c2d17726e7d386498c8ff8869bb4eec4fdef541d44991962"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "long-value",
+      "trial_id": "b0-long-0",
+      "warmup": false,
+      "tool": "phone_read_value",
+      "host_load": [
+        72.466796875,
+        55.388671875,
+        40.6328125
+      ],
+      "response_ms": 70.682,
+      "wire_bytes": 18896,
+      "returned_error": false,
+      "content_text_bytes": 18356,
+      "image_blocks": 0,
+      "returned_characters": 6015,
+      "postcondition_match": true,
+      "arguments": {
+        "identifier": "field-a"
+      },
+      "reply_sha256": "db07dc00e4e1feb57a13ef188762487751ace51c0f6bd560f29ac3605d7f06ee"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b0-replace-short-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        72.466796875,
+        55.388671875,
+        40.6328125
+      ],
+      "response_ms": 9424.478,
+      "wire_bytes": 445,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 503,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31016,
+        "seed": "short",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b0-replace-short-r0"
+      },
+      "postcondition_observed_ms": 9797.307,
+      "postcondition_match": true,
+      "selection_after": {
+        "status": 200,
+        "value": {
+          "utf16_length": 500,
+          "can_select": true,
+          "location": 500,
+          "length": 0
+        }
+      },
+      "seed": "short",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "a1812f8c382ffa821dd14baa23f943926a3a8890e9a9d1b2f33dfefda8607314"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b0-replace-middle-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        86.72119140625,
+        59.064453125,
+        42.11279296875
+      ],
+      "response_ms": 9653.989,
+      "wire_bytes": 445,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31016,
+        "seed": "middle",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 1,
+        "shift_trigger_length": 0,
+        "trial": "b0-replace-middle-r0"
+      },
+      "postcondition_observed_ms": 10052.09,
+      "postcondition_match": true,
+      "selection_after": {
+        "status": 200,
+        "value": {
+          "location": 500,
+          "can_select": true,
+          "length": 0,
+          "utf16_length": 500
+        }
+      },
+      "seed": "middle",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "679504526004b7fbbe0979084d636ef37873c700e4e1db0bebc9ac51c7be70c5"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b0-replace-unicode-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        73.16552734375,
+        57.45263671875,
+        41.8349609375
+      ],
+      "response_ms": 9278.928,
+      "wire_bytes": 826,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 505,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31016,
+        "seed": "unicode",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b0-replace-unicode-r0"
+      },
+      "postcondition_observed_ms": 9669.096,
+      "postcondition_match": true,
+      "selection_after": {
+        "status": 200,
+        "value": {
+          "length": 0,
+          "location": 500,
+          "can_select": true,
+          "utf16_length": 500
+        }
+      },
+      "seed": "unicode",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "ca547053a4eff813a4cc9a16b9e7bb98c30455ca417469af8b76d3b57d20fc4c"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b0-replace-limit-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        67.78662109375,
+        56.59814453125,
+        41.62451171875
+      ],
+      "response_ms": 10072.756,
+      "wire_bytes": 448,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 600,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31016,
+        "seed": "limit",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b0-replace-limit-r0"
+      },
+      "postcondition_observed_ms": 10482.124,
+      "postcondition_match": true,
+      "selection_after": {
+        "status": 200,
+        "value": {
+          "length": 0,
+          "can_select": true,
+          "utf16_length": 500,
+          "location": 500
+        }
+      },
+      "seed": "limit",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "1771192584476164bcb5c0d350bb227c00942ecee0da0cf741f89a276d79d88d"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b0-replace-overlimit-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        53.4775390625,
+        53.98681640625,
+        40.95458984375
+      ],
+      "response_ms": 9655.241,
+      "wire_bytes": 850,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31016,
+        "seed": "overlimit",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 1,
+        "shift_trigger_length": 0,
+        "trial": "b0-replace-overlimit-r0"
+      },
+      "postcondition_observed_ms": 10050.135,
+      "postcondition_match": true,
+      "selection_after": {
+        "status": 200,
+        "value": {
+          "can_select": true,
+          "utf16_length": 500,
+          "location": 500,
+          "length": 0
+        }
+      },
+      "seed": "overlimit",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "a296e048928dd4f558b65eabef2566c3aa917c0d2cdca797462a3876b1fc40f7"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b0-replace-long-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        45.56884765625,
+        52.27490234375,
+        40.4990234375
+      ],
+      "response_ms": 9703.547,
+      "wire_bytes": 446,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31016,
+        "seed": "long",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 1,
+        "shift_trigger_length": 0,
+        "trial": "b0-replace-long-r0"
+      },
+      "postcondition_observed_ms": 10083.605,
+      "postcondition_match": true,
+      "selection_after": {
+        "status": 200,
+        "value": {
+          "can_select": true,
+          "location": 500,
+          "utf16_length": 500,
+          "length": 0
+        }
+      },
+      "seed": "long",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "d8d32d09cc359b8f333c8ae0527103aa3d2fb824cd7b0291fae08e724681431b"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "shift",
+      "trial_id": "b0-shift-short-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        38.78955078125,
+        50.6025390625,
+        40.04296875
+      ],
+      "response_ms": 4050.312,
+      "wire_bytes": 330545,
+      "returned_error": true,
+      "content_text_bytes": 3207,
+      "image_blocks": 1,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 23,
+          "b": 180,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 20,
+            "sha256": "1688333e57560020ca6212e22ced07c21923c3a69c1e5db0adb55631fa17b699"
+          },
+          "b": {
+            "characters": 180,
+            "sha256": "c822e924c4c51b6ffb7280ffce8ac3504be3408c2d7851d87eed24ac57c67219"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "b",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31016,
+        "seed": "short",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 20
+          },
+          "b": {
+            "length": 0,
+            "location": 180
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 20,
+        "trial": "b0-shift-short-r0"
+      },
+      "postcondition_observed_ms": 4402.774,
+      "postcondition_match": false,
+      "wrong_field_characters": 180,
+      "shift_trigger_length": 20,
+      "selection_after": {
+        "status": 200,
+        "value": {
+          "utf16_length": 180,
+          "location": 180,
+          "can_select": true,
+          "length": 0
+        }
+      },
+      "seed": "short",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "322fef3408493b1de253ee0fea74956aede950608e1775c75c4c5cd3659d6005",
+      "reply_sha256": "fa07f7df6753170d13405f3f51c59e1c4fd802d2327dd049420e1c6fd297333a"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "advance",
+      "trial_id": "b0-advance-short-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        35.92333984375,
+        49.81201171875,
+        39.82568359375
+      ],
+      "response_ms": 288.169,
+      "wire_bytes": 1424,
+      "returned_error": true,
+      "content_text_bytes": 622,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": true,
+        "advance_triggered": true,
+        "events": {
+          "a": 3,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "b": {
+            "characters": 6,
+            "sha256": "0c138ba3d12dc62a74bf6c6aa5cc619f097011143e19a260368ac7d683f0f6ab"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "b",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31016,
+        "seed": "short",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 0
+          },
+          "b": {
+            "length": 0,
+            "location": 6
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b0-advance-short-r0"
+      },
+      "postcondition_observed_ms": 683.337,
+      "postcondition_match": null,
+      "advance_triggered": true,
+      "stop_policy_match": true,
+      "requested_text_match": false,
+      "next_field_unchanged": true,
+      "postcondition_kind": "focus-change policy observation",
+      "wrong_field_characters_delta": 0,
+      "seed": "short",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "f8f43c2c1e0b4a7a6106b5a8b282d2a7ad15a0c93570944638a8f229ba360f4f"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "secure",
+      "trial_id": "b0-secure-short-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        35.92333984375,
+        49.81201171875,
+        39.82568359375
+      ],
+      "response_ms": 35.792,
+      "wire_bytes": 1561,
+      "returned_error": true,
+      "content_text_bytes": 701,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 0,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 3,
+            "sha256": "cba06b5736faf67e54b07b561eae94395e774c517a7d910a54369e1263ccfbd4"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "secure",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31016,
+        "seed": "short",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 0
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b0-secure-short-r0"
+      },
+      "postcondition_observed_ms": 434.518,
+      "postcondition_match": true,
+      "seed": "short",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 11,
+      "requested_text_sha256": "a5b75721dff9ec7c37995778dba8620cbe0bc03e951d147f355388d4802fbb5d",
+      "reply_sha256": "85b9d6131bafa190a2368a48d86ed7a96bb95292be651bf193f0aefe1e65cbad"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "screen",
+      "trial_id": "block-1-warmup",
+      "warmup": true,
+      "tool": "pua_observe",
+      "host_load": [
+        33.76708984375,
+        49.13427734375,
+        39.64501953125
+      ],
+      "response_ms": 47.268,
+      "wire_bytes": 4833,
+      "returned_error": false,
+      "content_text_bytes": 4027,
+      "image_blocks": 0,
+      "postcondition_match": true,
+      "arguments": {
+        "mode": "tree",
+        "max_nodes": 200
+      },
+      "reply_sha256": "4010dfeff79c96a469fcc717ef086faac65e22d533ccdf9b0e26912c8734e12f"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "screen",
+      "trial_id": "b1-screen-0",
+      "warmup": false,
+      "tool": "pua_observe",
+      "host_load": [
+        33.76708984375,
+        49.13427734375,
+        39.64501953125
+      ],
+      "response_ms": 50.142,
+      "wire_bytes": 4833,
+      "returned_error": false,
+      "content_text_bytes": 4027,
+      "image_blocks": 0,
+      "postcondition_match": true,
+      "arguments": {
+        "mode": "tree",
+        "max_nodes": 200
+      },
+      "reply_sha256": "a4556d319303a779e730aac68fe8a35b662b606e4e906a54b86de8736edc4b83"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "long-value",
+      "trial_id": "b1-long-0",
+      "warmup": false,
+      "tool": "pua_find",
+      "host_load": [
+        33.76708984375,
+        49.13427734375,
+        39.64501953125
+      ],
+      "response_ms": 73.0,
+      "wire_bytes": 1792,
+      "returned_error": false,
+      "content_text_bytes": 1664,
+      "image_blocks": 0,
+      "returned_characters": 512,
+      "postcondition_match": false,
+      "arguments": {
+        "selector": {
+          "name": "field-a",
+          "type": "TextField"
+        },
+        "limit": 1
+      },
+      "reply_sha256": "62f198ad82692528931daa50122a0233c644847937240cbb82547e90102d0c8c"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "replace",
+      "trial_id": "b1-replace-short-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        33.76708984375,
+        49.13427734375,
+        39.64501953125
+      ],
+      "response_ms": 9414.931,
+      "wire_bytes": 265,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31142,
+        "seed": "short",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b1-replace-short-r0"
+      },
+      "postcondition_observed_ms": 9766.636,
+      "postcondition_match": true,
+      "seed": "short",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "0df64513b8ea7694ea496cd518e3760a0ed8eb5fb1b2cc7f16621d033a42ef49"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "replace",
+      "trial_id": "b1-replace-middle-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        29.203125,
+        47.6484375,
+        39.22802734375
+      ],
+      "response_ms": 9433.05,
+      "wire_bytes": 265,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31142,
+        "seed": "middle",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b1-replace-middle-r0"
+      },
+      "postcondition_observed_ms": 9829.847,
+      "postcondition_match": true,
+      "seed": "middle",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "9696c311b8e291b31ac4ff7a0347883dabc42f99fe1d570d2d8d25bef12b241c"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "replace",
+      "trial_id": "b1-replace-unicode-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        25.18701171875,
+        46.17822265625,
+        38.80419921875
+      ],
+      "response_ms": 9375.225,
+      "wire_bytes": 265,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31142,
+        "seed": "unicode",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b1-replace-unicode-r0"
+      },
+      "postcondition_observed_ms": 9782.198,
+      "postcondition_match": true,
+      "seed": "unicode",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "2d3bf006372d912e8aed6584e0ded0a5d49af91e97bdf8561fb906e1f2328d1e"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "replace",
+      "trial_id": "b1-replace-limit-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        21.615234375,
+        44.72265625,
+        38.37353515625
+      ],
+      "response_ms": 9401.101,
+      "wire_bytes": 265,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31142,
+        "seed": "limit",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b1-replace-limit-r0"
+      },
+      "postcondition_observed_ms": 9761.752,
+      "postcondition_match": true,
+      "seed": "limit",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "26dc8bace77411765aab488a4a77970eb5244b159a3e01be89a77601129382aa"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "replace",
+      "trial_id": "b1-replace-overlimit-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        18.74658203125,
+        43.34814453125,
+        37.95947265625
+      ],
+      "response_ms": 9416.259,
+      "wire_bytes": 266,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31142,
+        "seed": "overlimit",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b1-replace-overlimit-r0"
+      },
+      "postcondition_observed_ms": 9815.628,
+      "postcondition_match": true,
+      "seed": "overlimit",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "8221a5ca1545a4d809da656ad837c8a21a79057fa8ea3ff13bf5f992b618fdb8"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "replace",
+      "trial_id": "b1-replace-long-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        16.02392578125,
+        41.95361328125,
+        37.52734375
+      ],
+      "response_ms": 9405.641,
+      "wire_bytes": 266,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31142,
+        "seed": "long",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b1-replace-long-r0"
+      },
+      "postcondition_observed_ms": 9760.393,
+      "postcondition_match": true,
+      "seed": "long",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "4c9914608c4e96628d1d414ab1c0ec3eae3be3c4ad0508b04e7bffc4c54f1b2b"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "shift",
+      "trial_id": "b1-shift-short-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        14.15576171875,
+        40.70263671875,
+        37.134765625
+      ],
+      "response_ms": 9411.605,
+      "wire_bytes": 266,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 21,
+          "b": 480,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 20,
+            "sha256": "1688333e57560020ca6212e22ced07c21923c3a69c1e5db0adb55631fa17b699"
+          },
+          "b": {
+            "characters": 480,
+            "sha256": "8067d8674c61b5c9480a27945cc91303d84505711ecf6097b1f2997a547942fe"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "b",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31142,
+        "seed": "short",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 20
+          },
+          "b": {
+            "length": 0,
+            "location": 480
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 20,
+        "trial": "b1-shift-short-r0"
+      },
+      "postcondition_observed_ms": 9803.717,
+      "postcondition_match": false,
+      "wrong_field_characters": 480,
+      "shift_trigger_length": 20,
+      "seed": "short",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "322fef3408493b1de253ee0fea74956aede950608e1775c75c4c5cd3659d6005",
+      "reply_sha256": "3c35b7ee7b355ab4501e6ca1bc51003ebddaebb7d7eae85a597a4903258f17ad"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "advance",
+      "trial_id": "b1-advance-short-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        12.68017578125,
+        39.5107421875,
+        36.7529296875
+      ],
+      "response_ms": 9383.62,
+      "wire_bytes": 266,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": true,
+        "advance_triggered": true,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 6,
+            "sha256": "0c138ba3d12dc62a74bf6c6aa5cc619f097011143e19a260368ac7d683f0f6ab"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31142,
+        "seed": "short",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 6
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b1-advance-short-r0"
+      },
+      "postcondition_observed_ms": 9785.948,
+      "postcondition_match": null,
+      "advance_triggered": true,
+      "stop_policy_match": false,
+      "requested_text_match": true,
+      "next_field_unchanged": true,
+      "postcondition_kind": "focus-change policy observation",
+      "wrong_field_characters_delta": 0,
+      "seed": "short",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "ed0f9538632607ed017d2e1f94f694107bbb9d4b10c6455af00e8ce07c25e5d0"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "secure",
+      "trial_id": "b1-secure-short-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        10.890625,
+        38.2421875,
+        36.33447265625
+      ],
+      "response_ms": 42.318,
+      "wire_bytes": 285,
+      "returned_error": true,
+      "content_text_bytes": 171,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 0,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 3,
+            "sha256": "cba06b5736faf67e54b07b561eae94395e774c517a7d910a54369e1263ccfbd4"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "secure",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31142,
+        "seed": "short",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 3
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b1-secure-short-r0"
+      },
+      "postcondition_observed_ms": 434.075,
+      "postcondition_match": true,
+      "seed": "short",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 11,
+      "requested_text_sha256": "a5b75721dff9ec7c37995778dba8620cbe0bc03e951d147f355388d4802fbb5d",
+      "reply_sha256": "740d296b967c2b9fc713c4e47a6e02bbca5064ca5e67b0bd2598f7403370914e"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "screen",
+      "trial_id": "block-2-warmup",
+      "warmup": true,
+      "tool": "pua_observe",
+      "host_load": [
+        10.33837890625,
+        37.67333984375,
+        36.14453125
+      ],
+      "response_ms": 46.569,
+      "wire_bytes": 4833,
+      "returned_error": false,
+      "content_text_bytes": 4027,
+      "image_blocks": 0,
+      "postcondition_match": true,
+      "arguments": {
+        "mode": "tree",
+        "max_nodes": 200
+      },
+      "reply_sha256": "e5112017c841f82e2bc4f6ed819fc229c734380211703723950d5fd3c1850994"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "screen",
+      "trial_id": "b2-screen-0",
+      "warmup": false,
+      "tool": "pua_observe",
+      "host_load": [
+        10.33837890625,
+        37.67333984375,
+        36.14453125
+      ],
+      "response_ms": 53.499,
+      "wire_bytes": 4833,
+      "returned_error": false,
+      "content_text_bytes": 4027,
+      "image_blocks": 0,
+      "postcondition_match": true,
+      "arguments": {
+        "mode": "tree",
+        "max_nodes": 200
+      },
+      "reply_sha256": "9e87c663a6f3ede633d3bcc479701ae8804079b25265cdd70ce29aa528e4b5bc"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "long-value",
+      "trial_id": "b2-long-0",
+      "warmup": false,
+      "tool": "pua_find",
+      "host_load": [
+        10.33837890625,
+        37.67333984375,
+        36.14453125
+      ],
+      "response_ms": 71.995,
+      "wire_bytes": 1792,
+      "returned_error": false,
+      "content_text_bytes": 1664,
+      "image_blocks": 0,
+      "returned_characters": 512,
+      "postcondition_match": false,
+      "arguments": {
+        "selector": {
+          "name": "field-a",
+          "type": "TextField"
+        },
+        "limit": 1
+      },
+      "reply_sha256": "62f198ad82692528931daa50122a0233c644847937240cbb82547e90102d0c8c"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "replace",
+      "trial_id": "b2-replace-short-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        10.33837890625,
+        37.67333984375,
+        36.14453125
+      ],
+      "response_ms": 9430.176,
+      "wire_bytes": 265,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31209,
+        "seed": "short",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b2-replace-short-r0"
+      },
+      "postcondition_observed_ms": 9829.628,
+      "postcondition_match": true,
+      "seed": "short",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "0df64513b8ea7694ea496cd518e3760a0ed8eb5fb1b2cc7f16621d033a42ef49"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "replace",
+      "trial_id": "b2-replace-middle-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        9.20947265625,
+        36.53125,
+        35.7568359375
+      ],
+      "response_ms": 9432.975,
+      "wire_bytes": 265,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31209,
+        "seed": "middle",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b2-replace-middle-r0"
+      },
+      "postcondition_observed_ms": 9833.336,
+      "postcondition_match": true,
+      "seed": "middle",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "9696c311b8e291b31ac4ff7a0347883dabc42f99fe1d570d2d8d25bef12b241c"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "replace",
+      "trial_id": "b2-replace-unicode-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        8.17431640625,
+        35.40966796875,
+        35.36767578125
+      ],
+      "response_ms": 9395.401,
+      "wire_bytes": 265,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31209,
+        "seed": "unicode",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b2-replace-unicode-r0"
+      },
+      "postcondition_observed_ms": 9780.597,
+      "postcondition_match": true,
+      "seed": "unicode",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "2d3bf006372d912e8aed6584e0ded0a5d49af91e97bdf8561fb906e1f2328d1e"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "replace",
+      "trial_id": "b2-replace-limit-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        7.63134765625,
+        34.392578125,
+        35.0068359375
+      ],
+      "response_ms": 9408.24,
+      "wire_bytes": 265,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31209,
+        "seed": "limit",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b2-replace-limit-r0"
+      },
+      "postcondition_observed_ms": 9806.542,
+      "postcondition_match": true,
+      "seed": "limit",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "26dc8bace77411765aab488a4a77970eb5244b159a3e01be89a77601129382aa"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "replace",
+      "trial_id": "b2-replace-overlimit-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        7.146484375,
+        33.40771484375,
+        34.64990234375
+      ],
+      "response_ms": 9405.045,
+      "wire_bytes": 266,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31209,
+        "seed": "overlimit",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b2-replace-overlimit-r0"
+      },
+      "postcondition_observed_ms": 9760.342,
+      "postcondition_match": true,
+      "seed": "overlimit",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "8221a5ca1545a4d809da656ad837c8a21a79057fa8ea3ff13bf5f992b618fdb8"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "replace",
+      "trial_id": "b2-replace-long-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        6.3544921875,
+        32.373046875,
+        34.26806640625
+      ],
+      "response_ms": 9428.136,
+      "wire_bytes": 266,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31209,
+        "seed": "long",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b2-replace-long-r0"
+      },
+      "postcondition_observed_ms": 9782.861,
+      "postcondition_match": true,
+      "seed": "long",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "4c9914608c4e96628d1d414ab1c0ec3eae3be3c4ad0508b04e7bffc4c54f1b2b"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "shift",
+      "trial_id": "b2-shift-short-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        5.677734375,
+        31.3720703125,
+        33.89013671875
+      ],
+      "response_ms": 9418.201,
+      "wire_bytes": 266,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 21,
+          "b": 480,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 20,
+            "sha256": "bb197f0b2d0e0229a7184d941b5094d6e14f05ff658148040944bfe56bf083f6"
+          },
+          "b": {
+            "characters": 480,
+            "sha256": "163365daed031d8cebf22166ab8247bb5da8cd09a46d905a0bd1ce73b5a774db"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "b",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31209,
+        "seed": "short",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 20
+          },
+          "b": {
+            "length": 0,
+            "location": 480
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 20,
+        "trial": "b2-shift-short-r0"
+      },
+      "postcondition_observed_ms": 9781.516,
+      "postcondition_match": false,
+      "wrong_field_characters": 480,
+      "shift_trigger_length": 20,
+      "seed": "short",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "5891e6567b9cf5fa95ca9018ed3c6b8f10bf29ee444870608f2bd5585b902050",
+      "reply_sha256": "3c35b7ee7b355ab4501e6ca1bc51003ebddaebb7d7eae85a597a4903258f17ad"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "advance",
+      "trial_id": "b2-advance-short-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        5.03173828125,
+        30.3876953125,
+        33.51123046875
+      ],
+      "response_ms": 9384.218,
+      "wire_bytes": 266,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": true,
+        "advance_triggered": true,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 6,
+            "sha256": "0c138ba3d12dc62a74bf6c6aa5cc619f097011143e19a260368ac7d683f0f6ab"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31209,
+        "seed": "short",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 6
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b2-advance-short-r0"
+      },
+      "postcondition_observed_ms": 9778.972,
+      "postcondition_match": null,
+      "advance_triggered": true,
+      "stop_policy_match": false,
+      "requested_text_match": true,
+      "next_field_unchanged": true,
+      "postcondition_kind": "focus-change policy observation",
+      "wrong_field_characters_delta": 0,
+      "seed": "short",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "ed0f9538632607ed017d2e1f94f694107bbb9d4b10c6455af00e8ce07c25e5d0"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "secure",
+      "trial_id": "b2-secure-short-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        4.638671875,
+        29.46875,
+        33.1484375
+      ],
+      "response_ms": 42.592,
+      "wire_bytes": 285,
+      "returned_error": true,
+      "content_text_bytes": 171,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 0,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 3,
+            "sha256": "cba06b5736faf67e54b07b561eae94395e774c517a7d910a54369e1263ccfbd4"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "secure",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31209,
+        "seed": "short",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 3
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b2-secure-short-r0"
+      },
+      "postcondition_observed_ms": 434.758,
+      "postcondition_match": true,
+      "seed": "short",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 11,
+      "requested_text_sha256": "a5b75721dff9ec7c37995778dba8620cbe0bc03e951d147f355388d4802fbb5d",
+      "reply_sha256": "740d296b967c2b9fc713c4e47a6e02bbca5064ca5e67b0bd2598f7403370914e"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "screen",
+      "trial_id": "block-3-warmup",
+      "warmup": true,
+      "tool": "phone_elements",
+      "host_load": [
+        4.638671875,
+        29.46875,
+        33.1484375
+      ],
+      "response_ms": 198.756,
+      "wire_bytes": 10905,
+      "returned_error": false,
+      "content_text_bytes": 1644,
+      "image_blocks": 0,
+      "postcondition_match": true,
+      "arguments": {
+        "ocr": "off",
+        "limit": 200
+      },
+      "reply_sha256": "5c25986a7a862ccda897e4c81ca9b4a0b5b5491d4b16c6f78c2ef2c3d4bb3073"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "screen",
+      "trial_id": "b3-screen-0",
+      "warmup": false,
+      "tool": "phone_elements",
+      "host_load": [
+        4.638671875,
+        29.46875,
+        33.1484375
+      ],
+      "response_ms": 46.446,
+      "wire_bytes": 10625,
+      "returned_error": false,
+      "content_text_bytes": 1514,
+      "image_blocks": 0,
+      "postcondition_match": true,
+      "arguments": {
+        "ocr": "off",
+        "limit": 200
+      },
+      "reply_sha256": "83c09fff77c4714a51330de69ad78eb29a8defc70ec1f336b41aa6cf38ad135b"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "long-value",
+      "trial_id": "b3-long-0",
+      "warmup": false,
+      "tool": "phone_read_value",
+      "host_load": [
+        4.34716796875,
+        28.99609375,
+        32.9599609375
+      ],
+      "response_ms": 51.692,
+      "wire_bytes": 18894,
+      "returned_error": false,
+      "content_text_bytes": 18355,
+      "image_blocks": 0,
+      "returned_characters": 6015,
+      "postcondition_match": true,
+      "arguments": {
+        "identifier": "field-a"
+      },
+      "reply_sha256": "0d4f8ded371e17cce411ce82ca8e3463f967ed901002f82109376a3f01e74c91"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b3-replace-short-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        4.34716796875,
+        28.99609375,
+        32.9599609375
+      ],
+      "response_ms": 9294.061,
+      "wire_bytes": 445,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 503,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31281,
+        "seed": "short",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b3-replace-short-r0"
+      },
+      "postcondition_observed_ms": 9686.054,
+      "postcondition_match": true,
+      "selection_after": {
+        "status": 200,
+        "value": {
+          "utf16_length": 500,
+          "location": 500,
+          "can_select": true,
+          "length": 0
+        }
+      },
+      "seed": "short",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "99f9e8e7d45be9270596273fa65cfb8cce0305615812f807425ec2df15dc29c9"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b3-replace-middle-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        4.14599609375,
+        28.14013671875,
+        32.609375
+      ],
+      "response_ms": 10746.689,
+      "wire_bytes": 448,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31281,
+        "seed": "middle",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 1,
+        "shift_trigger_length": 0,
+        "trial": "b3-replace-middle-r0"
+      },
+      "postcondition_observed_ms": 11136.651,
+      "postcondition_match": true,
+      "selection_after": {
+        "status": 200,
+        "value": {
+          "can_select": true,
+          "length": 0,
+          "utf16_length": 500,
+          "location": 500
+        }
+      },
+      "seed": "middle",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "c467cbd89d270328ee76f5b2ddc567444562d49f592865f2ebaf860a0805f9cd"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b3-replace-unicode-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        3.8095703125,
+        27.27880859375,
+        32.2509765625
+      ],
+      "response_ms": 9304.158,
+      "wire_bytes": 826,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 505,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31281,
+        "seed": "unicode",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b3-replace-unicode-r0"
+      },
+      "postcondition_observed_ms": 9699.457,
+      "postcondition_match": true,
+      "selection_after": {
+        "status": 200,
+        "value": {
+          "location": 500,
+          "length": 0,
+          "utf16_length": 500,
+          "can_select": true
+        }
+      },
+      "seed": "unicode",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "67e5118cf88ab2fddd28188d2229e816f36e19bc6ff8924dade3efcff19b13d8"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b3-replace-limit-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        3.91845703125,
+        26.5283203125,
+        31.92578125
+      ],
+      "response_ms": 10098.861,
+      "wire_bytes": 448,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 600,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31281,
+        "seed": "limit",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b3-replace-limit-r0"
+      },
+      "postcondition_observed_ms": 10491.493,
+      "postcondition_match": true,
+      "selection_after": {
+        "status": 200,
+        "value": {
+          "length": 0,
+          "can_select": true,
+          "utf16_length": 500,
+          "location": 500
+        }
+      },
+      "seed": "limit",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "5f8e66443a32e3ff762350ecc3d43e34f86444af05fd06fe4adc17d8de9c875f"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b3-replace-overlimit-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        3.4755859375,
+        25.68798828125,
+        31.56396484375
+      ],
+      "response_ms": 9641.267,
+      "wire_bytes": 850,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31281,
+        "seed": "overlimit",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 1,
+        "shift_trigger_length": 0,
+        "trial": "b3-replace-overlimit-r0"
+      },
+      "postcondition_observed_ms": 10028.125,
+      "postcondition_match": true,
+      "selection_after": {
+        "status": 200,
+        "value": {
+          "utf16_length": 500,
+          "can_select": true,
+          "location": 500,
+          "length": 0
+        }
+      },
+      "seed": "overlimit",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "aaa4334525710638a56e98a8ce41757852ffecb5f358270b2fa075a5ffa18ce9"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b3-replace-long-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        3.32861328125,
+        24.923828125,
+        31.22412109375
+      ],
+      "response_ms": 9637.533,
+      "wire_bytes": 446,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31281,
+        "seed": "long",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 1,
+        "shift_trigger_length": 0,
+        "trial": "b3-replace-long-r0"
+      },
+      "postcondition_observed_ms": 10011.511,
+      "postcondition_match": true,
+      "selection_after": {
+        "status": 200,
+        "value": {
+          "location": 500,
+          "utf16_length": 500,
+          "can_select": true,
+          "length": 0
+        }
+      },
+      "seed": "long",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "bb0fd42ec5db3cbb78750b06c8b023bcafc35f44c41355059efda5bcad8d5c2e"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "shift",
+      "trial_id": "b3-shift-short-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        3.19775390625,
+        24.1845703125,
+        30.88818359375
+      ],
+      "response_ms": 4053.126,
+      "wire_bytes": 330345,
+      "returned_error": true,
+      "content_text_bytes": 3207,
+      "image_blocks": 1,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 23,
+          "b": 180,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 20,
+            "sha256": "bb197f0b2d0e0229a7184d941b5094d6e14f05ff658148040944bfe56bf083f6"
+          },
+          "b": {
+            "characters": 180,
+            "sha256": "5509c4ea0c10c0666f1c3e42f06d9288e466fc96a769cbf3435275cb9d55f0f2"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "b",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31281,
+        "seed": "short",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 20
+          },
+          "b": {
+            "length": 0,
+            "location": 180
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 20,
+        "trial": "b3-shift-short-r0"
+      },
+      "postcondition_observed_ms": 4411.266,
+      "postcondition_match": false,
+      "wrong_field_characters": 180,
+      "shift_trigger_length": 20,
+      "selection_after": {
+        "status": 200,
+        "value": {
+          "can_select": true,
+          "length": 0,
+          "utf16_length": 180,
+          "location": 180
+        }
+      },
+      "seed": "short",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "5891e6567b9cf5fa95ca9018ed3c6b8f10bf29ee444870608f2bd5585b902050",
+      "reply_sha256": "b6265362e615fdfdeb50362ca433aa6aba10a39104936b8e989b488efce4b0f1"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "advance",
+      "trial_id": "b3-advance-short-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        3.1015625,
+        23.81591796875,
+        30.71875
+      ],
+      "response_ms": 291.639,
+      "wire_bytes": 1424,
+      "returned_error": true,
+      "content_text_bytes": 622,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": true,
+        "advance_triggered": true,
+        "events": {
+          "a": 3,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "b": {
+            "characters": 6,
+            "sha256": "0c138ba3d12dc62a74bf6c6aa5cc619f097011143e19a260368ac7d683f0f6ab"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "b",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31281,
+        "seed": "short",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 0
+          },
+          "b": {
+            "length": 0,
+            "location": 6
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b3-advance-short-r0"
+      },
+      "postcondition_observed_ms": 686.143,
+      "postcondition_match": null,
+      "advance_triggered": true,
+      "stop_policy_match": true,
+      "requested_text_match": false,
+      "next_field_unchanged": true,
+      "postcondition_kind": "focus-change policy observation",
+      "wrong_field_characters_delta": 0,
+      "seed": "short",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "f8f43c2c1e0b4a7a6106b5a8b282d2a7ad15a0c93570944638a8f229ba360f4f"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "secure",
+      "trial_id": "b3-secure-short-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        3.1015625,
+        23.81591796875,
+        30.71875
+      ],
+      "response_ms": 38.605,
+      "wire_bytes": 1561,
+      "returned_error": true,
+      "content_text_bytes": 701,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 0,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 3,
+            "sha256": "cba06b5736faf67e54b07b561eae94395e774c517a7d910a54369e1263ccfbd4"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "secure",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31281,
+        "seed": "short",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 0
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "trial": "b3-secure-short-r0"
+      },
+      "postcondition_observed_ms": 401.374,
+      "postcondition_match": true,
+      "seed": "short",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 11,
+      "requested_text_sha256": "a5b75721dff9ec7c37995778dba8620cbe0bc03e951d147f355388d4802fbb5d",
+      "reply_sha256": "1f4067c53ccf47d6eefdeda5771711ca56d27891281c88aaf7f751a1869bc791"
+    }
+  ]
+}

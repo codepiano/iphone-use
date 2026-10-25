@@ -29,6 +29,7 @@ def main():
     parser.add_argument('--out',required=True,type=Path)
     parser.add_argument('--daemon',type=Path)
     parser.add_argument('--mcp',type=Path)
+    parser.add_argument('--runtime',default='com.apple.CoreSimulator.SimRuntime.iOS-27-0')
     parser.add_argument('--replacement',action='store_true',help='also exercise native/daemon bound replacement and interrupted tails')
     parser.add_argument('--probe',action='store_true',help='record baseline without accepting completeness')
     args=parser.parse_args()
@@ -38,19 +39,35 @@ def main():
     with socket.socket() as listener:listener.bind(('127.0.0.1',0));port=listener.getsockname()[1]
     env={k:v for k,v in os.environ.items() if not k.startswith(('IPHONE_USE_','PHONE_REMOTE_','IPU_','TEST_RUNNER_IPU_','SIMCTL_CHILD_'))}
     env.update(TEST_RUNNER_IPU_RUNNER_PORT=str(port),TEST_RUNNER_IPU_RUNNER_MJPEG_PORT='0',TEST_RUNNER_IPU_RUNNER_TOKEN=token,TEST_RUNNER_IPU_DAEMON_PORT='0')
-    opener=urllib.request.build_opener(urllib.request.ProxyHandler({}));process=None;daemon=None;peer=None;udid=None;result={};cleanup=[]
+    opener=urllib.request.build_opener(urllib.request.ProxyHandler({}));process=None;daemon=None;peer=None;udid=None;result={'runtime':args.runtime};cleanup=[]
     def call(path,body=None,expected=200):
         method='GET' if body is None else 'POST';data=b'' if body is None else json.dumps(body).encode()
         request=urllib.request.Request(f'http://127.0.0.1:{port}{path}',data=None if body is None else data,method=method,
             headers={'Content-Type':'application/json','Authorization':authorization(token,method,path,data)})
         try:
-            with opener.open(request,timeout=10) as response:status=response.status;result=json.load(response)['value'];headers=dict(response.headers)
-        except urllib.error.HTTPError as error:status=error.code;result=json.load(error)['value'];headers=dict(error.headers)
+            with opener.open(request,timeout=10) as response:status=response.status;value_result=json.load(response)['value'];headers=dict(response.headers)
+        except urllib.error.HTTPError as error:status=error.code;value_result=json.load(error)['value'];headers=dict(error.headers)
+        if status!=expected:
+            diagnostic={'path':path,'status':status,'reply':value_result,'reads':{}}
+            if '/ipu/element/' in path and path.endswith('/replace'):
+                base,tail=path.split('/ipu/element/',1);element=tail.split('/')[0]
+                for suffix in ['attribute/value','attribute/placeholderValue','value?max_utf16=32','attribute/selectedTextRange']:
+                    read_path=base+'/element/'+element+'/'+suffix
+                    request=urllib.request.Request(f'http://127.0.0.1:{port}'+read_path,headers={'Authorization':authorization(token,'GET',read_path,b'')})
+                    try:
+                        with opener.open(request,timeout=10) as response:diagnostic['reads'][suffix]=json.load(response)
+                    except Exception as error:diagnostic['reads'][suffix]={'error_type':type(error).__name__}
+                try:
+                    time.sleep(0.3)
+                    documents=Path(fixture.command('xcrun','simctl','get_app_container',udid,fixture.BUNDLE,'data'))/'Documents'
+                    diagnostic['app_receipt']=json.loads((documents/'field-a-state.json').read_text())
+                except Exception as error:diagnostic['app_receipt_error_type']=type(error).__name__
+            result.setdefault('unexpected_native_responses',[]).append(diagnostic)
         assert status==expected,{"path":path,"status":status,"expected":expected}
-        return result,headers
+        return value_result,headers
     try:
         app=fixture.build_fixture(out)
-        udid=fixture.command('xcrun','simctl','create','ipu-value-'+secrets.token_hex(4),'com.apple.CoreSimulator.SimDeviceType.iPhone-17','com.apple.CoreSimulator.SimRuntime.iOS-27-0')
+        udid=fixture.command('xcrun','simctl','create','ipu-value-'+secrets.token_hex(4),'com.apple.CoreSimulator.SimDeviceType.iPhone-17',args.runtime)
         fixture.command('xcrun','simctl','boot',udid);fixture.command('xcrun','simctl','bootstatus',udid,'-b',timeout=180)
         fixture.command('xcrun','simctl','install',udid,app)
         with (out/'runner.log').open('w') as log:
@@ -64,7 +81,7 @@ def main():
             assert process.poll() is None,'runner exited before readiness'
             assert time.monotonic()<until,'readiness deadline'
             time.sleep(0.2)
-        fixture.command('xcrun','simctl','launch',udid,fixture.BUNDLE,'--long-value-fixture')
+        fixture.command('xcrun','simctl','launch',udid,fixture.BUNDLE,'--long-value-fixture','--continuous-value-receipt')
         oracle_path=Path(fixture.command('xcrun','simctl','get_app_container',udid,fixture.BUNDLE,'data'))/'Documents/field-a-state.json'
         until=time.monotonic()+10
         while not oracle_path.exists():
@@ -177,6 +194,27 @@ def main():
                     code,screen=api('/agent/elements?ocr=off');assert code==200
                     index=next(index for index,row in enumerate(screen['elements']) if row.get('identifier')==identifier)
                     return api('/agent/input',{'type':'set_value','snapshot':screen['snapshot'],'element':index,'value':text},control=True)
+                # Literal placeholder text and an empty field must remain distinct,
+                # even with max_utf16=1 and a raw AX placeholder fallback.
+                placeholder='Draft placeholder'
+                assert replacement('field-a',placeholder)[0]==200
+                until=time.monotonic()+5
+                while True:
+                    literal_oracle=json.loads(oracle_path.read_text())
+                    if literal_oracle.get('sha256')==hashlib.sha256(placeholder.encode()).hexdigest():break
+                    assert time.monotonic()<until,'literal placeholder App receipt mismatch';time.sleep(0.05)
+                code,literal=api('/agent/value',{'identifier':'field-a','max_utf16':1})
+                assert code==200 and literal['value']=='D' and literal['utf16_length']==17 and literal['truncated'] is True and literal.get('placeholder_shown') is not True,literal
+                assert replacement('field-a','')[0]==200
+                until=time.monotonic()+5
+                while True:
+                    empty_oracle=json.loads(oracle_path.read_text())
+                    if empty_oracle.get('characters')==0 and empty_oracle.get('sha256')==hashlib.sha256(b'').hexdigest():break
+                    assert time.monotonic()<until,'empty placeholder App receipt mismatch';time.sleep(0.05)
+                code,empty=api('/agent/value',{'identifier':'field-a','max_utf16':1})
+                assert code==200 and empty.get('value') in ['',None] and empty['utf16_length']==0 and empty['complete'] is True and empty['truncated'] is False,empty
+                assert '_value_matches_placeholder' not in empty and '_value_matches_placeholder' not in literal
+                result['placeholder_cases']={'literal_one_unit_read':literal,'literal_oracle':literal_oracle,'empty_one_unit_read':empty,'empty_oracle':empty_oracle}
                 text='queue-deadline-'+'字'*486
                 assert len(text)==501
                 before=(out/'runner.log').read_text().count('/replace ->')

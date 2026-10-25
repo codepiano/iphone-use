@@ -1,0 +1,138 @@
+{
+  "scope": "descriptive public MCP operation timings; no task/model/release/physical superiority",
+  "size_metric": "wire_bytes is a legacy name for reply JSON reserialized with the same Python encoder; not measured transport bytes or model tokens",
+  "load_at_dispatch": {
+    "min": 2.7900390625,
+    "max": 7.74658203125
+  },
+  "groups": {
+    "native": {
+      "screen": {
+        "records": 10,
+        "requested_postconditions_matched": 10,
+        "response_ms": {
+          "median": 47.794,
+          "min": 27.506,
+          "max": 65.603
+        },
+        "wire_bytes": {
+          "median": 7015.5,
+          "min": 3388,
+          "max": 10643
+        },
+        "content_text_bytes": {
+          "median": 1143.0,
+          "min": 763,
+          "max": 1523
+        }
+      },
+      "long-value": {
+        "records": 10,
+        "requested_postconditions_matched": 10,
+        "response_ms": {
+          "median": 55.05,
+          "min": 40.327,
+          "max": 61.28
+        },
+        "wire_bytes": {
+          "median": 18896.0,
+          "min": 18895,
+          "max": 18897
+        },
+        "content_text_bytes": {
+          "median": 18356.0,
+          "min": 18355,
+          "max": 18356
+        }
+      },
+      "replace": {
+        "records": 12,
+        "requested_postconditions_matched": 12,
+        "response_ms": {
+          "median": 9648.176,
+          "min": 9295.491,
+          "max": 10774.229
+        },
+        "postcondition_observed_ms": {
+          "median": 10046.046,
+          "min": 9679.916,
+          "max": 11128.094
+        },
+        "wire_bytes": {
+          "median": 449.0,
+          "min": 446,
+          "max": 850
+        },
+        "content_text_bytes": {
+          "median": 2.0,
+          "min": 2,
+          "max": 2
+        }
+      }
+    },
+    "reference": {
+      "screen": {
+        "records": 10,
+        "requested_postconditions_matched": 10,
+        "response_ms": {
+          "median": 50.731,
+          "min": 45.375,
+          "max": 53.225
+        },
+        "wire_bytes": {
+          "median": 4842.0,
+          "min": 4842,
+          "max": 4842
+        },
+        "content_text_bytes": {
+          "median": 4036.0,
+          "min": 4036,
+          "max": 4036
+        }
+      },
+      "long-value": {
+        "records": 10,
+        "requested_postconditions_matched": 0,
+        "response_ms": {
+          "median": 68.584,
+          "min": 66.366,
+          "max": 69.812
+        },
+        "wire_bytes": {
+          "median": 1793.0,
+          "min": 1792,
+          "max": 1793
+        },
+        "content_text_bytes": {
+          "median": 1664.0,
+          "min": 1664,
+          "max": 1664
+        }
+      },
+      "replace": {
+        "records": 12,
+        "requested_postconditions_matched": 12,
+        "response_ms": {
+          "median": 9401.156,
+          "min": 9339.311,
+          "max": 9428.183
+        },
+        "postcondition_observed_ms": {
+          "median": 9788.458,
+          "min": 9743.747,
+          "max": 9835.294
+        },
+        "wire_bytes": {
+          "median": 266.0,
+          "min": 266,
+          "max": 266
+        },
+        "content_text_bytes": {
+          "median": 151.0,
+          "min": 151,
+          "max": 151
+        }
+      }
+    }
+  }
+}

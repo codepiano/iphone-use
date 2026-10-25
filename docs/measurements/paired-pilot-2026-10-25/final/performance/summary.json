@@ -1,0 +1,3089 @@
+{
+  "scope": "paired model-free MCP operations; not physical-device/model/task/host superiority",
+  "reference_sha": "3ce9c080534e89fab91a237bf1c53a4a7e9d80a7",
+  "wda_sha": "d17782422d55ff1e5e0ceb74eb1fd509cc0c35b6",
+  "order": [
+    "native",
+    "reference",
+    "reference",
+    "native"
+  ],
+  "reset_mode": "file",
+  "replace_seeds": [
+    "short",
+    "middle",
+    "unicode",
+    "limit",
+    "overlimit",
+    "long"
+  ],
+  "replace_repetitions": 1,
+  "input_length": 500,
+  "tasks": [
+    "screen",
+    "long-value",
+    "replace"
+  ],
+  "screen_requires_current_trial": true,
+  "reference_frequency": 60,
+  "native_frequency": 60,
+  "selection_probe": false,
+  "native_structured": "full",
+  "reference_settle_seconds": 0,
+  "toolchain": "Xcode 27.0\nBuild version 27A266a",
+  "sdk": "27.0",
+  "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-2",
+  "host_cores": 10,
+  "max_load_gate": 8.0,
+  "resource_wait_seconds": 600.0,
+  "boot_settle_seconds": 180.0,
+  "native_build_profile": "debug candidate daemon/MCP; Debug XCTest bundles",
+  "blocks": [
+    {
+      "backend": "native",
+      "index": 0,
+      "startup_ms": 3546,
+      "stopped_before_next": true
+    },
+    {
+      "backend": "reference",
+      "index": 1,
+      "startup_ms": 1677,
+      "stopped_before_next": true
+    },
+    {
+      "backend": "reference",
+      "index": 2,
+      "startup_ms": 1684,
+      "stopped_before_next": true
+    },
+    {
+      "backend": "native",
+      "index": 3,
+      "startup_ms": 1676,
+      "stopped_before_next": true
+    }
+  ],
+  "sources_at_start": {
+    "scripts/runner_auth.py": "fa46371b9a1e88cdb3728a7a58167ddd3091c6dd7d0945473df33d7dd7e7992f",
+    "scripts/compare-native-wda-simulator.py": "eb727c850dbf949e43862251e099297ef9a3f5a9c309efa3a4b78af5bcc57b7e",
+    "scripts/paired-bench-fixture.swift": "3debebc0f628029d73c4a470b7796e9ec556feccf22efccd7b29e08bf325475d",
+    "scripts/test-input-target-simulator.py": "250f115f5ccf7c36dd12ac55c5e9521b349af113b6efb989b07ef5e45f393b96",
+    "crates/server/src/http.rs": "305ea1d61883d60a9891b672d941c47599e90693e1c5695c4dbf469b14b49081",
+    "crates/server/src/runner.rs": "02d95c6270bc7ccf3e7373b80c78d8e117d95c4534515ef55cab19744da8798d",
+    "crates/mcp/src/server.rs": "fee1344bb3bb909cf67c900097685bfec894a150d632cba822d0d5a46bc9c082",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerRoutes.swift": "22ca5d7453db50a9388880e7db8925936a614492f98210c01feec129d62526ba",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m": "95a157bec70a31c0e8c63a1af030ccffc18185ae739c83124355f2adf9be9a2b",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.h": "218ea3b678308870a7409b22b88623809789a6b7088488174ea4b5a77f836f3c"
+  },
+  "native_revision": "4f70209e89ed8d369ff1952568842cfd52034968",
+  "simulator": "954FE88D-C7F0-4D5E-8A42-63BD95B15F59",
+  "cleanup_errors": [],
+  "sources": {
+    "scripts/runner_auth.py": "fa46371b9a1e88cdb3728a7a58167ddd3091c6dd7d0945473df33d7dd7e7992f",
+    "scripts/compare-native-wda-simulator.py": "eb727c850dbf949e43862251e099297ef9a3f5a9c309efa3a4b78af5bcc57b7e",
+    "scripts/paired-bench-fixture.swift": "3debebc0f628029d73c4a470b7796e9ec556feccf22efccd7b29e08bf325475d",
+    "scripts/test-input-target-simulator.py": "250f115f5ccf7c36dd12ac55c5e9521b349af113b6efb989b07ef5e45f393b96",
+    "crates/server/src/http.rs": "305ea1d61883d60a9891b672d941c47599e90693e1c5695c4dbf469b14b49081",
+    "crates/server/src/runner.rs": "02d95c6270bc7ccf3e7373b80c78d8e117d95c4534515ef55cab19744da8798d",
+    "crates/mcp/src/server.rs": "fee1344bb3bb909cf67c900097685bfec894a150d632cba822d0d5a46bc9c082",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerRoutes.swift": "22ca5d7453db50a9388880e7db8925936a614492f98210c01feec129d62526ba",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m": "95a157bec70a31c0e8c63a1af030ccffc18185ae739c83124355f2adf9be9a2b",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.h": "218ea3b678308870a7409b22b88623809789a6b7088488174ea4b5a77f836f3c"
+  },
+  "sources_changed_during_run": [],
+  "runtime_binary_hashes": {
+    "native_runner": "5c997219a3875d376ff3cc719aef9dc4a7cf05cbdd29445ff661c836a12d3b9f",
+    "wda_runner": "25daa27544fef4f41c5ac5cfe237cd44569f56374258a54c2df6fd65f5b4a92a",
+    "wda_framework": "157908eb9ee88f8ed41288854410196bbb555c0e9cd9c77fcc7e672edf4855da"
+  },
+  "binaries": {
+    "daemon": "da412830d2006e558cfe172c89c8989d60f84d4ca3d4ac2648bf70d9a2b8d53d",
+    "mcp": "dcb34546a82ac94f8c31dd23c31a82653c1f720d69ca0866f79add3dfa4f8923",
+    "fixture": "769b5150d713d37ff2b3ef89e98231812d59ce398db71b50b738cfa8890b134c",
+    "native_xctestrun": "b451ce398fa218d683575378eb95649465ac9fa2908bbc95c13c3bad146d2f25",
+    "wda_xctestrun": "2cebcd53dfb403ea90393df6b59ec252df0c2c18e6eb9271f3a14bd4d0a331ba"
+  },
+  "trials": [
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "screen",
+      "trial_id": "block-0-warmup",
+      "warmup": true,
+      "tool": "phone_elements",
+      "host_load": [
+        7.73974609375,
+        14.0576171875,
+        15.1357421875
+      ],
+      "response_ms": 256.811,
+      "wire_bytes": 3673,
+      "returned_error": false,
+      "content_text_bytes": 896,
+      "image_blocks": 0,
+      "expected_scene_title": "Paired fixture block-0-warmup",
+      "postcondition_match": true,
+      "arguments": {
+        "ocr": "off",
+        "limit": 200
+      },
+      "reply_sha256": "dd6b30cb76ac99029f6d09737cbc53ab6677cfa89565557cb5925675455d3b20"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "screen",
+      "trial_id": "b0-screen-0",
+      "warmup": false,
+      "tool": "phone_elements",
+      "host_load": [
+        7.73974609375,
+        14.0576171875,
+        15.1357421875
+      ],
+      "response_ms": 28.708,
+      "wire_bytes": 3388,
+      "returned_error": false,
+      "content_text_bytes": 763,
+      "image_blocks": 0,
+      "expected_scene_title": "Paired fixture b0-screen-0",
+      "postcondition_match": true,
+      "arguments": {
+        "ocr": "off",
+        "limit": 200
+      },
+      "reply_sha256": "567479642586bff557bfc965916f1754b5fb1d10e1970b11f24fefaaee9db07d"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "screen",
+      "trial_id": "b0-screen-1",
+      "warmup": false,
+      "tool": "phone_elements",
+      "host_load": [
+        7.73974609375,
+        14.0576171875,
+        15.1357421875
+      ],
+      "response_ms": 29.882,
+      "wire_bytes": 3388,
+      "returned_error": false,
+      "content_text_bytes": 763,
+      "image_blocks": 0,
+      "expected_scene_title": "Paired fixture b0-screen-1",
+      "postcondition_match": true,
+      "arguments": {
+        "ocr": "off",
+        "limit": 200
+      },
+      "reply_sha256": "8a3fd721c56f7d0fc23a50ee3294448d0ec1796b21c1aca6a5bcfe614ffa22dd"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "screen",
+      "trial_id": "b0-screen-2",
+      "warmup": false,
+      "tool": "phone_elements",
+      "host_load": [
+        7.73974609375,
+        14.0576171875,
+        15.1357421875
+      ],
+      "response_ms": 27.506,
+      "wire_bytes": 3388,
+      "returned_error": false,
+      "content_text_bytes": 763,
+      "image_blocks": 0,
+      "expected_scene_title": "Paired fixture b0-screen-2",
+      "postcondition_match": true,
+      "arguments": {
+        "ocr": "off",
+        "limit": 200
+      },
+      "reply_sha256": "58e015c0978942eadf8a59e8c78395f9b98360c644b9298f7991a3c5e3e357d0"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "screen",
+      "trial_id": "b0-screen-3",
+      "warmup": false,
+      "tool": "phone_elements",
+      "host_load": [
+        7.73974609375,
+        14.0576171875,
+        15.1357421875
+      ],
+      "response_ms": 28.47,
+      "wire_bytes": 3388,
+      "returned_error": false,
+      "content_text_bytes": 763,
+      "image_blocks": 0,
+      "expected_scene_title": "Paired fixture b0-screen-3",
+      "postcondition_match": true,
+      "arguments": {
+        "ocr": "off",
+        "limit": 200
+      },
+      "reply_sha256": "ea57ba742973ebb08a6e7479c588586704e765a7e76641c5c9c7deac1ea9777d"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "screen",
+      "trial_id": "b0-screen-4",
+      "warmup": false,
+      "tool": "phone_elements",
+      "host_load": [
+        7.73974609375,
+        14.0576171875,
+        15.1357421875
+      ],
+      "response_ms": 34.207,
+      "wire_bytes": 3388,
+      "returned_error": false,
+      "content_text_bytes": 763,
+      "image_blocks": 0,
+      "expected_scene_title": "Paired fixture b0-screen-4",
+      "postcondition_match": true,
+      "arguments": {
+        "ocr": "off",
+        "limit": 200
+      },
+      "reply_sha256": "41f1215c877204e7e66c4d8c2bfe16a7d13600b6a8fe952ac0ae0804e0d5568e"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "long-value",
+      "trial_id": "b0-long-0",
+      "warmup": false,
+      "tool": "phone_read_value",
+      "host_load": [
+        7.73974609375,
+        14.0576171875,
+        15.1357421875
+      ],
+      "response_ms": 51.179,
+      "wire_bytes": 18896,
+      "returned_error": false,
+      "content_text_bytes": 18356,
+      "image_blocks": 0,
+      "returned_characters": 6015,
+      "postcondition_match": true,
+      "arguments": {
+        "identifier": "field-a"
+      },
+      "reply_sha256": "a27231a6b6a47fbe4d3b10b2c5429472676d45552eb0044ec1c86bd80ee7982c"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "long-value",
+      "trial_id": "b0-long-1",
+      "warmup": false,
+      "tool": "phone_read_value",
+      "host_load": [
+        7.73974609375,
+        14.0576171875,
+        15.1357421875
+      ],
+      "response_ms": 40.327,
+      "wire_bytes": 18895,
+      "returned_error": false,
+      "content_text_bytes": 18355,
+      "image_blocks": 0,
+      "returned_characters": 6015,
+      "postcondition_match": true,
+      "arguments": {
+        "identifier": "field-a"
+      },
+      "reply_sha256": "7432f447c53263dd35e9b8e69a0c60cfe0109ae818d704b735dd97b087863237"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "long-value",
+      "trial_id": "b0-long-2",
+      "warmup": false,
+      "tool": "phone_read_value",
+      "host_load": [
+        7.73974609375,
+        14.0576171875,
+        15.1357421875
+      ],
+      "response_ms": 44.792,
+      "wire_bytes": 18897,
+      "returned_error": false,
+      "content_text_bytes": 18356,
+      "image_blocks": 0,
+      "returned_characters": 6015,
+      "postcondition_match": true,
+      "arguments": {
+        "identifier": "field-a"
+      },
+      "reply_sha256": "0cadb7dcb8545076cf22ba6af75cc259f5150706dca2371e6d2a66405325392e"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "long-value",
+      "trial_id": "b0-long-3",
+      "warmup": false,
+      "tool": "phone_read_value",
+      "host_load": [
+        7.73974609375,
+        14.0576171875,
+        15.1357421875
+      ],
+      "response_ms": 41.121,
+      "wire_bytes": 18897,
+      "returned_error": false,
+      "content_text_bytes": 18356,
+      "image_blocks": 0,
+      "returned_characters": 6015,
+      "postcondition_match": true,
+      "arguments": {
+        "identifier": "field-a"
+      },
+      "reply_sha256": "c73eeba5f9c1be9c133bdbcc64996aceece692a8861e67ce46578074d0006f58"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "long-value",
+      "trial_id": "b0-long-4",
+      "warmup": false,
+      "tool": "phone_read_value",
+      "host_load": [
+        7.74658203125,
+        13.6875,
+        14.9794921875
+      ],
+      "response_ms": 61.046,
+      "wire_bytes": 18897,
+      "returned_error": false,
+      "content_text_bytes": 18356,
+      "image_blocks": 0,
+      "returned_characters": 6015,
+      "postcondition_match": true,
+      "arguments": {
+        "identifier": "field-a"
+      },
+      "reply_sha256": "f724747c083c36037f5101d6b17bf9055fd5d7ffb58bb77273ad726ec819aa6d"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b0-replace-short-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        7.74658203125,
+        13.6875,
+        14.9794921875
+      ],
+      "response_ms": 9377.457,
+      "wire_bytes": 446,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 503,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31995,
+        "seed": "short",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "title": "Paired fixture b0-replace-short-r0",
+        "trial": "b0-replace-short-r0"
+      },
+      "postcondition_observed_ms": 9762.52,
+      "postcondition_match": true,
+      "seed": "short",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "003e47a9a33f27b4e762f65598b8f4dcc3da38d273d2549fe5e80e1f820302b2"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b0-replace-middle-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        6.93603515625,
+        13.318359375,
+        14.83349609375
+      ],
+      "response_ms": 9674.868,
+      "wire_bytes": 446,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31995,
+        "seed": "middle",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 1,
+        "shift_trigger_length": 0,
+        "title": "Paired fixture b0-replace-middle-r0",
+        "trial": "b0-replace-middle-r0"
+      },
+      "postcondition_observed_ms": 10066.965,
+      "postcondition_match": true,
+      "seed": "middle",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "be100243cb5edecebb05bcc0e15fef96763e97bac2584b778e8ff4567e4cf45d"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b0-replace-unicode-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        6.1767578125,
+        12.9453125,
+        14.6826171875
+      ],
+      "response_ms": 9321.26,
+      "wire_bytes": 827,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 505,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31995,
+        "seed": "unicode",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "title": "Paired fixture b0-replace-unicode-r0",
+        "trial": "b0-replace-unicode-r0"
+      },
+      "postcondition_observed_ms": 9718.4,
+      "postcondition_match": true,
+      "seed": "unicode",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "388e48a0386bbb50e44c174be00b1d7c274fe597c689b133bc50939b52e299db"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b0-replace-limit-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        5.38037109375,
+        12.55126953125,
+        14.52197265625
+      ],
+      "response_ms": 10102.292,
+      "wire_bytes": 449,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 600,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31995,
+        "seed": "limit",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "title": "Paired fixture b0-replace-limit-r0",
+        "trial": "b0-replace-limit-r0"
+      },
+      "postcondition_observed_ms": 10488.558,
+      "postcondition_match": true,
+      "seed": "limit",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "8945962561ad3f63edcd0a92ef5480cfadea4b382dcfec682b232b803c19b8d2"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b0-replace-overlimit-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        5.08740234375,
+        12.2529296875,
+        14.392578125
+      ],
+      "response_ms": 9645.425,
+      "wire_bytes": 850,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31995,
+        "seed": "overlimit",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 1,
+        "shift_trigger_length": 0,
+        "title": "Paired fixture b0-replace-overlimit-r0",
+        "trial": "b0-replace-overlimit-r0"
+      },
+      "postcondition_observed_ms": 10045.265,
+      "postcondition_match": true,
+      "seed": "overlimit",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "301e0b252090d49a34c094704121f5ef9aadb4e44984a23f3ba7ffd45fc0d909"
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b0-replace-long-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        4.7724609375,
+        11.9482421875,
+        14.25927734375
+      ],
+      "response_ms": 9651.66,
+      "wire_bytes": 446,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 31995,
+        "seed": "long",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 1,
+        "shift_trigger_length": 0,
+        "title": "Paired fixture b0-replace-long-r0",
+        "trial": "b0-replace-long-r0"
+      },
+      "postcondition_observed_ms": 10046.827,
+      "postcondition_match": true,
+      "seed": "long",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "84487040552cbea33c20cb8daa98debbce7b3cad4a23b7324b86d0f9627b944a"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "screen",
+      "trial_id": "block-1-warmup",
+      "warmup": true,
+      "tool": "pua_observe",
+      "host_load": [
+        4.42578125,
+        11.63671875,
+        14.12109375
+      ],
+      "response_ms": 46.323,
+      "wire_bytes": 4845,
+      "returned_error": false,
+      "content_text_bytes": 4039,
+      "image_blocks": 0,
+      "expected_scene_title": "Paired fixture block-1-warmup",
+      "postcondition_match": true,
+      "arguments": {
+        "mode": "tree",
+        "max_nodes": 200
+      },
+      "reply_sha256": "2625ba3efc32837b5eee2398c083e72c1626a6976354889e0d57cc5a20ab2a12"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "screen",
+      "trial_id": "b1-screen-0",
+      "warmup": false,
+      "tool": "pua_observe",
+      "host_load": [
+        4.42578125,
+        11.63671875,
+        14.12109375
+      ],
+      "response_ms": 47.827,
+      "wire_bytes": 4842,
+      "returned_error": false,
+      "content_text_bytes": 4036,
+      "image_blocks": 0,
+      "expected_scene_title": "Paired fixture b1-screen-0",
+      "postcondition_match": true,
+      "arguments": {
+        "mode": "tree",
+        "max_nodes": 200
+      },
+      "reply_sha256": "0f3efabce52175e0dc62ccc9815cb0cf2006218ed9faa890ab5276ad522babd2"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "screen",
+      "trial_id": "b1-screen-1",
+      "warmup": false,
+      "tool": "pua_observe",
+      "host_load": [
+        4.3916015625,
+        11.509765625,
+        14.0615234375
+      ],
+      "response_ms": 48.893,
+      "wire_bytes": 4842,
+      "returned_error": false,
+      "content_text_bytes": 4036,
+      "image_blocks": 0,
+      "expected_scene_title": "Paired fixture b1-screen-1",
+      "postcondition_match": true,
+      "arguments": {
+        "mode": "tree",
+        "max_nodes": 200
+      },
+      "reply_sha256": "344d6bd2ab0d00e2e6f14eb3ad7100d91710ad7b24e245a7b701d78058b6d255"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "screen",
+      "trial_id": "b1-screen-2",
+      "warmup": false,
+      "tool": "pua_observe",
+      "host_load": [
+        4.3916015625,
+        11.509765625,
+        14.0615234375
+      ],
+      "response_ms": 45.375,
+      "wire_bytes": 4842,
+      "returned_error": false,
+      "content_text_bytes": 4036,
+      "image_blocks": 0,
+      "expected_scene_title": "Paired fixture b1-screen-2",
+      "postcondition_match": true,
+      "arguments": {
+        "mode": "tree",
+        "max_nodes": 200
+      },
+      "reply_sha256": "d72adfeccdb4839d44c411f2e08144eb9afc54dfb0586bc9e083125ac87ad25f"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "screen",
+      "trial_id": "b1-screen-3",
+      "warmup": false,
+      "tool": "pua_observe",
+      "host_load": [
+        4.3916015625,
+        11.509765625,
+        14.0615234375
+      ],
+      "response_ms": 49.046,
+      "wire_bytes": 4842,
+      "returned_error": false,
+      "content_text_bytes": 4036,
+      "image_blocks": 0,
+      "expected_scene_title": "Paired fixture b1-screen-3",
+      "postcondition_match": true,
+      "arguments": {
+        "mode": "tree",
+        "max_nodes": 200
+      },
+      "reply_sha256": "70e07cebff684db1867dd78b2e63298bd637fb7d74a750273cec295363707c1b"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "screen",
+      "trial_id": "b1-screen-4",
+      "warmup": false,
+      "tool": "pua_observe",
+      "host_load": [
+        4.3916015625,
+        11.509765625,
+        14.0615234375
+      ],
+      "response_ms": 50.409,
+      "wire_bytes": 4842,
+      "returned_error": false,
+      "content_text_bytes": 4036,
+      "image_blocks": 0,
+      "expected_scene_title": "Paired fixture b1-screen-4",
+      "postcondition_match": true,
+      "arguments": {
+        "mode": "tree",
+        "max_nodes": 200
+      },
+      "reply_sha256": "c99f5e3fc5b5bef6466c2831b9e924cbac2711453e014b953fa63bf031001180"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "long-value",
+      "trial_id": "b1-long-0",
+      "warmup": false,
+      "tool": "pua_find",
+      "host_load": [
+        4.3916015625,
+        11.509765625,
+        14.0615234375
+      ],
+      "response_ms": 68.73,
+      "wire_bytes": 1792,
+      "returned_error": false,
+      "content_text_bytes": 1664,
+      "image_blocks": 0,
+      "returned_characters": 512,
+      "postcondition_match": false,
+      "arguments": {
+        "selector": {
+          "name": "field-a",
+          "type": "TextField"
+        },
+        "limit": 1
+      },
+      "reply_sha256": "b7ac1e8d2856cebc54f6379d8d5ee1bcc344eec91954a34bbdee4bb90a1094e6"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "long-value",
+      "trial_id": "b1-long-1",
+      "warmup": false,
+      "tool": "pua_find",
+      "host_load": [
+        4.3916015625,
+        11.509765625,
+        14.0615234375
+      ],
+      "response_ms": 69.098,
+      "wire_bytes": 1793,
+      "returned_error": false,
+      "content_text_bytes": 1664,
+      "image_blocks": 0,
+      "returned_characters": 512,
+      "postcondition_match": false,
+      "arguments": {
+        "selector": {
+          "name": "field-a",
+          "type": "TextField"
+        },
+        "limit": 1
+      },
+      "reply_sha256": "66330a43a06a867e938735c2fb082d72a89b1f0ba287f4279ab137b295f9ee0e"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "long-value",
+      "trial_id": "b1-long-2",
+      "warmup": false,
+      "tool": "pua_find",
+      "host_load": [
+        4.3916015625,
+        11.509765625,
+        14.0615234375
+      ],
+      "response_ms": 69.482,
+      "wire_bytes": 1793,
+      "returned_error": false,
+      "content_text_bytes": 1664,
+      "image_blocks": 0,
+      "returned_characters": 512,
+      "postcondition_match": false,
+      "arguments": {
+        "selector": {
+          "name": "field-a",
+          "type": "TextField"
+        },
+        "limit": 1
+      },
+      "reply_sha256": "1107bb2f75b254110e435d34f37ff7813146e97699ba3df99b9fef7aa5869004"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "long-value",
+      "trial_id": "b1-long-3",
+      "warmup": false,
+      "tool": "pua_find",
+      "host_load": [
+        4.3916015625,
+        11.509765625,
+        14.0615234375
+      ],
+      "response_ms": 66.652,
+      "wire_bytes": 1793,
+      "returned_error": false,
+      "content_text_bytes": 1664,
+      "image_blocks": 0,
+      "returned_characters": 512,
+      "postcondition_match": false,
+      "arguments": {
+        "selector": {
+          "name": "field-a",
+          "type": "TextField"
+        },
+        "limit": 1
+      },
+      "reply_sha256": "f2aa2c1d174a381cdba2fd4036b2d931e8d239fc6690d1895ba6a8ea0764c450"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "long-value",
+      "trial_id": "b1-long-4",
+      "warmup": false,
+      "tool": "pua_find",
+      "host_load": [
+        4.3916015625,
+        11.509765625,
+        14.0615234375
+      ],
+      "response_ms": 66.366,
+      "wire_bytes": 1793,
+      "returned_error": false,
+      "content_text_bytes": 1664,
+      "image_blocks": 0,
+      "returned_characters": 512,
+      "postcondition_match": false,
+      "arguments": {
+        "selector": {
+          "name": "field-a",
+          "type": "TextField"
+        },
+        "limit": 1
+      },
+      "reply_sha256": "210bc027c81b9406266fedadd37b1230b76c6fd0bec8e2acca2104f437bddc76"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "replace",
+      "trial_id": "b1-replace-short-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        4.3916015625,
+        11.509765625,
+        14.0615234375
+      ],
+      "response_ms": 9387.111,
+      "wire_bytes": 266,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 32134,
+        "seed": "short",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "title": "Paired fixture b1-replace-short-r0",
+        "trial": "b1-replace-short-r0"
+      },
+      "postcondition_observed_ms": 9782.41,
+      "postcondition_match": true,
+      "seed": "short",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "789bb218d9f4ef528a8d4c626f8611a8cedca99bc0e3e08858b52bea116ad923"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "replace",
+      "trial_id": "b1-replace-middle-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        4.484375,
+        11.294921875,
+        13.955078125
+      ],
+      "response_ms": 9411.774,
+      "wire_bytes": 266,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 32134,
+        "seed": "middle",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "title": "Paired fixture b1-replace-middle-r0",
+        "trial": "b1-replace-middle-r0"
+      },
+      "postcondition_observed_ms": 9774.333,
+      "postcondition_match": true,
+      "seed": "middle",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "04f77fcbd0759baeb9122ac38eb74fe7faeae9aa247d6b26a347b239b5e5216a"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "replace",
+      "trial_id": "b1-replace-unicode-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        4.68505859375,
+        11.11865234375,
+        13.861328125
+      ],
+      "response_ms": 9386.367,
+      "wire_bytes": 266,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 32134,
+        "seed": "unicode",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "title": "Paired fixture b1-replace-unicode-r0",
+        "trial": "b1-replace-unicode-r0"
+      },
+      "postcondition_observed_ms": 9743.747,
+      "postcondition_match": true,
+      "seed": "unicode",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "a5e2632b64c6afdca66a124c141514bb8fd0994cfc0a33c7a6d215f8749a6498"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "replace",
+      "trial_id": "b1-replace-limit-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        4.3583984375,
+        10.83447265625,
+        13.72802734375
+      ],
+      "response_ms": 9399.663,
+      "wire_bytes": 266,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 32134,
+        "seed": "limit",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "title": "Paired fixture b1-replace-limit-r0",
+        "trial": "b1-replace-limit-r0"
+      },
+      "postcondition_observed_ms": 9794.436,
+      "postcondition_match": true,
+      "seed": "limit",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "e4248814f6f01af2751061e6e12b7881f5ae8e583eb323e279b7b1d9e68f50eb"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "replace",
+      "trial_id": "b1-replace-overlimit-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        4.08837890625,
+        10.56005859375,
+        13.5966796875
+      ],
+      "response_ms": 9409.605,
+      "wire_bytes": 266,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 32134,
+        "seed": "overlimit",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "title": "Paired fixture b1-replace-overlimit-r0",
+        "trial": "b1-replace-overlimit-r0"
+      },
+      "postcondition_observed_ms": 9810.426,
+      "postcondition_match": true,
+      "seed": "overlimit",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "007612f39881963e4bcb0675a1a232e804a767b4dbdfc253c4e5e5854fb86f38"
+    },
+    {
+      "block": 1,
+      "backend": "reference",
+      "task": "replace",
+      "trial_id": "b1-replace-long-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        3.92041015625,
+        10.310546875,
+        13.47216796875
+      ],
+      "response_ms": 9424.125,
+      "wire_bytes": 266,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 32134,
+        "seed": "long",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "title": "Paired fixture b1-replace-long-r0",
+        "trial": "b1-replace-long-r0"
+      },
+      "postcondition_observed_ms": 9805.429,
+      "postcondition_match": true,
+      "seed": "long",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771",
+      "reply_sha256": "5a0ef6c90d07be3dd51c16232eada373cf4125c5e00d8cb2efa21c7363092fdd"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "screen",
+      "trial_id": "block-2-warmup",
+      "warmup": true,
+      "tool": "pua_observe",
+      "host_load": [
+        3.5576171875,
+        10.0205078125,
+        13.33203125
+      ],
+      "response_ms": 46.484,
+      "wire_bytes": 4845,
+      "returned_error": false,
+      "content_text_bytes": 4039,
+      "image_blocks": 0,
+      "expected_scene_title": "Paired fixture block-2-warmup",
+      "postcondition_match": true,
+      "arguments": {
+        "mode": "tree",
+        "max_nodes": 200
+      },
+      "reply_sha256": "17a3986ec0808b2be50ee54ecf8f8b3015bc51d68e7fb25d9fb73b2fc1db8a60"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "screen",
+      "trial_id": "b2-screen-0",
+      "warmup": false,
+      "tool": "pua_observe",
+      "host_load": [
+        3.3525390625,
+        9.87060546875,
+        13.259765625
+      ],
+      "response_ms": 53.225,
+      "wire_bytes": 4842,
+      "returned_error": false,
+      "content_text_bytes": 4036,
+      "image_blocks": 0,
+      "expected_scene_title": "Paired fixture b2-screen-0",
+      "postcondition_match": true,
+      "arguments": {
+        "mode": "tree",
+        "max_nodes": 200
+      },
+      "reply_sha256": "ff9da5985b43dacb720a085b38479c7c83244e7832db143b9741375621faa315"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "screen",
+      "trial_id": "b2-screen-1",
+      "warmup": false,
+      "tool": "pua_observe",
+      "host_load": [
+        3.3525390625,
+        9.87060546875,
+        13.259765625
+      ],
+      "response_ms": 52.62,
+      "wire_bytes": 4842,
+      "returned_error": false,
+      "content_text_bytes": 4036,
+      "image_blocks": 0,
+      "expected_scene_title": "Paired fixture b2-screen-1",
+      "postcondition_match": true,
+      "arguments": {
+        "mode": "tree",
+        "max_nodes": 200
+      },
+      "reply_sha256": "c1943b419d813d18c8259919e26a1aa9fe9307bb267b19f7d051cc394486493c"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "screen",
+      "trial_id": "b2-screen-2",
+      "warmup": false,
+      "tool": "pua_observe",
+      "host_load": [
+        3.3525390625,
+        9.87060546875,
+        13.259765625
+      ],
+      "response_ms": 52.169,
+      "wire_bytes": 4842,
+      "returned_error": false,
+      "content_text_bytes": 4036,
+      "image_blocks": 0,
+      "expected_scene_title": "Paired fixture b2-screen-2",
+      "postcondition_match": true,
+      "arguments": {
+        "mode": "tree",
+        "max_nodes": 200
+      },
+      "reply_sha256": "b082baf2bf442040a2fce10eb41ecd865c7b879fd31b8e2cc217cb920f18d9e9"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "screen",
+      "trial_id": "b2-screen-3",
+      "warmup": false,
+      "tool": "pua_observe",
+      "host_load": [
+        3.3525390625,
+        9.87060546875,
+        13.259765625
+      ],
+      "response_ms": 51.053,
+      "wire_bytes": 4842,
+      "returned_error": false,
+      "content_text_bytes": 4036,
+      "image_blocks": 0,
+      "expected_scene_title": "Paired fixture b2-screen-3",
+      "postcondition_match": true,
+      "arguments": {
+        "mode": "tree",
+        "max_nodes": 200
+      },
+      "reply_sha256": "eda8ff78b4da91ab243439a33da073ed9d1ea2443e43e0f3ec677d0fe9774fa0"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "screen",
+      "trial_id": "b2-screen-4",
+      "warmup": false,
+      "tool": "pua_observe",
+      "host_load": [
+        3.3525390625,
+        9.87060546875,
+        13.259765625
+      ],
+      "response_ms": 52.64,
+      "wire_bytes": 4842,
+      "returned_error": false,
+      "content_text_bytes": 4036,
+      "image_blocks": 0,
+      "expected_scene_title": "Paired fixture b2-screen-4",
+      "postcondition_match": true,
+      "arguments": {
+        "mode": "tree",
+        "max_nodes": 200
+      },
+      "reply_sha256": "fc4a5e675f79aa7bd5f887a31711da206e532a5ad1498bdfe0694685ff607cec"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "long-value",
+      "trial_id": "b2-long-0",
+      "warmup": false,
+      "tool": "pua_find",
+      "host_load": [
+        3.3525390625,
+        9.87060546875,
+        13.259765625
+      ],
+      "response_ms": 68.692,
+      "wire_bytes": 1792,
+      "returned_error": false,
+      "content_text_bytes": 1664,
+      "image_blocks": 0,
+      "returned_characters": 512,
+      "postcondition_match": false,
+      "arguments": {
+        "selector": {
+          "name": "field-a",
+          "type": "TextField"
+        },
+        "limit": 1
+      },
+      "reply_sha256": "b7ac1e8d2856cebc54f6379d8d5ee1bcc344eec91954a34bbdee4bb90a1094e6"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "long-value",
+      "trial_id": "b2-long-1",
+      "warmup": false,
+      "tool": "pua_find",
+      "host_load": [
+        3.3525390625,
+        9.87060546875,
+        13.259765625
+      ],
+      "response_ms": 69.812,
+      "wire_bytes": 1793,
+      "returned_error": false,
+      "content_text_bytes": 1664,
+      "image_blocks": 0,
+      "returned_characters": 512,
+      "postcondition_match": false,
+      "arguments": {
+        "selector": {
+          "name": "field-a",
+          "type": "TextField"
+        },
+        "limit": 1
+      },
+      "reply_sha256": "66330a43a06a867e938735c2fb082d72a89b1f0ba287f4279ab137b295f9ee0e"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "long-value",
+      "trial_id": "b2-long-2",
+      "warmup": false,
+      "tool": "pua_find",
+      "host_load": [
+        3.3525390625,
+        9.87060546875,
+        13.259765625
+      ],
+      "response_ms": 67.679,
+      "wire_bytes": 1793,
+      "returned_error": false,
+      "content_text_bytes": 1664,
+      "image_blocks": 0,
+      "returned_characters": 512,
+      "postcondition_match": false,
+      "arguments": {
+        "selector": {
+          "name": "field-a",
+          "type": "TextField"
+        },
+        "limit": 1
+      },
+      "reply_sha256": "1107bb2f75b254110e435d34f37ff7813146e97699ba3df99b9fef7aa5869004"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "long-value",
+      "trial_id": "b2-long-3",
+      "warmup": false,
+      "tool": "pua_find",
+      "host_load": [
+        3.3525390625,
+        9.87060546875,
+        13.259765625
+      ],
+      "response_ms": 68.19,
+      "wire_bytes": 1793,
+      "returned_error": false,
+      "content_text_bytes": 1664,
+      "image_blocks": 0,
+      "returned_characters": 512,
+      "postcondition_match": false,
+      "arguments": {
+        "selector": {
+          "name": "field-a",
+          "type": "TextField"
+        },
+        "limit": 1
+      },
+      "reply_sha256": "f2aa2c1d174a381cdba2fd4036b2d931e8d239fc6690d1895ba6a8ea0764c450"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "long-value",
+      "trial_id": "b2-long-4",
+      "warmup": false,
+      "tool": "pua_find",
+      "host_load": [
+        3.3525390625,
+        9.87060546875,
+        13.259765625
+      ],
+      "response_ms": 68.476,
+      "wire_bytes": 1793,
+      "returned_error": false,
+      "content_text_bytes": 1664,
+      "image_blocks": 0,
+      "returned_characters": 512,
+      "postcondition_match": false,
+      "arguments": {
+        "selector": {
+          "name": "field-a",
+          "type": "TextField"
+        },
+        "limit": 1
+      },
+      "reply_sha256": "210bc027c81b9406266fedadd37b1230b76c6fd0bec8e2acca2104f437bddc76"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "replace",
+      "trial_id": "b2-replace-short-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        3.3525390625,
+        9.87060546875,
+        13.259765625
+      ],
+      "response_ms": 9428.183,
+      "wire_bytes": 266,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 32183,
+        "seed": "short",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "title": "Paired fixture b2-replace-short-r0",
+        "trial": "b2-replace-short-r0"
+      },
+      "postcondition_observed_ms": 9835.294,
+      "postcondition_match": true,
+      "seed": "short",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "789bb218d9f4ef528a8d4c626f8611a8cedca99bc0e3e08858b52bea116ad923"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "replace",
+      "trial_id": "b2-replace-middle-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        3.1376953125,
+        9.61083984375,
+        13.12744140625
+      ],
+      "response_ms": 9422.107,
+      "wire_bytes": 266,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 32183,
+        "seed": "middle",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "title": "Paired fixture b2-replace-middle-r0",
+        "trial": "b2-replace-middle-r0"
+      },
+      "postcondition_observed_ms": 9820.476,
+      "postcondition_match": true,
+      "seed": "middle",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "04f77fcbd0759baeb9122ac38eb74fe7faeae9aa247d6b26a347b239b5e5216a"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "replace",
+      "trial_id": "b2-replace-unicode-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        3.0361328125,
+        9.3759765625,
+        13.0029296875
+      ],
+      "response_ms": 9339.311,
+      "wire_bytes": 266,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 32183,
+        "seed": "unicode",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "title": "Paired fixture b2-replace-unicode-r0",
+        "trial": "b2-replace-unicode-r0"
+      },
+      "postcondition_observed_ms": 9744.35,
+      "postcondition_match": true,
+      "seed": "unicode",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "a5e2632b64c6afdca66a124c141514bb8fd0994cfc0a33c7a6d215f8749a6498"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "replace",
+      "trial_id": "b2-replace-limit-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        2.7900390625,
+        9.11572265625,
+        12.86767578125
+      ],
+      "response_ms": 9402.649,
+      "wire_bytes": 266,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 32183,
+        "seed": "limit",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "title": "Paired fixture b2-replace-limit-r0",
+        "trial": "b2-replace-limit-r0"
+      },
+      "postcondition_observed_ms": 9790.907,
+      "postcondition_match": true,
+      "seed": "limit",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "e4248814f6f01af2751061e6e12b7881f5ae8e583eb323e279b7b1d9e68f50eb"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "replace",
+      "trial_id": "b2-replace-overlimit-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        2.96923828125,
+        8.94677734375,
+        12.763671875
+      ],
+      "response_ms": 9393.022,
+      "wire_bytes": 266,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 32183,
+        "seed": "overlimit",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "title": "Paired fixture b2-replace-overlimit-r0",
+        "trial": "b2-replace-overlimit-r0"
+      },
+      "postcondition_observed_ms": 9786.009,
+      "postcondition_match": true,
+      "seed": "overlimit",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "007612f39881963e4bcb0675a1a232e804a767b4dbdfc253c4e5e5854fb86f38"
+    },
+    {
+      "block": 2,
+      "backend": "reference",
+      "task": "replace",
+      "trial_id": "b2-replace-long-r0",
+      "warmup": false,
+      "tool": "pua_type_text",
+      "host_load": [
+        3.0537109375,
+        8.76708984375,
+        12.65478515625
+      ],
+      "response_ms": 9392.728,
+      "wire_bytes": 266,
+      "returned_error": false,
+      "content_text_bytes": 151,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 32183,
+        "seed": "long",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "title": "Paired fixture b2-replace-long-r0",
+        "trial": "b2-replace-long-r0"
+      },
+      "postcondition_observed_ms": 9778.593,
+      "postcondition_match": true,
+      "seed": "long",
+      "repetition": 0,
+      "arguments": {
+        "replace": true,
+        "observe": "none",
+        "verify": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "5a0ef6c90d07be3dd51c16232eada373cf4125c5e00d8cb2efa21c7363092fdd"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "screen",
+      "trial_id": "block-3-warmup",
+      "warmup": true,
+      "tool": "phone_elements",
+      "host_load": [
+        3.04736328125,
+        8.48388671875,
+        12.4853515625
+      ],
+      "response_ms": 107.613,
+      "wire_bytes": 10929,
+      "returned_error": false,
+      "content_text_bytes": 1656,
+      "image_blocks": 0,
+      "expected_scene_title": "Paired fixture block-3-warmup",
+      "postcondition_match": true,
+      "arguments": {
+        "ocr": "off",
+        "limit": 200
+      },
+      "reply_sha256": "62c2d93c20714e188143a2c93c22f376b4906e7316893adfcba069b9ae38eea7"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "screen",
+      "trial_id": "b3-screen-0",
+      "warmup": false,
+      "tool": "phone_elements",
+      "host_load": [
+        3.04736328125,
+        8.48388671875,
+        12.4853515625
+      ],
+      "response_ms": 61.381,
+      "wire_bytes": 10643,
+      "returned_error": false,
+      "content_text_bytes": 1523,
+      "image_blocks": 0,
+      "expected_scene_title": "Paired fixture b3-screen-0",
+      "postcondition_match": true,
+      "arguments": {
+        "ocr": "off",
+        "limit": 200
+      },
+      "reply_sha256": "55414ecb7e07962c5e7cb5cb200aba4f8166843d9e5c822ec96c7f44f04bf7cd"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "screen",
+      "trial_id": "b3-screen-1",
+      "warmup": false,
+      "tool": "phone_elements",
+      "host_load": [
+        3.04736328125,
+        8.48388671875,
+        12.4853515625
+      ],
+      "response_ms": 62.531,
+      "wire_bytes": 10643,
+      "returned_error": false,
+      "content_text_bytes": 1523,
+      "image_blocks": 0,
+      "expected_scene_title": "Paired fixture b3-screen-1",
+      "postcondition_match": true,
+      "arguments": {
+        "ocr": "off",
+        "limit": 200
+      },
+      "reply_sha256": "058de4276eac00056118e4d2eaea16b5f417f52f4725cdf60aceb93be7568359"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "screen",
+      "trial_id": "b3-screen-2",
+      "warmup": false,
+      "tool": "phone_elements",
+      "host_load": [
+        3.04736328125,
+        8.48388671875,
+        12.4853515625
+      ],
+      "response_ms": 62.843,
+      "wire_bytes": 10643,
+      "returned_error": false,
+      "content_text_bytes": 1523,
+      "image_blocks": 0,
+      "expected_scene_title": "Paired fixture b3-screen-2",
+      "postcondition_match": true,
+      "arguments": {
+        "ocr": "off",
+        "limit": 200
+      },
+      "reply_sha256": "da8b6f9364c6e7ede79a85143812bcb94134aa6ea4ea1361f2c6ef993cf3051b"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "screen",
+      "trial_id": "b3-screen-3",
+      "warmup": false,
+      "tool": "phone_elements",
+      "host_load": [
+        3.04736328125,
+        8.48388671875,
+        12.4853515625
+      ],
+      "response_ms": 65.333,
+      "wire_bytes": 10643,
+      "returned_error": false,
+      "content_text_bytes": 1523,
+      "image_blocks": 0,
+      "expected_scene_title": "Paired fixture b3-screen-3",
+      "postcondition_match": true,
+      "arguments": {
+        "ocr": "off",
+        "limit": 200
+      },
+      "reply_sha256": "df8fda29cbff9202c324b9b7102d0a7bea3984475562c6d0f4d79f84b2a4d1e8"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "screen",
+      "trial_id": "b3-screen-4",
+      "warmup": false,
+      "tool": "phone_elements",
+      "host_load": [
+        3.04736328125,
+        8.48388671875,
+        12.4853515625
+      ],
+      "response_ms": 65.603,
+      "wire_bytes": 10643,
+      "returned_error": false,
+      "content_text_bytes": 1523,
+      "image_blocks": 0,
+      "expected_scene_title": "Paired fixture b3-screen-4",
+      "postcondition_match": true,
+      "arguments": {
+        "ocr": "off",
+        "limit": 200
+      },
+      "reply_sha256": "0b73d67f552ee5f8e23dab78a1843d471a98e2fe6559bb7bd895cee864366c35"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "long-value",
+      "trial_id": "b3-long-0",
+      "warmup": false,
+      "tool": "phone_read_value",
+      "host_load": [
+        3.04736328125,
+        8.48388671875,
+        12.4853515625
+      ],
+      "response_ms": 60.859,
+      "wire_bytes": 18896,
+      "returned_error": false,
+      "content_text_bytes": 18356,
+      "image_blocks": 0,
+      "returned_characters": 6015,
+      "postcondition_match": true,
+      "arguments": {
+        "identifier": "field-a"
+      },
+      "reply_sha256": "68dc9af60251984628f75a67400e7401ee8c1fe0d70773537dfbe015aad0fd7c"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "long-value",
+      "trial_id": "b3-long-1",
+      "warmup": false,
+      "tool": "phone_read_value",
+      "host_load": [
+        3.04736328125,
+        8.48388671875,
+        12.4853515625
+      ],
+      "response_ms": 58.92,
+      "wire_bytes": 18895,
+      "returned_error": false,
+      "content_text_bytes": 18355,
+      "image_blocks": 0,
+      "returned_characters": 6015,
+      "postcondition_match": true,
+      "arguments": {
+        "identifier": "field-a"
+      },
+      "reply_sha256": "69e84b941515c1bb61d1fbf4778231c7b0c1b48d144a0c42ce2fb63240b28975"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "long-value",
+      "trial_id": "b3-long-2",
+      "warmup": false,
+      "tool": "phone_read_value",
+      "host_load": [
+        3.04736328125,
+        8.48388671875,
+        12.4853515625
+      ],
+      "response_ms": 61.28,
+      "wire_bytes": 18895,
+      "returned_error": false,
+      "content_text_bytes": 18355,
+      "image_blocks": 0,
+      "returned_characters": 6015,
+      "postcondition_match": true,
+      "arguments": {
+        "identifier": "field-a"
+      },
+      "reply_sha256": "60fee9a6f588820d5894c3f93f2bb9f5c86fbc5b0f169039fec9c764465f0b11"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "long-value",
+      "trial_id": "b3-long-3",
+      "warmup": false,
+      "tool": "phone_read_value",
+      "host_load": [
+        3.04736328125,
+        8.48388671875,
+        12.4853515625
+      ],
+      "response_ms": 59.22,
+      "wire_bytes": 18897,
+      "returned_error": false,
+      "content_text_bytes": 18356,
+      "image_blocks": 0,
+      "returned_characters": 6015,
+      "postcondition_match": true,
+      "arguments": {
+        "identifier": "field-a"
+      },
+      "reply_sha256": "2b4b311eed5c1359b2195b5013f965e88218e115aca01caca24d0e0286095adb"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "long-value",
+      "trial_id": "b3-long-4",
+      "warmup": false,
+      "tool": "phone_read_value",
+      "host_load": [
+        3.04736328125,
+        8.48388671875,
+        12.4853515625
+      ],
+      "response_ms": 49.863,
+      "wire_bytes": 18895,
+      "returned_error": false,
+      "content_text_bytes": 18355,
+      "image_blocks": 0,
+      "returned_characters": 6015,
+      "postcondition_match": true,
+      "arguments": {
+        "identifier": "field-a"
+      },
+      "reply_sha256": "d6b24380154968728af5f60c406c11ef85fa0190b0788339b6a6bf9e64382a23"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b3-replace-short-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        3.04736328125,
+        8.48388671875,
+        12.4853515625
+      ],
+      "response_ms": 9295.491,
+      "wire_bytes": 446,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 503,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 32251,
+        "seed": "short",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "title": "Paired fixture b3-replace-short-r0",
+        "trial": "b3-replace-short-r0"
+      },
+      "postcondition_observed_ms": 9679.916,
+      "postcondition_match": true,
+      "seed": "short",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "0b384001de88e3a71cba936bce7c536fddcc8034c7a725d9681f7a5ea5ab5600"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b3-replace-middle-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        3.09423828125,
+        8.318359375,
+        12.3798828125
+      ],
+      "response_ms": 10774.229,
+      "wire_bytes": 449,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 32251,
+        "seed": "middle",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 1,
+        "shift_trigger_length": 0,
+        "title": "Paired fixture b3-replace-middle-r0",
+        "trial": "b3-replace-middle-r0"
+      },
+      "postcondition_observed_ms": 11128.094,
+      "postcondition_match": true,
+      "seed": "middle",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "f440fe44e7c75ebe87071c2902011f02d9986c6d90f6ca53d608ae7c62716627"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b3-replace-unicode-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        3.5595703125,
+        8.24267578125,
+        12.30517578125
+      ],
+      "response_ms": 9313.942,
+      "wire_bytes": 827,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 505,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 32251,
+        "seed": "unicode",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "title": "Paired fixture b3-replace-unicode-r0",
+        "trial": "b3-replace-unicode-r0"
+      },
+      "postcondition_observed_ms": 9711.364,
+      "postcondition_match": true,
+      "seed": "unicode",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "c5ed4262b58972c7e476a8c1460f330173be881e3a901f0a05bd7bc7d163568c"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b3-replace-limit-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        3.68115234375,
+        8.11767578125,
+        12.21337890625
+      ],
+      "response_ms": 10105.279,
+      "wire_bytes": 449,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 600,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 32251,
+        "seed": "limit",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 0,
+        "shift_trigger_length": 0,
+        "title": "Paired fixture b3-replace-limit-r0",
+        "trial": "b3-replace-limit-r0"
+      },
+      "postcondition_observed_ms": 10462.671,
+      "postcondition_match": true,
+      "seed": "limit",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "f7f23f666dd27650366630aca013daa0e7c296123f177210324e10b84ef374c6"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b3-replace-overlimit-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        3.416015625,
+        7.9150390625,
+        12.09375
+      ],
+      "response_ms": 9650.927,
+      "wire_bytes": 850,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 32251,
+        "seed": "overlimit",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 1,
+        "shift_trigger_length": 0,
+        "title": "Paired fixture b3-replace-overlimit-r0",
+        "trial": "b3-replace-overlimit-r0"
+      },
+      "postcondition_observed_ms": 10054.228,
+      "postcondition_match": true,
+      "seed": "overlimit",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "28d6a2c7851b483a45b70064f016612773c24f92a6e6d173c850064c0c18085e"
+    },
+    {
+      "block": 3,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b3-replace-long-r0",
+      "warmup": false,
+      "tool": "phone_type",
+      "host_load": [
+        3.4990234375,
+        7.78515625,
+        11.99853515625
+      ],
+      "response_ms": 9638.377,
+      "wire_bytes": 446,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "app_receipt": {
+        "advance_on_clear": false,
+        "advance_triggered": false,
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "keyboard_did_show": true,
+        "pid": 32251,
+        "seed": "long",
+        "selection": {
+          "a": {
+            "length": 0,
+            "location": 500
+          },
+          "b": {
+            "length": 0,
+            "location": 0
+          }
+        },
+        "selection_commands": 1,
+        "shift_trigger_length": 0,
+        "title": "Paired fixture b3-replace-long-r0",
+        "trial": "b3-replace-long-r0"
+      },
+      "postcondition_observed_ms": 10036.508,
+      "postcondition_match": true,
+      "seed": "long",
+      "repetition": 0,
+      "arguments": {
+        "clear": true,
+        "observe": false
+      },
+      "requested_characters": 500,
+      "requested_text_sha256": "ece2f9438cd167167d908848e9944acae581d9fcec6a063357ccbf9aeeb762d7",
+      "reply_sha256": "af42dac4868bb956fb7f645253219314062301d699127ce4b3699073d790425d"
+    }
+  ]
+}

@@ -62,7 +62,7 @@ import CryptoKit
   @objc private func shiftFocusIfRequested(_ field: UITextField) {
     let marker = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("input-started.count")
     fieldReceiptGeneration += 1
-    if field.text?.hasPrefix("queue-deadline-") == true {
+    if field.text?.hasPrefix("queue-deadline-") == true || ProcessInfo.processInfo.arguments.contains("--continuous-value-receipt") {
       let generation = fieldReceiptGeneration
       let receiptFile = marker.deletingLastPathComponent().appendingPathComponent("field-a-state.json")
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self, weak field] in

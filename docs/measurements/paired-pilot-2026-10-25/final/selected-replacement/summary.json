@@ -1,0 +1,144 @@
+{
+  "scope": "actual native runner on owned Simulator; no real-host/physical acceptance",
+  "simulator": "569FBE9F-2325-4660-8073-6AA487C9838E",
+  "expected_chars": 6015,
+  "observed_chars": 6015,
+  "oracle": {
+    "characters": 6015,
+    "sha256": "cd62e7be33ba3fa9f3046d6ae26c6e6c25a3fd461003f081d7c68662cfd41127"
+  },
+  "value_sha256": "cd62e7be33ba3fa9f3046d6ae26c6e6c25a3fd461003f081d7c68662cfd41127",
+  "value_headers": {
+    "X-Value-Complete": "1",
+    "X-Value-Source": "ax_value_attribute"
+  },
+  "snapshot_limits": null,
+  "full_value_matches": true,
+  "structured_full_matches": true,
+  "bounded_prefix_chars": 128,
+  "emoji_scalar_boundary": true,
+  "secure_refused": true,
+  "bulk_preview_chars": 512,
+  "bulk_value_truncated": true,
+  "probe_only": false,
+  "mcp_single_copy_full_value": true,
+  "daemon_full_and_bounded_matches": true,
+  "owner_lease_unchanged": true,
+  "focus_unchanged": true,
+  "replacement_native": {
+    "prefix_and_tail": true,
+    "newline_before_clear_refused": true,
+    "secure_focus_unchanged": true,
+    "external_command_invalidates_target": true
+  },
+  "placeholder_cases": {
+    "literal_one_unit_read": {
+      "complete": false,
+      "limit_utf16": 1,
+      "ok": true,
+      "returned_utf16_length": 1,
+      "source": "ax_value_attribute",
+      "truncated": true,
+      "utf16_length": 17,
+      "value": "D",
+      "timing": {
+        "daemon_ms": 2,
+        "runner": [
+          {
+            "bytes": 139,
+            "call": "POST /elements",
+            "count": 1,
+            "ms": 88
+          },
+          {
+            "bytes": 147,
+            "call": "GET /element/:id/value",
+            "count": 1,
+            "ms": 42
+          }
+        ],
+        "runner_ms": 130,
+        "total_ms": 132
+      }
+    },
+    "literal_oracle": {
+      "characters": 17,
+      "sha256": "777e4256e8346d8ece3524b43254c9f268e13666c0af43752dc45ff5145ea0ea"
+    },
+    "empty_one_unit_read": {
+      "complete": true,
+      "limit_utf16": 1,
+      "ok": true,
+      "placeholder_shown": true,
+      "returned_utf16_length": 0,
+      "source": "ax_value_attribute",
+      "truncated": false,
+      "utf16_length": 0,
+      "value": "",
+      "timing": {
+        "daemon_ms": 1,
+        "runner": [
+          {
+            "bytes": 139,
+            "call": "POST /elements",
+            "count": 1,
+            "ms": 55
+          },
+          {
+            "bytes": 170,
+            "call": "GET /element/:id/value",
+            "count": 1,
+            "ms": 49
+          }
+        ],
+        "runner_ms": 104,
+        "total_ms": 105
+      }
+    },
+    "empty_oracle": {
+      "characters": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "replacement_oracle": {
+    "characters": 501,
+    "sha256": "a7ff01017548ca392191a040cbfb8ebbe04d5295544867489b3c7d02a34f4344"
+  },
+  "replacement_cases": {
+    "native_prefix_and_bound_tail": true,
+    "native_newline_before_clear_refused": true,
+    "native_secure_before_focus_refused": true,
+    "native_target_invalidation_refused": true,
+    "daemon_501_character_replacement": true,
+    "daemon_empty_clear": true,
+    "mid_prefix_focus_change_unknown_without_tail": true,
+    "private_after_app_input_event_preserves_one_ack_without_tail": true,
+    "private_partial_receipt": {
+      "ok": false,
+      "outcome": "partial",
+      "native_mutations_confirmed": 1,
+      "native_mutations_uncertain": 0,
+      "retry_safe": false
+    }
+  },
+  "cleanup_errors": [],
+  "sources": {
+    "scripts/test-value-read-simulator.py": "dd96e5de6872290fb2f42a36d0096e44a9c5ea5fc1afebbd3b33bd2fe4d07d6e",
+    "scripts/test-input-target-simulator.py": "250f115f5ccf7c36dd12ac55c5e9521b349af113b6efb989b07ef5e45f393b96",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m": "95a157bec70a31c0e8c63a1af030ccffc18185ae739c83124355f2adf9be9a2b",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.h": "218ea3b678308870a7409b22b88623809789a6b7088488174ea4b5a77f836f3c",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerElements.swift": "0f6716d35c531504148cf75da879a24882dab645f6c0ee2a122cf28a2c92b3c2",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerRoutes.swift": "22ca5d7453db50a9388880e7db8925936a614492f98210c01feec129d62526ba",
+    "crates/server/src/http.rs": "305ea1d61883d60a9891b672d941c47599e90693e1c5695c4dbf469b14b49081",
+    "crates/server/src/runner.rs": "02d95c6270bc7ccf3e7373b80c78d8e117d95c4534515ef55cab19744da8798d",
+    "crates/mcp/src/client.rs": "48768d4899382e6f2209fa96b93a7a424cf59f23138dd06dbe60d564bb63d8bb",
+    "crates/mcp/src/server.rs": "fee1344bb3bb909cf67c900097685bfec894a150d632cba822d0d5a46bc9c082",
+    "crates/mcp/src/compact.rs": "ecd97a19e2fd133e9886b7a73011c0130b7467935c878b289db65d241d8914fb"
+  },
+  "daemon_binary_sha256": "da412830d2006e558cfe172c89c8989d60f84d4ca3d4ac2648bf70d9a2b8d53d",
+  "mcp_binary_sha256": "dcb34546a82ac94f8c31dd23c31a82653c1f720d69ca0866f79add3dfa4f8923",
+  "fixture_binary_sha256": "648dd05533f656938443f4627dbffa7f7f21587b723407eec621451c49f762de",
+  "fixture_source_sha256": "1c0694d34be90d9915b0a8f9497ac126aab03da769376ab12a159bba990ea24d",
+  "xctestrun_sha256": "b451ce398fa218d683575378eb95649465ac9fa2908bbc95c13c3bad146d2f25",
+  "runner_binary_sha256": "5c997219a3875d376ff3cc719aef9dc4a7cf05cbdd29445ff661c836a12d3b9f"
+}

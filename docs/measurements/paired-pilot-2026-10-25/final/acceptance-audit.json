@@ -1,0 +1,149 @@
+{
+  "manifest_files_verified": 28,
+  "core_source_hashes_match": {
+    "paired": true,
+    "performance": true,
+    "repetitions": true,
+    "selection-faults": true,
+    "selected-replacement": true,
+    "input-regression": true
+  },
+  "ordinary_replacements": {
+    "paired": {
+      "native": {
+        "matched": 12,
+        "records": 12
+      },
+      "reference": {
+        "matched": 12,
+        "records": 12
+      }
+    },
+    "performance": {
+      "native": {
+        "matched": 12,
+        "records": 12
+      },
+      "reference": {
+        "matched": 12,
+        "records": 12
+      }
+    }
+  },
+  "repeated_replacements": {
+    "matched": 40,
+    "records": 40
+  },
+  "selection_fault_contract_checks": [
+    {
+      "trial": "b0-replace-ignore-once-r0",
+      "seed": "ignore-once",
+      "requested_text_matched": true,
+      "expected_recovery_or_refusal_verified": true,
+      "selection_commands": 2,
+      "editing_events": {
+        "a": 65,
+        "b": 0,
+        "multi": 0,
+        "secure": 0
+      }
+    },
+    {
+      "trial": "b0-replace-ignore-all-r0",
+      "seed": "ignore-all",
+      "requested_text_matched": false,
+      "expected_recovery_or_refusal_verified": true,
+      "selection_commands": 2,
+      "editing_events": {
+        "a": 0,
+        "b": 0,
+        "multi": 0,
+        "secure": 0
+      }
+    },
+    {
+      "trial": "b0-replace-selection-mutates-r0",
+      "seed": "selection-mutates",
+      "requested_text_matched": false,
+      "expected_recovery_or_refusal_verified": true,
+      "selection_commands": 1,
+      "editing_events": {
+        "a": 1,
+        "b": 0,
+        "multi": 0,
+        "secure": 0
+      }
+    },
+    {
+      "trial": "b0-replace-selection-partial-r0",
+      "seed": "selection-partial",
+      "requested_text_matched": false,
+      "expected_recovery_or_refusal_verified": true,
+      "selection_commands": 1,
+      "editing_events": {
+        "a": 0,
+        "b": 0,
+        "multi": 0,
+        "secure": 0
+      }
+    },
+    {
+      "trial": "b0-replace-ignore-once-r1",
+      "seed": "ignore-once",
+      "requested_text_matched": true,
+      "expected_recovery_or_refusal_verified": true,
+      "selection_commands": 2,
+      "editing_events": {
+        "a": 65,
+        "b": 0,
+        "multi": 0,
+        "secure": 0
+      }
+    },
+    {
+      "trial": "b0-replace-ignore-all-r1",
+      "seed": "ignore-all",
+      "requested_text_matched": false,
+      "expected_recovery_or_refusal_verified": true,
+      "selection_commands": 2,
+      "editing_events": {
+        "a": 0,
+        "b": 0,
+        "multi": 0,
+        "secure": 0
+      }
+    },
+    {
+      "trial": "b0-replace-selection-mutates-r1",
+      "seed": "selection-mutates",
+      "requested_text_matched": false,
+      "expected_recovery_or_refusal_verified": true,
+      "selection_commands": 1,
+      "editing_events": {
+        "a": 1,
+        "b": 0,
+        "multi": 0,
+        "secure": 0
+      }
+    },
+    {
+      "trial": "b0-replace-selection-partial-r1",
+      "seed": "selection-partial",
+      "requested_text_matched": false,
+      "expected_recovery_or_refusal_verified": true,
+      "selection_commands": 1,
+      "editing_events": {
+        "a": 0,
+        "b": 0,
+        "multi": 0,
+        "secure": 0
+      }
+    }
+  ],
+  "input_regression": {
+    "matched": 34,
+    "records": 34
+  },
+  "selected_replacement_and_placeholder_cases_verified": true,
+  "scope": "artifact integrity and recorded operation contracts; not competitive-goal completion"
+}

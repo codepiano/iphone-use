@@ -81,6 +81,25 @@ Limits to close before claiming input superiority:
   host cancellation and default long-input pacing still need acceptance.
 - No physical-device acceptance or comparative speed result is available yet.
 
+The clearing candidate reads the original AX value and selection. Values of at
+most 100 UTF-16 units whose selection reaches the end use only the deletion keys
+required by the observed composed characters. Other positions/values require a
+confirmed full selection before one delete. An acknowledged Select All whose
+value and selection remain unchanged throughout readback can repeat once, after
+rechecking the original binding and comparing the original value/range again.
+Synthesis/read errors, partial selections and changed values stop immediately;
+deletion and text are never replayed. Private retry state stays inside the Runner.
+An App can still change focus or content during a current deletion/typing event.
+
+Some AX providers return a placeholder string as the raw Value of an empty
+TextField while both live snapshots correctly report no value. The full reader
+normalizes that case only when the pre/post snapshots are empty and have the same
+placeholder, and the raw value exactly matches it before clipping. It reports
+`placeholder_shown: true` with zero content length. Literal content equal to the
+placeholder keeps its real length and clipping metadata. Clear readback additionally
+checks an empty caret and rechecks the original focused binding. Provider/physical
+coverage beyond the recorded fixtures remains open.
+
 ## Failure recovery, in development
 
 Selected UI failures from `/agent/input` and `/agent/actions` now request a fresh,

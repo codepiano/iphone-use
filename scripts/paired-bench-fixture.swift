@@ -1,11 +1,30 @@
 import UIKit
 import CryptoKit
+private final class SelectionField: UITextField {
+  var selectionPolicy = ""
+  var selectionCommands = 0
+  override func selectAll(_ sender: Any?) {
+    selectionCommands += 1
+    if selectionPolicy == "ignore-all" || (selectionPolicy == "ignore-once" && selectionCommands == 1) { return }
+    if selectionPolicy == "selection-mutates" && selectionCommands == 1 {
+      text = "new-draft-middle"
+      sendActions(for: .editingChanged)
+      return
+    }
+    if selectionPolicy == "selection-partial" {
+      if let end = position(from: beginningOfDocument, offset: 3) { selectedTextRange = textRange(from: beginningOfDocument, to: end) }
+      return
+    }
+    super.selectAll(sender)
+  }
+}
 @main final class AppDelegate: UIResponder, UIApplicationDelegate {
   func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool { true }
 }
 @objc(InputGuardSceneDelegate) final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   var window: UIWindow?
-  private let a = UITextField(), b = UITextField(), secure = UITextField(), multi = UITextView()
+  private let titleLabel = UILabel()
+  private let a = SelectionField(), b = UITextField(), secure = UITextField(), multi = UITextView()
   private var timer: Timer?
   private var last: Data?
   private var events = ["a": 0, "b": 0, "secure": 0, "multi": 0]
@@ -16,7 +35,7 @@ import CryptoKit
   private func seededValue(_ seed: String) -> String {
     switch seed {
     case "long": return "queue-deadline-" + String(repeating: "字", count: 6000)
-    case "middle": return "old-draft-middle"
+    case "middle", "ignore-once", "ignore-all", "selection-mutates", "selection-partial": return "old-draft-middle"
     case "unicode": return "旧🙂e\u{301}草稿"
     case "limit": return String(repeating: "字", count: 100)
     case "overlimit": return String(repeating: "字", count: 101)
@@ -26,17 +45,23 @@ import CryptoKit
   private var currentTrial = ""
   private var shiftFocus = false
   private var secureFocus = false
+  private var advanceOnClear = false
+  private var clearAdvance = false
   private var trial: String { currentTrial.isEmpty ? option("--trial") : currentTrial }
   private func resetIfRequested() {
     let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("paired-reset.json")
     guard let data = try? Data(contentsOf: url), let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
           let next = body["trial"] as? String, next != trial else { return }
     currentTrial = next
+    titleLabel.text = "Paired fixture " + next
     shiftFocus = body["shift"] as? Bool ?? false
     secureFocus = body["secure"] as? Bool ?? false
+    advanceOnClear = body["advance"] as? Bool ?? false
+    clearAdvance = false
     activeSeed = body["seed"] as? String ?? "short"
+    a.selectionPolicy = activeSeed; a.selectionCommands = 0
     a.text = seededValue(activeSeed)
-    b.text = ""; multi.text = ""; secure.text = "benchmark-secure-dummy"
+    b.text = advanceOnClear ? "keep-b" : ""; multi.text = ""; secure.text = "benchmark-secure-dummy"
     events = ["a": 0, "b": 0, "secure": 0, "multi": 0]; trigger = 0; initialFocus = false
   }
   private func option(_ name: String) -> String {
@@ -47,6 +72,10 @@ import CryptoKit
   @objc private func changed(_ field: UITextField) {
     let key = field === a ? "a" : field === b ? "b" : "secure"
     events[key, default: 0] += 1
+    if field === a && advanceOnClear && !clearAdvance && (a.text ?? "").isEmpty {
+      clearAdvance = true
+      b.becomeFirstResponder()
+    }
     if field === a && shiftFocus && trigger == 0,
        let text = a.text, text.hasPrefix("shift-focus-test-"), text.unicodeScalars.count >= 20 {
       trigger = text.unicodeScalars.count
@@ -63,7 +92,7 @@ import CryptoKit
       if secureFocus { _ = secure.becomeFirstResponder(); initialFocus = secure.isFirstResponder }
       else {
         _ = a.becomeFirstResponder(); initialFocus = a.isFirstResponder
-        if initialFocus && activeSeed == "middle", let position = a.position(from: a.beginningOfDocument, offset: 7) {
+        if initialFocus && ["middle", "ignore-once", "ignore-all", "selection-mutates", "selection-partial"].contains(activeSeed), let position = a.position(from: a.beginningOfDocument, offset: 7) {
           a.selectedTextRange = a.textRange(from: position, to: position)
         }
       }
@@ -78,7 +107,7 @@ import CryptoKit
               "length": field.offset(from: range.start, to: range.end)]
     }
     let focus = a.isFirstResponder ? "a" : b.isFirstResponder ? "b" : secure.isFirstResponder ? "secure" : multi.isFirstResponder ? "multi" : "none"
-    let body: [String: Any] = ["trial": trial, "seed": activeSeed, "pid": ProcessInfo.processInfo.processIdentifier, "foreground_active": window?.windowScene?.activationState == .foregroundActive, "initial_focus_established": initialFocus, "keyboard_did_show": keyboardShown, "selection": ["a": selection(a), "b": selection(b)], "fields": ["a": state(a.text ?? ""), "b": state(b.text ?? ""), "secure": state(secure.text ?? ""), "multi": state(multi.text ?? "")], "focus": focus, "events": events, "shift_trigger_length": trigger]
+    let body: [String: Any] = ["trial": trial, "title": titleLabel.text ?? "", "seed": activeSeed, "pid": ProcessInfo.processInfo.processIdentifier, "foreground_active": window?.windowScene?.activationState == .foregroundActive, "initial_focus_established": initialFocus, "keyboard_did_show": keyboardShown, "selection_commands": a.selectionCommands, "advance_on_clear": advanceOnClear, "advance_triggered": clearAdvance, "selection": ["a": selection(a), "b": selection(b)], "fields": ["a": state(a.text ?? ""), "b": state(b.text ?? ""), "secure": state(secure.text ?? ""), "multi": state(multi.text ?? "")], "focus": focus, "events": events, "shift_trigger_length": trigger]
     guard let data = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]), data != last else { return }
     last = data
     let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -88,9 +117,11 @@ import CryptoKit
     guard let scene = scene as? UIWindowScene else { return }
     shiftFocus = ProcessInfo.processInfo.arguments.contains("--shift")
     secureFocus = ProcessInfo.processInfo.arguments.contains("--secure-focus")
+    advanceOnClear = ProcessInfo.processInfo.arguments.contains("--advance-on-clear")
+    b.text = advanceOnClear ? "keep-b" : ""
     let view = UIViewController()
     view.view.backgroundColor = .white
-    let title = UILabel(); title.text = "Paired fixture"; title.accessibilityIdentifier = "fixture-title"
+    let title = titleLabel; title.text = "Paired fixture " + trial; title.accessibilityIdentifier = "fixture-title"
     title.font = .systemFont(ofSize: 22, weight: .semibold)
     for (field, id) in [(a, "field-a"), (b, "field-b"), (secure, "field-secure")] {
       field.accessibilityIdentifier = id; field.accessibilityLabel = "Draft"
@@ -103,6 +134,7 @@ import CryptoKit
     multi.accessibilityIdentifier = "field-multiline"; multi.accessibilityLabel = "Multiline draft"
     multi.layer.borderWidth = 1; multi.heightAnchor.constraint(equalToConstant: 80).isActive = true
     activeSeed = option("--seed")
+    a.selectionPolicy = activeSeed; a.selectionCommands = 0
     a.text = seededValue(activeSeed)
     let stack = UIStackView(arrangedSubviews: [title, a, b, multi, secure]); stack.axis = .vertical; stack.spacing = 20
     stack.translatesAutoresizingMaskIntoConstraints = false; view.view.addSubview(stack)

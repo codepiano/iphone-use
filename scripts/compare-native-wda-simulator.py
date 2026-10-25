@@ -94,10 +94,12 @@ def main():
     parser.add_argument('--daemon',required=True,type=Path)
     parser.add_argument('--mcp',required=True,type=Path)
     parser.add_argument('--out',required=True,type=Path)
-    parser.add_argument('--replace-seeds',default='short',help='comma-separated owned draft seeds: short,middle,unicode,limit,overlimit,long')
+    parser.add_argument('--input-length',type=int,default=500)
+    parser.add_argument('--replace-repetitions',type=int,default=1)
+    parser.add_argument('--replace-seeds',default='short',help='comma-separated owned draft seeds, including middle/Unicode/length boundaries and selection fault fixtures')
     parser.add_argument('--reset-mode',choices=['relaunch','file'],default='relaunch',help='file resets only owned fixture content between tasks; relaunch separately exercises process churn')
     parser.add_argument('--order',default='native,reference,reference,native')
-    parser.add_argument('--tasks',default='screen,long-value,replace,shift,secure')
+    parser.add_argument('--tasks',default='screen,long-value,replace,shift,advance,secure')
     parser.add_argument('--probe-selection',action='store_true',help='native diagnostic only; extra selection read is outside timed operation')
     parser.add_argument('--runtime',default='com.apple.CoreSimulator.SimRuntime.iOS-27-0')
     parser.add_argument('--max-load',type=float,default=0)
@@ -108,8 +110,8 @@ def main():
     parser.add_argument('--reference-settle',type=float,default=0)
     parser.add_argument('--reference-frequency',type=int,default=60,choices=[30,60])
     args=parser.parse_args();order=args.order.split(',');tasks=args.tasks.split(',');replace_seeds=args.replace_seeds.split(',')
-    if not replace_seeds or len(set(replace_seeds))!=len(replace_seeds) or not set(replace_seeds)<=set(['short','middle','unicode','limit','overlimit','long']):parser.error('invalid replace seeds')
-    if args.max_load<0 or not 1<=args.resource_wait_seconds<=900 or not 0<=args.boot_settle_seconds<=600 or any(x not in ['native','reference'] for x in order) or not set(tasks)<=set(['screen','long-value','replace','shift','secure']) or not 1<=args.reads<=30:parser.error('invalid order/read count')
+    if not replace_seeds or len(set(replace_seeds))!=len(replace_seeds) or not set(replace_seeds)<=set(['short','middle','unicode','limit','overlimit','long','ignore-once','ignore-all','selection-mutates','selection-partial']):parser.error('invalid replace seeds')
+    if not 64<=args.input_length<=2000 or not 1<=args.replace_repetitions<=30 or args.max_load<0 or not 1<=args.resource_wait_seconds<=900 or not 0<=args.boot_settle_seconds<=600 or any(x not in ['native','reference'] for x in order) or not set(tasks)<=set(['screen','long-value','replace','shift','advance','secure']) or not 1<=args.reads<=30:parser.error('invalid order/read count')
     assert fixture.command('git','-C',args.reference,'rev-parse','HEAD')==REFERENCE
     assert fixture.command('git','-C',args.wda_source,'rev-parse','HEAD')==WDA
     assert not fixture.command('git','-C',args.reference,'status','--porcelain')
@@ -118,9 +120,11 @@ def main():
     env={k:v for k,v in os.environ.items() if not k.startswith(('IPHONE_USE_','PHONE_REMOTE_','IPU_','TEST_RUNNER_','SIMCTL_CHILD_','WDA_'))}
     env.update(DO_NOT_TRACK='1',IPHONE_USE_ANALYTICS='0')
     opener=urllib.request.build_opener(urllib.request.ProxyHandler({}));token=secrets.token_hex(32)
-    result={'scope':'paired model-free MCP operations; not physical-device/model/task/host superiority','reference_sha':REFERENCE,'wda_sha':WDA,'order':order,'reset_mode':args.reset_mode,'replace_seeds':replace_seeds,'tasks':tasks,'reference_frequency':args.reference_frequency,'native_frequency':60,'selection_probe':args.probe_selection,'native_structured':args.native_structured,'reference_settle_seconds':args.reference_settle,'toolchain':fixture.command('xcodebuild','-version'),'sdk':fixture.command('xcrun','--sdk','iphonesimulator','--show-sdk-version'),'runtime':args.runtime,'host_cores':os.cpu_count(),'max_load_gate':args.max_load,'resource_wait_seconds':args.resource_wait_seconds,'boot_settle_seconds':args.boot_settle_seconds,'native_build_profile':'debug candidate daemon/MCP; Debug XCTest bundles','trials':[],'blocks':[]}
-    tracked_sources=['scripts/compare-native-wda-simulator.py','scripts/paired-bench-fixture.swift','scripts/test-input-target-simulator.py','crates/server/src/http.rs','crates/server/src/runner.rs','crates/mcp/src/server.rs','runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerRoutes.swift','runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m','runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.h']
+    result={'scope':'paired model-free MCP operations; not physical-device/model/task/host superiority','reference_sha':REFERENCE,'wda_sha':WDA,'order':order,'reset_mode':args.reset_mode,'replace_seeds':replace_seeds,'replace_repetitions':args.replace_repetitions,'input_length':args.input_length,'tasks':tasks,'screen_requires_current_trial':True,'reference_frequency':args.reference_frequency,'native_frequency':60,'selection_probe':args.probe_selection,'native_structured':args.native_structured,'reference_settle_seconds':args.reference_settle,'toolchain':fixture.command('xcodebuild','-version'),'sdk':fixture.command('xcrun','--sdk','iphonesimulator','--show-sdk-version'),'runtime':args.runtime,'host_cores':os.cpu_count(),'max_load_gate':args.max_load,'resource_wait_seconds':args.resource_wait_seconds,'boot_settle_seconds':args.boot_settle_seconds,'native_build_profile':'debug candidate daemon/MCP; Debug XCTest bundles','trials':[],'blocks':[]}
+    tracked_sources=['scripts/runner_auth.py','scripts/compare-native-wda-simulator.py','scripts/paired-bench-fixture.swift','scripts/test-input-target-simulator.py','crates/server/src/http.rs','crates/server/src/runner.rs','crates/mcp/src/server.rs','runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerRoutes.swift','runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m','runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.h']
     result['sources_at_start']={name:hashlib.sha256((ROOT/name).read_bytes()).hexdigest() for name in tracked_sources}
+    for name in ['scripts/runner_auth.py','scripts/compare-native-wda-simulator.py','scripts/paired-bench-fixture.swift','scripts/test-input-target-simulator.py']:
+        target=out/'executed-harness'/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes((ROOT/name).read_bytes())
     result['native_revision']=fixture.command('git','-C',ROOT,'rev-parse','HEAD')
     patch=fixture.command('git','-C',ROOT,'diff','--binary');(out/'native-tracked.patch').write_text(patch)
     udid=runner=daemon=peer=None;cleanup=[]
@@ -186,12 +190,12 @@ def main():
                 argv=['python3',str(args.reference.resolve()/'server/iphone_use.py'),'--state-dir',str(private),'--url',f'http://127.0.0.1:{native_port}']
             peer=Peer(argv,peer_env,block_dir/'mcp.log')
             session_prepared=False; fixture_pid=None
-            def launch(trial,seed='short',shift=False,secure=False):
+            def launch(trial,seed='short',shift=False,secure=False,advance=False):
                 nonlocal session_prepared,fixture_pid
                 setup_started=time.monotonic()
                 if args.reset_mode=='file' and fixture_pid is not None:
                     temporary=documents/'paired-reset.json.tmp'
-                    temporary.write_text(json.dumps({'trial':trial,'seed':seed,'shift':shift,'secure':secure}))
+                    temporary.write_text(json.dumps({'trial':trial,'seed':seed,'shift':shift,'secure':secure,'advance':advance}))
                     temporary.replace(documents/'paired-reset.json')
                     pid=fixture_pid;setup={'trial':trial,'reset_mode':'owned_fixture_file','launched_pid':pid,'observations':[]}
                 else:
@@ -201,13 +205,14 @@ def main():
                     command=['xcrun','simctl','launch',udid,BUNDLE,'--trial',trial,'--seed',seed]
                     if shift:command.append('--shift')
                     if secure:command.append('--secure-focus')
+                    if advance:command.append('--advance-on-clear')
                     launched=fixture.command(*command,timeout=40)
                     pid=int(re.search(r': (\d+)$',launched).group(1));fixture_pid=pid
                     setup={'trial':trial,'reset_mode':'relaunch','launch_stdout':launched,'launched_pid':pid,'terminate_exit_code':stopped.returncode,'observations':[]}
                 until=time.monotonic()+15
                 while True:
                     s=state()
-                    if s.get('trial')==trial and s.get('pid')==pid and s.get('foreground_active') is True and s.get('keyboard_did_show') is True and s.get('focus')==('secure' if secure else 'a'):break
+                    if s.get('trial')==trial and s.get('title')=='Paired fixture '+trial and s.get('pid')==pid and s.get('foreground_active') is True and s.get('keyboard_did_show') is True and s.get('focus')==('secure' if secure else 'a'):break
                     setup['observations'].append({'app_receipt':s})
                     (block_dir/(trial+'-setup.json')).write_text(json.dumps(setup,ensure_ascii=False,indent=2)+'\n')
                     assert time.monotonic()<until,'fixture App initial state did not converge'
@@ -228,7 +233,7 @@ def main():
                     setup['observations'].append({'app_receipt':s,'runner_active_app':active})
                     setup['setup_ms']=round((time.monotonic()-setup_started)*1000,3)
                     (block_dir/(trial+'-setup.json')).write_text(json.dumps(setup,ensure_ascii=False,indent=2)+'\n')
-                    if s.get('trial')==trial and s.get('pid')==pid and s.get('foreground_active') is True and s.get('keyboard_did_show') is True and s.get('focus')==('secure' if secure else 'a') and active.get('bundleId')==BUNDLE and active.get('pid')==pid:
+                    if s.get('trial')==trial and s.get('title')=='Paired fixture '+trial and s.get('pid')==pid and s.get('foreground_active') is True and s.get('keyboard_did_show') is True and s.get('focus')==('secure' if secure else 'a') and active.get('bundleId')==BUNDLE and active.get('pid')==pid:
                         if args.probe_selection and backend=='native' and not secure:
                             path='/element/active';req=urllib.request.Request(f'http://127.0.0.1:{native_port}'+path,headers={'Authorization':authorization(token,'GET',path,b'')})
                             with opener.open(req,timeout=10) as response:node=json.load(response)['value']
@@ -241,15 +246,17 @@ def main():
                     assert time.monotonic()<until,'fixture/foreground PID initial state did not converge'
                     time.sleep(0.1)
             def call(task,arguments,trial_id,warmup=False):
-                tool={'screen':'phone_elements','long-value':'phone_read_value','replace':'phone_type','shift':'phone_type','secure':'phone_type'}[task] if backend=='native' else {'screen':'pua_observe','long-value':'pua_find','replace':'pua_type_text','shift':'pua_type_text','secure':'pua_type_text'}[task]
+                tool={'screen':'phone_elements','long-value':'phone_read_value','replace':'phone_type','shift':'phone_type','advance':'phone_type','secure':'phone_type'}[task] if backend=='native' else {'screen':'pua_observe','long-value':'pua_find','replace':'pua_type_text','shift':'pua_type_text','advance':'pua_type_text','secure':'pua_type_text'}[task]
                 resource_until=time.monotonic()+args.resource_wait_seconds
                 while args.max_load and os.getloadavg()[0]>args.max_load:
                     assert time.monotonic()<resource_until,'host resource gate exceeded; no next task dispatched'
                     time.sleep(1)
                 t=time.monotonic();record={'block':block_index,'backend':backend,'task':task,'trial_id':trial_id,'warmup':warmup,'tool':tool,'arguments':arguments,'host_load':os.getloadavg()}
                 try:
-                    reply=peer.request('tools/call',{'name':tool,'arguments':arguments,'host_load':os.getloadavg()});record['response_ms']=round((time.monotonic()-t)*1000,3);record['wire_bytes']=len(json.dumps(reply,ensure_ascii=False).encode());res,text,body=payload(reply);record['returned_error']=bool('error' in reply or res.get('isError'));record['content_text_bytes']=len(text.encode());record['image_blocks']=sum(x.get('type')=='image' for x in res.get('content',[]));record['reply']=reply
-                    if task=='screen':record['postcondition_match']=all(x in json.dumps(reply,ensure_ascii=False) for x in ['Paired fixture','field-a','field-b','field-secure','field-multiline'])
+                    reply=peer.request('tools/call',{'name':tool,'arguments':arguments});record['response_ms']=round((time.monotonic()-t)*1000,3);record['wire_bytes']=len(json.dumps(reply,ensure_ascii=False).encode());res,text,body=payload(reply);record['returned_error']=bool('error' in reply or res.get('isError'));record['content_text_bytes']=len(text.encode());record['image_blocks']=sum(x.get('type')=='image' for x in res.get('content',[]));record['reply']=reply
+                    if task=='screen':
+                        rendered=json.dumps(reply,ensure_ascii=False);record['expected_scene_title']='Paired fixture '+trial_id
+                        record['postcondition_match']=all(x in rendered for x in ['field-a','field-b','field-secure','field-multiline']) and re.search(re.escape(record['expected_scene_title'])+r'(?![A-Za-z0-9-])',rendered) is not None
                     elif task=='long-value':
                         value=body.get('value') if backend=='native' else next((x.get('value') for x in body.get('elements',[]) if x.get('name')=='field-a' or x.get('type')=='TextField'),None)
                         target='queue-deadline-'+'字'*6000;record['returned_characters']=len(value) if isinstance(value,str) else None;record['postcondition_match']=value==target
@@ -264,6 +271,14 @@ def main():
                         expected=arguments.get('text','');fields=last.get('fields',{});empty=hashlib.sha256(b'').hexdigest();wanted=hashlib.sha256(expected.encode()).hexdigest()
                         record['postcondition_match']=(fields.get('a',{}).get('sha256')==wanted and fields.get('b',{}).get('sha256')==empty) if task!='secure' else (fields.get('secure',{}).get('sha256')==hashlib.sha256(b'benchmark-secure-dummy').hexdigest() and not any(last.get('events',{}).values()))
                         if task=='shift':record['wrong_field_characters']=fields.get('b',{}).get('characters');record['shift_trigger_length']=last.get('shift_trigger_length')
+                        if task=='advance':
+                            record['advance_triggered']=last.get('advance_triggered')
+                            record['stop_policy_match']=last.get('advance_triggered') is True and fields.get('a',{}).get('sha256')==empty and fields.get('b',{}).get('sha256')==hashlib.sha256(b'keep-b').hexdigest()
+                            record['requested_text_match']=fields.get('a',{}).get('sha256')==wanted and fields.get('b',{}).get('sha256')==hashlib.sha256(b'keep-b').hexdigest()
+                            record['next_field_unchanged']=fields.get('b',{}).get('sha256')==hashlib.sha256(b'keep-b').hexdigest()
+                            record['postcondition_match']=None
+                            record['postcondition_kind']='focus-change policy observation'
+                            record['wrong_field_characters_delta']=(fields.get('b',{}).get('characters',0)-6)
                 except TimeoutError:
                     record.update(returned_error=True,outcome='unknown',timeout=True,response_ms=round((time.monotonic()-t)*1000,3))
                     # Continue observing this same response for cleanup only, never resend input.
@@ -294,12 +309,21 @@ def main():
             for i in range(args.reads if 'long-value' in tasks else 0):
                 trial=f'b{block_index}-long-{i}';initial=launch(trial,'long');target='queue-deadline-'+'字'*6000;assert initial['fields']['a']['sha256']==hashlib.sha256(target.encode()).hexdigest()
                 call('long-value',{'identifier':'field-a'} if backend=='native' else {'selector':{'name':'field-a','type':'TextField'},'limit':1},trial)
-            for task in [task for task in ['replace','shift','secure'] if task in tasks]:
-                for seed in replace_seeds if task=='replace' else ['short']:
-                    trial=f'b{block_index}-{task}-{seed}';launch(trial,seed,shift=task=='shift',secure=task=='secure')
-                    nonce=hashlib.sha256(('pair-'+str(block_index//2)).encode()).hexdigest()[:16];prefix='shift-focus-test-' if task=='shift' else 'queue-deadline-';text=prefix+nonce+'字'*(500-len(prefix)-len(nonce)) if task!='secure' else 'must-refuse'
-                    arguments={'text':text,'clear':True,'observe':False} if backend=='native' else {'text':text,'replace':True,'observe':'none','verify':False}
-                    record=call(task,arguments,trial);record['seed']=seed
+            for task in [task for task in ['replace','shift','advance','secure'] if task in tasks]:
+                for repetition in range(args.replace_repetitions if task=='replace' else 1):
+                    for seed in replace_seeds if task=='replace' else ['short']:
+                        trial=f'b{block_index}-{task}-{seed}-r{repetition}';launch(trial,seed,shift=task=='shift',secure=task=='secure',advance=task=='advance')
+                        nonce=hashlib.sha256(('pair-'+str(block_index//2)).encode()).hexdigest()[:16];prefix='shift-focus-test-' if task=='shift' else 'queue-deadline-';text=prefix+nonce+'字'*(args.input_length-len(prefix)-len(nonce)) if task!='secure' else 'must-refuse'
+                        arguments={'text':text,'clear':True,'observe':False} if backend=='native' else {'text':text,'replace':True,'observe':'none','verify':False}
+                        record=call(task,arguments,trial);record['seed']=seed;record['repetition']=repetition
+                        if task=='replace' and seed in ['ignore-once','ignore-all','selection-mutates','selection-partial']:
+                            receipt_state=record.get('app_receipt',{});fields=receipt_state.get('fields',{})
+                            record['selection_commands']=receipt_state.get('selection_commands')
+                            record['selection_fault_observed']=bool(receipt_state.get('selection_commands',0))
+                            if seed!='ignore-once':
+                                preserved='new-draft-middle' if seed=='selection-mutates' else 'old-draft-middle'
+                                record['refusal_preserved_value']=record.get('returned_error') is True and fields.get('a',{}).get('sha256')==hashlib.sha256(preserved.encode()).hexdigest() and fields.get('b',{}).get('sha256')==hashlib.sha256(b'').hexdigest()
+                                record['editing_events']=receipt_state.get('events')
             peer.close();peer=None;stop(daemon);daemon=None;stop(runner);runner=None
             # Both backends are fully stopped before another XCTest controller enters.
             bundle_path=path.parent/'Debug-iphonesimulator'/('iPhoneUse-Runner.app' if backend=='native' else 'WebDriverAgentRunner-Runner.app')/'Info.plist'
