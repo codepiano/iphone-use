@@ -1,0 +1,13 @@
+{
+  "scope": "local resource condition observed after the pilots; excludes all local pilot timings from a performance-win claim",
+  "local_ram_gib": 16,
+  "observed_swap_used_mib": 14300.94,
+  "observed_load_1m": 421.77,
+  "own_build_cancelled": true,
+  "own_build_processes_remaining": 0,
+  "other_sessions_terminated": false,
+  "remote_destination_verified": "separate Apple M4 build machine; aliases were verified before use",
+  "remote_xcode_per_command": "/Applications/Xcode-27.0.app/Contents/Developer",
+  "remote_sdk": "27.0",
+  "remote_runtime": "iOS 26.2; separate lane from local SDK 27.1 / iOS 27.0"
+}

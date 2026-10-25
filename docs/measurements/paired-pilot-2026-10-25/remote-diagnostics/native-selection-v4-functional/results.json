@@ -1,0 +1,1037 @@
+{
+  "scope": "paired model-free MCP operations; not physical-device/model/task/host superiority",
+  "reference_sha": "3ce9c080534e89fab91a237bf1c53a4a7e9d80a7",
+  "wda_sha": "d17782422d55ff1e5e0ceb74eb1fd509cc0c35b6",
+  "order": [
+    "native"
+  ],
+  "tasks": [
+    "replace",
+    "shift"
+  ],
+  "reference_frequency": 60,
+  "native_frequency": 60,
+  "selection_probe": true,
+  "native_structured": "full",
+  "reference_settle_seconds": 0,
+  "toolchain": "Xcode 27.0\nBuild version 27A266a",
+  "sdk": "27.0",
+  "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-2",
+  "host_cores": 10,
+  "max_load_gate": 0.0,
+  "native_build_profile": "debug candidate daemon/MCP; Debug XCTest bundles",
+  "trials": [
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "screen",
+      "trial_id": "block-0-warmup",
+      "warmup": true,
+      "tool": "phone_elements",
+      "arguments": {
+        "ocr": "off",
+        "limit": 200
+      },
+      "host_load": [
+        76.23681640625,
+        23.39306640625,
+        16.33056640625
+      ],
+      "response_ms": 446.582,
+      "wire_bytes": 9146,
+      "returned_error": false,
+      "content_text_bytes": 1481,
+      "image_blocks": 0,
+      "reply": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "snapshot U7H0SE-t_KCQC364eDzMYZ8UoMJVthtoxnyW1pYQz2A · 53 rows (tap: element=#N + snapshot)\n#0 [Application] \"InputGuard\"\n#1 [StaticText] \"Paired fixture\"\n#2 [TextField] \"Draft\" id=field-a value=old focused\n#3 [TextField] \"Draft\" id=field-b\n#4 [TextView] \"Multiline draft\"\n#7 [SecureTextField] \"Draft\" id=field-secure value=••••••••\n#13 [Key] \"q\"\n#14 [Key] \"w\"\n#15 [Key] \"e\"\n#16 [Key] \"r\"\n#17 [Key] \"t\"\n#18 [Key] \"y\"\n#19 [Key] \"u\"\n#20 [Key] \"i\"\n#21 [Key] \"o\"\n#22 [Key] \"p\"\n#25 [Key] \"a\"\n#26 [Key] \"s\"\n#27 [Key] \"d\"\n#28 [Key] \"f\"\n#29 [Key] \"g\"\n#30 [Key] \"h\"\n#31 [Key] \"j\"\n#32 [Key] \"k\"\n#33 [Key] \"l\"\n#35 [Button] \"shift\"\n#37 [Key] \"z\"\n#38 [Key] \"x\"\n#39 [Key] \"c\"\n#40 [Key] \"v\"\n#41 [Key] \"b\"\n#42 [Key] \"n\"\n#43 [Key] \"m\"\n#45 [Key] \"删除\"\n#46 [Key] \"数字\"\n#47 [Button] \"表情符号\"\n#48 [Key] \" \"\n#49 [Button] \"换行\"\n#50 [Button] \"Next keyboard\" value=English (US)\n#51 [Button] \"Dictate\" id=dictation\n#52 [Button] \"Dictate\" id=dictation\n(6 rows off-screen or not drawn: \"Padding-Left\", \"Padding-Right\", \"Padding-Left\", \"Padding-Right\", \"Padding-Left\", …)\n(6 decorative/layout rows omitted)\nfilter: {\"limit\":200,\"matched\":53,\"note\":\"indexes refer to the full read with this snapshot\",\"of\":53,\"omitted\":0,\"returned\":53}\nPartial view: missing rows do not prove absence or list completion; element indexes refer to the full snapshot.\nregistry: {\"flows\":[],\"key\":\"InputGuard\",\"next\":\"No saved flow for this app; the daemon will offer a draft after several steps.\"}"
+            }
+          ],
+          "structuredContent": {
+            "ax_stats": {
+              "container_only": false,
+              "coverage": 1.0,
+              "labeled_frac": 1.0,
+              "max_depth": 8,
+              "n": 53,
+              "n_interactive": 10,
+              "visibility": "geometric"
+            },
+            "elements": [
+              {
+                "depth": 0,
+                "index": 0,
+                "kind": "Application",
+                "label": "InputGuard",
+                "rect": [
+                  0,
+                  0,
+                  402,
+                  874
+                ]
+              },
+              {
+                "depth": 6,
+                "identifier": "fixture-title",
+                "index": 1,
+                "kind": "StaticText",
+                "label": "Paired fixture",
+                "rect": [
+                  24,
+                  80,
+                  354,
+                  26.33333333333333
+                ]
+              },
+              {
+                "depth": 6,
+                "focused": true,
+                "identifier": "field-a",
+                "index": 2,
+                "kind": "TextField",
+                "label": "Draft",
+                "rect": [
+                  24,
+                  126.33333333333331,
+                  354,
+                  47.999999999999986
+                ],
+                "value": "old"
+              },
+              {
+                "depth": 6,
+                "identifier": "field-b",
+                "index": 3,
+                "kind": "TextField",
+                "label": "Draft",
+                "rect": [
+                  24,
+                  194.33333333333337,
+                  354,
+                  48
+                ]
+              },
+              {
+                "depth": 6,
+                "identifier": "field-multiline",
+                "index": 4,
+                "kind": "TextView",
+                "label": "Multiline draft",
+                "rect": [
+                  24,
+                  262.3333333333333,
+                  354,
+                  80
+                ]
+              },
+              {
+                "depth": 7,
+                "index": 5,
+                "kind": "Other",
+                "label": "Vertical scroll bar, 1 pages",
+                "rect": [
+                  345,
+                  262.3333333333333,
+                  30,
+                  80
+                ],
+                "value": "0%"
+              },
+              {
+                "depth": 7,
+                "index": 6,
+                "kind": "Other",
+                "label": "Horizontal scroll bar, 1 pages",
+                "rect": [
+                  24,
+                  309.3333333333333,
+                  354,
+                  30
+                ],
+                "value": "0%"
+              },
+              {
+                "depth": 6,
+                "identifier": "field-secure",
+                "index": 7,
+                "kind": "SecureTextField",
+                "label": "Draft",
+                "rect": [
+                  24,
+                  362.33333333333326,
+                  354,
+                  48
+                ],
+                "value": "••••••••"
+              },
+              {
+                "depth": 4,
+                "identifier": "inputView",
+                "index": 8,
+                "kind": "Other",
+                "label": "inputView",
+                "rect": [
+                  0,
+                  538,
+                  402,
+                  336
+                ]
+              },
+              {
+                "depth": 4,
+                "identifier": "SystemInputAssistantView",
+                "index": 9,
+                "kind": "Other",
+                "label": "SystemInputAssistantView",
+                "rect": [
+                  0,
+                  538,
+                  402,
+                  45
+                ]
+              },
+              {
+                "depth": 6,
+                "identifier": "CenterPageView",
+                "index": 10,
+                "kind": "Other",
+                "label": "CenterPageView",
+                "rect": [
+                  0,
+                  538,
+                  402,
+                  45
+                ]
+              },
+              {
+                "depth": 7,
+                "identifier": "UIKeyboardLayoutStar Preview",
+                "index": 11,
+                "kind": "Other",
+                "label": "UIKeyboardLayoutStar Preview",
+                "rect": [
+                  0,
+                  583,
+                  402,
+                  233
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 12,
+                "kind": "Key",
+                "label": "Padding-Left",
+                "rect": [
+                  0,
+                  583,
+                  0,
+                  0
+                ],
+                "visible": false
+              },
+              {
+                "depth": 8,
+                "index": 13,
+                "kind": "Key",
+                "label": "q",
+                "rect": [
+                  4.666666666666657,
+                  590,
+                  39.333333333333336,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 14,
+                "kind": "Key",
+                "label": "w",
+                "rect": [
+                  44,
+                  590,
+                  39.66666666666666,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 15,
+                "kind": "Key",
+                "label": "e",
+                "rect": [
+                  83.66666666666666,
+                  590,
+                  39.33333333333334,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 16,
+                "kind": "Key",
+                "label": "r",
+                "rect": [
+                  123,
+                  590,
+                  39.66666666666667,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 17,
+                "kind": "Key",
+                "label": "t",
+                "rect": [
+                  162.66666666666666,
+                  590,
+                  39.33333333333334,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 18,
+                "kind": "Key",
+                "label": "y",
+                "rect": [
+                  202,
+                  590,
+                  39.66666666666666,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 19,
+                "kind": "Key",
+                "label": "u",
+                "rect": [
+                  241.66666666666669,
+                  590,
+                  39.333333333333314,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 20,
+                "kind": "Key",
+                "label": "i",
+                "rect": [
+                  281,
+                  590,
+                  39.666666666666686,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 21,
+                "kind": "Key",
+                "label": "o",
+                "rect": [
+                  320.66666666666663,
+                  590,
+                  39.333333333333314,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 22,
+                "kind": "Key",
+                "label": "p",
+                "rect": [
+                  360,
+                  590,
+                  39.666666666666686,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 23,
+                "kind": "Key",
+                "label": "Padding-Right",
+                "rect": [
+                  0,
+                  583,
+                  0,
+                  0
+                ],
+                "visible": false
+              },
+              {
+                "depth": 8,
+                "index": 24,
+                "kind": "Key",
+                "label": "Padding-Left",
+                "rect": [
+                  0,
+                  583,
+                  0,
+                  0
+                ],
+                "visible": false
+              },
+              {
+                "depth": 8,
+                "index": 25,
+                "kind": "Key",
+                "label": "a",
+                "rect": [
+                  24.33333333333332,
+                  644,
+                  39.33333333333334,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 26,
+                "kind": "Key",
+                "label": "s",
+                "rect": [
+                  63.66666666666666,
+                  644,
+                  39.66666666666666,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 27,
+                "kind": "Key",
+                "label": "d",
+                "rect": [
+                  103.33333333333331,
+                  644,
+                  39.33333333333334,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 28,
+                "kind": "Key",
+                "label": "f",
+                "rect": [
+                  142.66666666666666,
+                  644,
+                  39.66666666666666,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 29,
+                "kind": "Key",
+                "label": "g",
+                "rect": [
+                  182.33333333333337,
+                  644,
+                  39.33333333333334,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 30,
+                "kind": "Key",
+                "label": "h",
+                "rect": [
+                  221.66666666666663,
+                  644,
+                  39.66666666666666,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 31,
+                "kind": "Key",
+                "label": "j",
+                "rect": [
+                  261.33333333333326,
+                  644,
+                  39.333333333333314,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 32,
+                "kind": "Key",
+                "label": "k",
+                "rect": [
+                  300.66666666666663,
+                  644,
+                  39.666666666666686,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 33,
+                "kind": "Key",
+                "label": "l",
+                "rect": [
+                  340.33333333333326,
+                  644,
+                  39.333333333333314,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 34,
+                "kind": "Key",
+                "label": "Padding-Right",
+                "rect": [
+                  0,
+                  583,
+                  0,
+                  0
+                ],
+                "visible": false
+              },
+              {
+                "depth": 8,
+                "identifier": "shift",
+                "index": 35,
+                "kind": "Button",
+                "label": "shift",
+                "rect": [
+                  4.666666666666657,
+                  698,
+                  51.333333333333336,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 36,
+                "kind": "Key",
+                "label": "Padding-Left",
+                "rect": [
+                  0,
+                  583,
+                  0,
+                  0
+                ],
+                "visible": false
+              },
+              {
+                "depth": 8,
+                "index": 37,
+                "kind": "Key",
+                "label": "z",
+                "rect": [
+                  63.66666666666666,
+                  698,
+                  39.66666666666666,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 38,
+                "kind": "Key",
+                "label": "x",
+                "rect": [
+                  103.33333333333331,
+                  698,
+                  39.33333333333334,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 39,
+                "kind": "Key",
+                "label": "c",
+                "rect": [
+                  142.66666666666666,
+                  698,
+                  39.66666666666666,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 40,
+                "kind": "Key",
+                "label": "v",
+                "rect": [
+                  182.33333333333337,
+                  698,
+                  39.33333333333334,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 41,
+                "kind": "Key",
+                "label": "b",
+                "rect": [
+                  221.66666666666663,
+                  698,
+                  39.66666666666666,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 42,
+                "kind": "Key",
+                "label": "n",
+                "rect": [
+                  261.33333333333326,
+                  698,
+                  39.333333333333314,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 43,
+                "kind": "Key",
+                "label": "m",
+                "rect": [
+                  300.66666666666663,
+                  698,
+                  39.666666666666686,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "index": 44,
+                "kind": "Key",
+                "label": "Padding-Right",
+                "rect": [
+                  0,
+                  583,
+                  0,
+                  0
+                ],
+                "visible": false
+              },
+              {
+                "depth": 8,
+                "identifier": "delete",
+                "index": 45,
+                "kind": "Key",
+                "label": "删除",
+                "rect": [
+                  348,
+                  698,
+                  51.666666666666686,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "identifier": "more",
+                "index": 46,
+                "kind": "Key",
+                "label": "数字",
+                "rect": [
+                  4.666666666666657,
+                  752,
+                  49.333333333333336,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "identifier": "emoji",
+                "index": 47,
+                "kind": "Button",
+                "label": "表情符号",
+                "rect": [
+                  53.999999999999986,
+                  752,
+                  49.33333333333333,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "identifier": "space",
+                "index": 48,
+                "kind": "Key",
+                "label": " ",
+                "rect": [
+                  103.3333333333333,
+                  752,
+                  197.33333333333331,
+                  54
+                ]
+              },
+              {
+                "depth": 8,
+                "identifier": "Return",
+                "index": 49,
+                "kind": "Button",
+                "label": "换行",
+                "rect": [
+                  300.66666666666663,
+                  752,
+                  99,
+                  54
+                ]
+              },
+              {
+                "depth": 5,
+                "index": 50,
+                "kind": "Button",
+                "label": "Next keyboard",
+                "rect": [
+                  8.47726568115926,
+                  805.6989567998571,
+                  68.0852958475086,
+                  68.73516393505099
+                ],
+                "value": "English (US)"
+              },
+              {
+                "depth": 5,
+                "identifier": "dictation",
+                "index": 51,
+                "kind": "Button",
+                "label": "Dictate",
+                "rect": [
+                  325.43743847133214,
+                  805.3656234665239,
+                  68.08529584750863,
+                  68.73516393505099
+                ]
+              },
+              {
+                "depth": 5,
+                "identifier": "dictation",
+                "index": 52,
+                "kind": "Button",
+                "label": "Dictate",
+                "rect": [
+                  325.43743847133214,
+                  805.3656234665239,
+                  68.08529584750863,
+                  68.73516393505099
+                ]
+              }
+            ],
+            "filter": {
+              "limit": 200,
+              "matched": 53,
+              "note": "indexes refer to the full read with this snapshot",
+              "of": 53,
+              "omitted": 0,
+              "returned": 53
+            },
+            "registry": {
+              "flows": [],
+              "key": "InputGuard",
+              "next": "No saved flow for this app; the daemon will offer a draft after several steps."
+            },
+            "screen": {
+              "height": 874.0,
+              "width": 402.0
+            },
+            "snapshot": "U7H0SE-t_KCQC364eDzMYZ8UoMJVthtoxnyW1pYQz2A",
+            "timing": {
+              "daemon_ms": 10,
+              "runner": [
+                {
+                  "bytes": 21217,
+                  "call": "GET /source",
+                  "count": 1,
+                  "ms": 122
+                }
+              ],
+              "runner_ms": 122,
+              "total_ms": 132
+            },
+            "tree_returned_at_ms": 1792914328694
+          },
+          "isError": false
+        }
+      },
+      "postcondition_match": true
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "replace",
+      "trial_id": "b0-replace",
+      "warmup": false,
+      "tool": "phone_type",
+      "arguments": {
+        "text": "queue-deadline-7e30128fb1ce7fdc字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字",
+        "clear": true,
+        "observe": false
+      },
+      "host_load": [
+        76.23681640625,
+        23.39306640625,
+        16.33056640625
+      ],
+      "response_ms": 9938.114,
+      "wire_bytes": 445,
+      "returned_error": false,
+      "content_text_bytes": 2,
+      "image_blocks": 0,
+      "reply": {
+        "jsonrpc": "2.0",
+        "id": 4,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "ok"
+            }
+          ],
+          "structuredContent": {
+            "ok": true,
+            "timing": {
+              "daemon_ms": 6,
+              "runner": [
+                {
+                  "bytes": 58,
+                  "call": "GET /wda/input-target",
+                  "count": 1,
+                  "ms": 37
+                },
+                {
+                  "bytes": 14,
+                  "call": "POST /element/:id/clear",
+                  "count": 1,
+                  "ms": 886
+                },
+                {
+                  "bytes": 42,
+                  "call": "POST /wda/keys",
+                  "count": 3,
+                  "ms": 8998
+                }
+              ],
+              "runner_ms": 9921,
+              "total_ms": 9927
+            },
+            "transport": "runner"
+          },
+          "isError": false
+        }
+      },
+      "app_receipt": {
+        "events": {
+          "a": 501,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 500,
+            "sha256": "75be777a481ab756adfdd142c0f6e206da0a6097863ad4630a8fbe4e13090771"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "pid": 17585,
+        "shift_trigger_length": 0,
+        "trial": "b0-replace"
+      },
+      "postcondition_observed_ms": 10335.778,
+      "postcondition_match": true,
+      "selection_after": {
+        "status": 200,
+        "value": {
+          "length": 0,
+          "location": 500,
+          "can_select": true,
+          "utf16_length": 500
+        }
+      }
+    },
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "shift",
+      "trial_id": "b0-shift",
+      "warmup": false,
+      "tool": "phone_type",
+      "arguments": {
+        "text": "shift-focus-test-7e30128fb1ce7fdc字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字",
+        "clear": true,
+        "observe": false
+      },
+      "host_load": [
+        111.572265625,
+        33.9345703125,
+        20.22265625
+      ],
+      "response_ms": 1156.79,
+      "wire_bytes": 1279,
+      "returned_error": true,
+      "content_text_bytes": 568,
+      "image_blocks": 0,
+      "reply": {
+        "jsonrpc": "2.0",
+        "id": 5,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "HTTP 502 Bad Gateway error=outcome_unknown outcome=unknown retry_safe=false: {\"error\":\"outcome_unknown\",\"ok\":false,\"outcome\":\"unknown\",\"retry_safe\":false,\"runner_error\":{\"call\":\"POST guarded element/clear\",\"code\":\"unknown error\",\"message\":\"AX selection could not be confirmed: full selection could not be confirmed; no delete was sent; no delete was sent\",\"status\":500},\"timing\":{\"daemon_ms\":2,\"runner\":[{\"bytes\":58,\"call\":\"GET /wda/input-target\",\"count\":1,\"ms\":30},{\"bytes\":162,\"call\":\"POST /element/:id/clear\",\"count\":1,\"ms\":1116}],\"runner_ms\":1146,\"total_ms\":1148}}"
+            }
+          ],
+          "structuredContent": {
+            "error": "outcome_unknown",
+            "ok": false,
+            "outcome": "unknown",
+            "retry_safe": false,
+            "runner_error": {
+              "call": "POST guarded element/clear",
+              "code": "unknown error",
+              "message": "AX selection could not be confirmed: full selection could not be confirmed; no delete was sent; no delete was sent",
+              "status": 500
+            },
+            "timing": {
+              "daemon_ms": 2,
+              "runner": [
+                {
+                  "bytes": 58,
+                  "call": "GET /wda/input-target",
+                  "count": 1,
+                  "ms": 30
+                },
+                {
+                  "bytes": 162,
+                  "call": "POST /element/:id/clear",
+                  "count": 1,
+                  "ms": 1116
+                }
+              ],
+              "runner_ms": 1146,
+              "total_ms": 1148
+            }
+          },
+          "isError": true
+        }
+      },
+      "app_receipt": {
+        "events": {
+          "a": 0,
+          "b": 0,
+          "multi": 0,
+          "secure": 0
+        },
+        "fields": {
+          "a": {
+            "characters": 3,
+            "sha256": "cba06b5736faf67e54b07b561eae94395e774c517a7d910a54369e1263ccfbd4"
+          },
+          "b": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "multi": {
+            "characters": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "secure": {
+            "characters": 22,
+            "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+          }
+        },
+        "focus": "a",
+        "foreground_active": true,
+        "initial_focus_established": true,
+        "pid": 17630,
+        "shift_trigger_length": 0,
+        "trial": "b0-shift"
+      },
+      "postcondition_observed_ms": 1537.601,
+      "postcondition_match": false,
+      "wrong_field_characters": 0,
+      "shift_trigger_length": 0,
+      "selection_after": {
+        "status": 200,
+        "value": {
+          "can_select": true,
+          "utf16_length": 3,
+          "location": 3,
+          "length": 0
+        }
+      }
+    }
+  ],
+  "blocks": [
+    {
+      "backend": "native",
+      "index": 0,
+      "startup_ms": 9151,
+      "stopped_before_next": true
+    }
+  ],
+  "sources_at_start": {
+    "scripts/compare-native-wda-simulator.py": "291cd02cb0f89f9f4308711c1cb4faee1ba040d98a3651a12307e0403ed2f48f",
+    "scripts/paired-bench-fixture.swift": "d48fc9418339b011ebc8d5e4090e1f00fdd999ddae165de3b3bac467bb15894c",
+    "scripts/test-input-target-simulator.py": "95baca16a3d670c85b5034fd8c667a696e7c5142ec0c8511d7b275a2cba3ba6a",
+    "crates/server/src/http.rs": "305ea1d61883d60a9891b672d941c47599e90693e1c5695c4dbf469b14b49081",
+    "crates/server/src/runner.rs": "02d95c6270bc7ccf3e7373b80c78d8e117d95c4534515ef55cab19744da8798d",
+    "crates/mcp/src/server.rs": "fee1344bb3bb909cf67c900097685bfec894a150d632cba822d0d5a46bc9c082",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerRoutes.swift": "d079a18b2e29a9dfde036cfa6d0e763188761e7b7e07cebc30bf61e16ae3b9a9",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m": "af7262e7b3212f365193fea2d5f5dee1b25937b1f0fe710dc0d7bfce1d714ada",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.h": "50ee17d031adabc5160d977350152096ea9c1984db58506502ca99a92b16312d"
+  },
+  "native_revision": "32916100067bf0d6aa181038b799510abe18dbeb",
+  "simulator": "A131AD87-E992-49AC-B0F9-0BBA2C7ECDB4",
+  "cleanup_errors": [],
+  "sources": {
+    "scripts/compare-native-wda-simulator.py": "291cd02cb0f89f9f4308711c1cb4faee1ba040d98a3651a12307e0403ed2f48f",
+    "scripts/paired-bench-fixture.swift": "d48fc9418339b011ebc8d5e4090e1f00fdd999ddae165de3b3bac467bb15894c",
+    "scripts/test-input-target-simulator.py": "95baca16a3d670c85b5034fd8c667a696e7c5142ec0c8511d7b275a2cba3ba6a",
+    "crates/server/src/http.rs": "305ea1d61883d60a9891b672d941c47599e90693e1c5695c4dbf469b14b49081",
+    "crates/server/src/runner.rs": "02d95c6270bc7ccf3e7373b80c78d8e117d95c4534515ef55cab19744da8798d",
+    "crates/mcp/src/server.rs": "fee1344bb3bb909cf67c900097685bfec894a150d632cba822d0d5a46bc9c082",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerRoutes.swift": "d079a18b2e29a9dfde036cfa6d0e763188761e7b7e07cebc30bf61e16ae3b9a9",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m": "af7262e7b3212f365193fea2d5f5dee1b25937b1f0fe710dc0d7bfce1d714ada",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.h": "50ee17d031adabc5160d977350152096ea9c1984db58506502ca99a92b16312d"
+  },
+  "sources_changed_during_run": [],
+  "runtime_binary_hashes": {
+    "native_runner": "caf848303ae001da145aaf958dfaa1105488ace1151afff5c44f93381c4a9a05",
+    "wda_runner": "25daa27544fef4f41c5ac5cfe237cd44569f56374258a54c2df6fd65f5b4a92a",
+    "wda_framework": "157908eb9ee88f8ed41288854410196bbb555c0e9cd9c77fcc7e672edf4855da"
+  },
+  "binaries": {
+    "daemon": "da412830d2006e558cfe172c89c8989d60f84d4ca3d4ac2648bf70d9a2b8d53d",
+    "mcp": "dcb34546a82ac94f8c31dd23c31a82653c1f720d69ca0866f79add3dfa4f8923",
+    "fixture": "e58c2c9a86e779eb6c9320049105b9aac52990b5002d39121fc1fe41d07513c3",
+    "native_xctestrun": "b451ce398fa218d683575378eb95649465ac9fa2908bbc95c13c3bad146d2f25",
+    "wda_xctestrun": "2cebcd53dfb403ea90393df6b59ec252df0c2c18e6eb9271f3a14bd4d0a331ba"
+  }
+}

@@ -13,9 +13,13 @@ Baseline inspected on 2026-10-24:
 - Reference implementation paths: `server/wda_controller.py`,
   `tests/test_latency.py`, `workbuddy/`, `doubao/`,
   `skills/iphone-use/references/app-snapshots.md`.
-- This is a source comparison. Neither product has been run in a controlled
-  head-to-head trial in this work. The reference's published timings are not
-  independent measurements.
+- The initial assessment was a source comparison. Subsequent
+  [paired operation diagnostics](../measurements/paired-pilot-2026-10-25/README.md)
+  run both actual MCP implementations and the reference's pinned WDA on one
+  owned Simulator. These model-free functional pilots retain native clearing
+  failures and uncontrolled resource conditions. They do not establish a
+  task-latency win, real model turns or physical-device superiority. The
+  reference's published timings are not independent measurements.
 
 | Area | Required outcome | Evidence still required |
 | --- | --- | --- |

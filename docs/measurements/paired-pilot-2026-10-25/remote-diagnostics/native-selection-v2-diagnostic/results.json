@@ -1,0 +1,68 @@
+{
+  "scope": "paired model-free MCP operations; not physical-device/model/task/host superiority",
+  "reference_sha": "3ce9c080534e89fab91a237bf1c53a4a7e9d80a7",
+  "wda_sha": "d17782422d55ff1e5e0ceb74eb1fd509cc0c35b6",
+  "order": [
+    "native"
+  ],
+  "reference_frequency": 60,
+  "native_frequency": 60,
+  "selection_probe": true,
+  "native_structured": "full",
+  "reference_settle_seconds": 0,
+  "toolchain": "Xcode 27.0\nBuild version 27A266a",
+  "sdk": "27.0",
+  "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-2",
+  "host_cores": 10,
+  "max_load_gate": 20.0,
+  "native_build_profile": "debug candidate daemon/MCP; Debug XCTest bundles",
+  "trials": [],
+  "blocks": [
+    {
+      "backend": "native",
+      "index": 0,
+      "startup_ms": 7478
+    }
+  ],
+  "sources_at_start": {
+    "scripts/compare-native-wda-simulator.py": "370d8a62e6a5d5de7107155f88b43732905e792b37d4993c9644c3cb0dfcb98e",
+    "scripts/paired-bench-fixture.swift": "d48fc9418339b011ebc8d5e4090e1f00fdd999ddae165de3b3bac467bb15894c",
+    "scripts/test-input-target-simulator.py": "95baca16a3d670c85b5034fd8c667a696e7c5142ec0c8511d7b275a2cba3ba6a",
+    "crates/server/src/http.rs": "305ea1d61883d60a9891b672d941c47599e90693e1c5695c4dbf469b14b49081",
+    "crates/server/src/runner.rs": "02d95c6270bc7ccf3e7373b80c78d8e117d95c4534515ef55cab19744da8798d",
+    "crates/mcp/src/server.rs": "fee1344bb3bb909cf67c900097685bfec894a150d632cba822d0d5a46bc9c082",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerRoutes.swift": "a6711d577c911d49c7b696c4ba3c553ae4cf9522478983ac9261e81008ab42e8",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m": "18ff800c5b9d6780f269c36f62c6b325ab563a0a39820247cbe99f583444f28b",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.h": "3fc4c627a8dc8476e5c848994c7cea20362e5fe90688640cafdd2ae3d8cf5270"
+  },
+  "native_revision": "32916100067bf0d6aa181038b799510abe18dbeb",
+  "simulator": "23FF4042-AD81-45E2-9779-140C3621A186",
+  "error_type": "AssertionError",
+  "error": "host resource gate exceeded; no next task dispatched",
+  "traceback": "Traceback (most recent call last):\n  File \"/private/tmp/iphone-use-paired-01a16e44-20261025/native/scripts/compare-native-wda-simulator.py\", line 263, in main\n    warm_result=call('screen',warm_args,warm,True)\n  File \"/private/tmp/iphone-use-paired-01a16e44-20261025/native/scripts/compare-native-wda-simulator.py\", line 233, in call\n    assert time.monotonic()<resource_until,'host resource gate exceeded; no next task dispatched'\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: host resource gate exceeded; no next task dispatched\n",
+  "cleanup_errors": [],
+  "sources": {
+    "scripts/compare-native-wda-simulator.py": "370d8a62e6a5d5de7107155f88b43732905e792b37d4993c9644c3cb0dfcb98e",
+    "scripts/paired-bench-fixture.swift": "d48fc9418339b011ebc8d5e4090e1f00fdd999ddae165de3b3bac467bb15894c",
+    "scripts/test-input-target-simulator.py": "95baca16a3d670c85b5034fd8c667a696e7c5142ec0c8511d7b275a2cba3ba6a",
+    "crates/server/src/http.rs": "305ea1d61883d60a9891b672d941c47599e90693e1c5695c4dbf469b14b49081",
+    "crates/server/src/runner.rs": "02d95c6270bc7ccf3e7373b80c78d8e117d95c4534515ef55cab19744da8798d",
+    "crates/mcp/src/server.rs": "fee1344bb3bb909cf67c900097685bfec894a150d632cba822d0d5a46bc9c082",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerRoutes.swift": "a6711d577c911d49c7b696c4ba3c553ae4cf9522478983ac9261e81008ab42e8",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m": "18ff800c5b9d6780f269c36f62c6b325ab563a0a39820247cbe99f583444f28b",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.h": "3fc4c627a8dc8476e5c848994c7cea20362e5fe90688640cafdd2ae3d8cf5270"
+  },
+  "sources_changed_during_run": [],
+  "runtime_binary_hashes": {
+    "native_runner": "7f94323e83daf2152de8cc9a7b981a104253f6e87121bad0109e853f572c444d",
+    "wda_runner": "25daa27544fef4f41c5ac5cfe237cd44569f56374258a54c2df6fd65f5b4a92a",
+    "wda_framework": "157908eb9ee88f8ed41288854410196bbb555c0e9cd9c77fcc7e672edf4855da"
+  },
+  "binaries": {
+    "daemon": "da412830d2006e558cfe172c89c8989d60f84d4ca3d4ac2648bf70d9a2b8d53d",
+    "mcp": "dcb34546a82ac94f8c31dd23c31a82653c1f720d69ca0866f79add3dfa4f8923",
+    "fixture": "e58c2c9a86e779eb6c9320049105b9aac52990b5002d39121fc1fe41d07513c3",
+    "native_xctestrun": "b451ce398fa218d683575378eb95649465ac9fa2908bbc95c13c3bad146d2f25",
+    "wda_xctestrun": "2cebcd53dfb403ea90393df6b59ec252df0c2c18e6eb9271f3a14bd4d0a331ba"
+  }
+}

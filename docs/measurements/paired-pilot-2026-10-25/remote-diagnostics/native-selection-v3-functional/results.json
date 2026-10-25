@@ -1,0 +1,322 @@
+{
+  "scope": "paired model-free MCP operations; not physical-device/model/task/host superiority",
+  "reference_sha": "3ce9c080534e89fab91a237bf1c53a4a7e9d80a7",
+  "wda_sha": "d17782422d55ff1e5e0ceb74eb1fd509cc0c35b6",
+  "order": [
+    "native"
+  ],
+  "tasks": [
+    "replace",
+    "shift"
+  ],
+  "reference_frequency": 60,
+  "native_frequency": 60,
+  "selection_probe": true,
+  "native_structured": "full",
+  "reference_settle_seconds": 0,
+  "toolchain": "Xcode 27.0\nBuild version 27A266a",
+  "sdk": "27.0",
+  "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-2",
+  "host_cores": 10,
+  "max_load_gate": 0.0,
+  "native_build_profile": "debug candidate daemon/MCP; Debug XCTest bundles",
+  "trials": [
+    {
+      "block": 0,
+      "backend": "native",
+      "task": "screen",
+      "trial_id": "block-0-warmup",
+      "warmup": true,
+      "tool": "phone_elements",
+      "arguments": {
+        "ocr": "off",
+        "limit": 200
+      },
+      "host_load": [
+        76.2275390625,
+        26.662109375,
+        16.70654296875
+      ],
+      "response_ms": 215.317,
+      "wire_bytes": 3647,
+      "returned_error": false,
+      "content_text_bytes": 881,
+      "image_blocks": 0,
+      "reply": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "snapshot 5_NT6giGa1bX0SRMx_EFDK47fkabhhkYj14leBrIcgQ · 13 rows (tap: element=#N + snapshot)\n#0 [Application] \"InputGuard\"\n#1 [StaticText] \"Paired fixture\"\n#2 [TextField] \"Draft\" id=field-a value=old focused\n#3 [TextField] \"Draft\" id=field-b\n#4 [TextView] \"Multiline draft\"\n#7 [SecureTextField] \"Draft\" id=field-secure value=••••••••\n#10 [StaticText] \"Speed up your typing by sliding your finger across the letters to compose a word…\"\n#11 [Button] \"Continue\"\n(5 decorative/layout rows omitted)\nfilter: {\"limit\":200,\"matched\":13,\"note\":\"indexes refer to the full read with this snapshot\",\"of\":13,\"omitted\":0,\"returned\":13}\nPartial view: missing rows do not prove absence or list completion; element indexes refer to the full snapshot.\nregistry: {\"flows\":[],\"key\":\"InputGuard\",\"next\":\"No saved flow for this app; the daemon will offer a draft after several steps.\"}"
+            }
+          ],
+          "structuredContent": {
+            "ax_stats": {
+              "container_only": false,
+              "coverage": 1.0,
+              "labeled_frac": 1.0,
+              "max_depth": 9,
+              "n": 13,
+              "n_interactive": 5,
+              "visibility": "geometric"
+            },
+            "elements": [
+              {
+                "depth": 0,
+                "index": 0,
+                "kind": "Application",
+                "label": "InputGuard",
+                "rect": [
+                  0,
+                  0,
+                  402,
+                  874
+                ]
+              },
+              {
+                "depth": 6,
+                "identifier": "fixture-title",
+                "index": 1,
+                "kind": "StaticText",
+                "label": "Paired fixture",
+                "rect": [
+                  24,
+                  80,
+                  354,
+                  26.33333333333333
+                ]
+              },
+              {
+                "depth": 6,
+                "focused": true,
+                "identifier": "field-a",
+                "index": 2,
+                "kind": "TextField",
+                "label": "Draft",
+                "rect": [
+                  24,
+                  126.33333333333331,
+                  354,
+                  47.999999999999986
+                ],
+                "value": "old"
+              },
+              {
+                "depth": 6,
+                "identifier": "field-b",
+                "index": 3,
+                "kind": "TextField",
+                "label": "Draft",
+                "rect": [
+                  24,
+                  194.33333333333337,
+                  354,
+                  48
+                ]
+              },
+              {
+                "depth": 6,
+                "identifier": "field-multiline",
+                "index": 4,
+                "kind": "TextView",
+                "label": "Multiline draft",
+                "rect": [
+                  24,
+                  262.3333333333333,
+                  354,
+                  80
+                ]
+              },
+              {
+                "depth": 7,
+                "index": 5,
+                "kind": "Other",
+                "label": "Vertical scroll bar, 1 pages",
+                "rect": [
+                  345,
+                  262.3333333333333,
+                  30,
+                  80
+                ],
+                "value": "0%"
+              },
+              {
+                "depth": 7,
+                "index": 6,
+                "kind": "Other",
+                "label": "Horizontal scroll bar, 1 pages",
+                "rect": [
+                  24,
+                  309.3333333333333,
+                  354,
+                  30
+                ],
+                "value": "0%"
+              },
+              {
+                "depth": 6,
+                "identifier": "field-secure",
+                "index": 7,
+                "kind": "SecureTextField",
+                "label": "Draft",
+                "rect": [
+                  24,
+                  362.33333333333326,
+                  354,
+                  48
+                ],
+                "value": "••••••••"
+              },
+              {
+                "depth": 4,
+                "identifier": "inputView",
+                "index": 8,
+                "kind": "Other",
+                "label": "inputView",
+                "rect": [
+                  0,
+                  538,
+                  402,
+                  336
+                ]
+              },
+              {
+                "depth": 4,
+                "identifier": "UIContinuousPathIntroductionView",
+                "index": 9,
+                "kind": "Other",
+                "label": "UIContinuousPathIntroductionView",
+                "rect": [
+                  0,
+                  538,
+                  402,
+                  336
+                ]
+              },
+              {
+                "depth": 9,
+                "index": 10,
+                "kind": "StaticText",
+                "label": "Speed up your typing by sliding your finger across the letters to compose a word.",
+                "rect": [
+                  41,
+                  736.3333333333335,
+                  320,
+                  46.33333333333337
+                ]
+              },
+              {
+                "depth": 6,
+                "index": 11,
+                "kind": "Button",
+                "label": "Continue",
+                "rect": [
+                  89,
+                  819,
+                  224,
+                  21
+                ]
+              },
+              {
+                "depth": 7,
+                "index": 12,
+                "kind": "StaticText",
+                "label": "Continue",
+                "rect": [
+                  163,
+                  818.3333333333333,
+                  76,
+                  22
+                ]
+              }
+            ],
+            "filter": {
+              "limit": 200,
+              "matched": 13,
+              "note": "indexes refer to the full read with this snapshot",
+              "of": 13,
+              "omitted": 0,
+              "returned": 13
+            },
+            "registry": {
+              "flows": [],
+              "key": "InputGuard",
+              "next": "No saved flow for this app; the daemon will offer a draft after several steps."
+            },
+            "screen": {
+              "height": 874.0,
+              "width": 402.0
+            },
+            "snapshot": "5_NT6giGa1bX0SRMx_EFDK47fkabhhkYj14leBrIcgQ",
+            "timing": {
+              "daemon_ms": 12,
+              "runner": [
+                {
+                  "bytes": 8630,
+                  "call": "GET /source",
+                  "count": 1,
+                  "ms": 182
+                }
+              ],
+              "runner_ms": 182,
+              "total_ms": 194
+            },
+            "tree_returned_at_ms": 1792913761145
+          },
+          "isError": false
+        }
+      },
+      "postcondition_match": true
+    }
+  ],
+  "blocks": [
+    {
+      "backend": "native",
+      "index": 0,
+      "startup_ms": 8721
+    }
+  ],
+  "sources_at_start": {
+    "scripts/compare-native-wda-simulator.py": "10394d641c842475ef34b14cb9ee2e888934a6da32b6fb68bd54ef3783173f1e",
+    "scripts/paired-bench-fixture.swift": "d48fc9418339b011ebc8d5e4090e1f00fdd999ddae165de3b3bac467bb15894c",
+    "scripts/test-input-target-simulator.py": "95baca16a3d670c85b5034fd8c667a696e7c5142ec0c8511d7b275a2cba3ba6a",
+    "crates/server/src/http.rs": "305ea1d61883d60a9891b672d941c47599e90693e1c5695c4dbf469b14b49081",
+    "crates/server/src/runner.rs": "02d95c6270bc7ccf3e7373b80c78d8e117d95c4534515ef55cab19744da8798d",
+    "crates/mcp/src/server.rs": "fee1344bb3bb909cf67c900097685bfec894a150d632cba822d0d5a46bc9c082",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerRoutes.swift": "ef8c396839a63a4fe27f83748243f797c944a30cee06deca728bcf05bde3cef7",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m": "9738e68c43791c796c6f555f15aaa973abe92eb371e4e3c86e1c483ffbe50099",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.h": "3fc4c627a8dc8476e5c848994c7cea20362e5fe90688640cafdd2ae3d8cf5270"
+  },
+  "native_revision": "32916100067bf0d6aa181038b799510abe18dbeb",
+  "simulator": "B589EAFD-CE3F-4E24-A878-87D8A1F8AF97",
+  "error_type": "TimeoutError",
+  "error": "timed out",
+  "traceback": "Traceback (most recent call last):\n  File \"/private/tmp/iphone-use-paired-01a16e44-20261025/native/scripts/compare-native-wda-simulator.py\", line 282, in main\n    call(task,arguments,trial)\n    ~~~~^^^^^^^^^^^^^^^^^^^^^^\n  File \"/private/tmp/iphone-use-paired-01a16e44-20261025/native/scripts/compare-native-wda-simulator.py\", line 263, in call\n    with opener.open(req,timeout=10) as response:node=json.load(response)['value']\n         ~~~~~~~~~~~^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py\", line 487, in open\n    response = self._open(req, data)\n  File \"/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py\", line 504, in _open\n    result = self._call_chain(self.handle_open, protocol, protocol +\n                              '_open', req)\n  File \"/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py\", line 464, in _call_chain\n    result = func(*args)\n  File \"/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/urllib/request.py\", line 1349, in http_open\n    return self.do_open(http.client.HTTPConnection, req)\n           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTimeoutError: timed out\n",
+  "cleanup_errors": [],
+  "sources": {
+    "scripts/compare-native-wda-simulator.py": "10394d641c842475ef34b14cb9ee2e888934a6da32b6fb68bd54ef3783173f1e",
+    "scripts/paired-bench-fixture.swift": "d48fc9418339b011ebc8d5e4090e1f00fdd999ddae165de3b3bac467bb15894c",
+    "scripts/test-input-target-simulator.py": "95baca16a3d670c85b5034fd8c667a696e7c5142ec0c8511d7b275a2cba3ba6a",
+    "crates/server/src/http.rs": "305ea1d61883d60a9891b672d941c47599e90693e1c5695c4dbf469b14b49081",
+    "crates/server/src/runner.rs": "02d95c6270bc7ccf3e7373b80c78d8e117d95c4534515ef55cab19744da8798d",
+    "crates/mcp/src/server.rs": "fee1344bb3bb909cf67c900097685bfec894a150d632cba822d0d5a46bc9c082",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerRoutes.swift": "ef8c396839a63a4fe27f83748243f797c944a30cee06deca728bcf05bde3cef7",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.m": "9738e68c43791c796c6f555f15aaa973abe92eb371e4e3c86e1c483ffbe50099",
+    "runner/IPhoneUseRunner/IPhoneUseRunnerUITests/IPURBridge.h": "3fc4c627a8dc8476e5c848994c7cea20362e5fe90688640cafdd2ae3d8cf5270"
+  },
+  "sources_changed_during_run": [],
+  "runtime_binary_hashes": {
+    "native_runner": "4c1a9c930473ef44be40d2a84b5f83f09620fb01913ae3631fe82d2c9866381d",
+    "wda_runner": "25daa27544fef4f41c5ac5cfe237cd44569f56374258a54c2df6fd65f5b4a92a",
+    "wda_framework": "157908eb9ee88f8ed41288854410196bbb555c0e9cd9c77fcc7e672edf4855da"
+  },
+  "binaries": {
+    "daemon": "da412830d2006e558cfe172c89c8989d60f84d4ca3d4ac2648bf70d9a2b8d53d",
+    "mcp": "dcb34546a82ac94f8c31dd23c31a82653c1f720d69ca0866f79add3dfa4f8923",
+    "fixture": "e58c2c9a86e779eb6c9320049105b9aac52990b5002d39121fc1fe41d07513c3",
+    "native_xctestrun": "b451ce398fa218d683575378eb95649465ac9fa2908bbc95c13c3bad146d2f25",
+    "wda_xctestrun": "2cebcd53dfb403ea90393df6b59ec252df0c2c18e6eb9271f3a14bd4d0a331ba"
+  }
+}
