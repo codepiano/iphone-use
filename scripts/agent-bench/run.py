@@ -34,6 +34,7 @@ import re
 import subprocess
 import sys
 import time
+import tempfile
 
 HERE = pathlib.Path(__file__).resolve().parent
 DEFAULT_MCP = pathlib.Path.home() / "Applications/iPhoneUse.app/Contents/MacOS/iphone-use-mcp"
@@ -60,11 +61,12 @@ def parse_task(path):
     return header, text.strip()
 
 
-def audit(lines, returncode=0):
+def audit(lines, returncode=0, tool_prefix=TOOL_PREFIX):
     """Summarize one stream-json run (an iterable of JSONL lines). A run
     without a final `result` event, or whose known exit code is non-zero, is
     an error. None means the original exit code was not supplied."""
-    calls, failed, names = [], [], {}
+    calls, failed, names, outside = [], [], {}, []
+    resolved_model = None
     pending = {}
     result = {}
     for raw in lines:
@@ -77,11 +79,15 @@ def audit(lines, returncode=0):
             continue
         kind = event.get("type")
         content = (event.get("message") or {}).get("content") or []
+        if kind == "system" and event.get("subtype") == "init":
+            resolved_model = event.get("model")
         if kind == "assistant":
             for block in content:
                 if isinstance(block, dict) and block.get("type") == "tool_use":
                     name = block.get("name", "")
-                    short = name[len(TOOL_PREFIX):] if name.startswith(TOOL_PREFIX) else name
+                    short = name[len(tool_prefix):] if name.startswith(tool_prefix) else name
+                    if not name.startswith(tool_prefix):
+                        outside.append(name)
                     calls.append(short)
                     names[short] = names.get(short, 0) + 1
                     pending[block.get("id")] = short
@@ -93,6 +99,9 @@ def audit(lines, returncode=0):
             result = event
     usage = result.get("usage") or {}
     return {
+        "tool_namespace": tool_prefix,
+        "outside_tools": outside,
+        "resolved_model": resolved_model,
         "tool_calls": len(calls),
         "tools": names,
         "sequence": calls,
@@ -113,6 +122,8 @@ def judge(header, summary):
     reasons = []
     if summary["is_error"]:
         reasons.append("claude reported an error, exited non-zero or gave no result")
+    if summary.get("outside_tools"):
+        reasons.append("trace called tools outside the selected MCP server")
     expect = header.get("expect")
     if expect and not re.search(expect, summary["answer"] or ""):
         reasons.append(f"answer does not match {expect!r}")
@@ -122,7 +133,7 @@ def judge(header, summary):
     return not reasons, reasons
 
 
-def assess(header, trace, returncode=None, verification=None):
+def assess(header, trace, returncode=None, verification=None, tool_prefix=TOOL_PREFIX):
     """Only an independent, trace-bound receipt can verify task postconditions.
 
     The model's answer, regex match and tool acknowledgements are not receipts.
@@ -134,7 +145,7 @@ def assess(header, trace, returncode=None, verification=None):
             for line in source:
                 digest.update(line)
                 yield line.decode("utf-8")
-        summary = audit(captured_lines(), returncode)
+        summary = audit(captured_lines(), returncode, tool_prefix)
     fingerprint = digest.hexdigest()
     checks_passed, reasons = judge(header, summary)
     proof = {"state": "unverified"}
@@ -172,24 +183,56 @@ def assess(header, trace, returncode=None, verification=None):
             "checks_passed": checks_passed, "verification": proof, "reasons": reasons}
 
 
-def run_task(path, out_dir, mcp, model):
+def mcp_configuration(binary, config_path=None):
+    """Exactly one explicit stdio server; preserve args/cwd/env without a shell."""
+    config = json.loads(pathlib.Path(config_path).read_text()) if config_path else {
+        "mcpServers": {"iphone-use": {"command": str(binary)}}}
+    servers = config.get("mcpServers") if isinstance(config, dict) else None
+    if not isinstance(servers, dict) or len(servers) != 1:
+        raise ValueError("benchmark config must contain exactly one MCP server")
+    name, server = next(iter(servers.items()))
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", name):
+        raise ValueError("invalid MCP server name")
+    if not isinstance(server, dict) or server.get("type", "stdio") != "stdio" or "url" in server:
+        raise ValueError("benchmark requires one local stdio MCP server")
+    if not isinstance(server.get("command"), str) or not server["command"].strip():
+        raise ValueError("MCP command must be nonempty")
+    if not isinstance(server.get("args", []), list) or not all(isinstance(v, str) for v in server.get("args", [])):
+        raise ValueError("MCP args must be strings")
+    if "env" in server and (not isinstance(server["env"], dict) or not all(isinstance(k,str) and isinstance(v,str) for k,v in server["env"].items())):
+        raise ValueError("MCP env must map strings to strings")
+    if "cwd" in server and (not isinstance(server["cwd"], str) or not server["cwd"].strip()):
+        raise ValueError("MCP cwd must be nonempty")
+    return {"mcpServers": {name: server}}, f"mcp__{name}__"
+
+
+def run_task(path, out_dir, mcp, model, config_path=None, label="candidate", context=None):
     header, prompt = parse_task(path)
+    configuration, prefix = mcp_configuration(mcp, config_path)
     config = out_dir / "mcp.json"
-    config.write_text(json.dumps({"mcpServers": {"iphone-use": {"command": str(mcp)}}}))
+    # Custom configurations can hold credentials. Neither the config nor its
+    # contents are included in results; the artifact directory is private too.
+    fd = os.open(config, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as sink:
+        json.dump(configuration, sink)
+    config.chmod(0o600)
     jsonl = out_dir / f"{header['name']}.jsonl"
     command = [
         "claude", "-p", prompt,
         "--output-format", "stream-json", "--verbose",
         "--mcp-config", str(config), "--strict-mcp-config",
-        "--allowedTools", f"{TOOL_PREFIX}*",
+        "--allowedTools", f"{prefix}*",
     ]
     if model:
         command += ["--model", model]
     started = time.monotonic()
     with open(jsonl, "w", encoding="utf-8") as sink:
         proc = subprocess.run(command, stdout=sink, stderr=subprocess.STDOUT, cwd=out_dir, check=False)
-    result = assess(header, jsonl, proc.returncode)
+    result = assess(header, jsonl, proc.returncode, tool_prefix=prefix)
     result["wall_ms"] = int((time.monotonic() - started) * 1000)
+    result["trial"] = {"label":label,"context":context or {},"requested_model":model,
+                       "task_sha256":hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest(),
+                       "prompt_sha256":hashlib.sha256(prompt.encode()).hexdigest()}
     return result
 
 
@@ -214,12 +257,40 @@ def main(argv=None):
     parser.add_argument("--task", action="append", help="task name (tasks/<name>.md); repeatable")
     parser.add_argument("--model", help="exact Claude model id for a controlled comparison")
     parser.add_argument("--mcp", default=os.environ.get("IPHONE_USE_MCP", str(DEFAULT_MCP)))
+    parser.add_argument("--mcp-config", help="one-server stdio config (supports reference Python MCP args/cwd/env)")
+    parser.add_argument("--server-name", default="iphone-use", help="MCP namespace for offline trace audit")
+    parser.add_argument("--label", default="candidate", help="product/build label recorded with live results")
+    parser.add_argument("--context", help="JSON trial/device/build metadata; operator assertions, not verification")
     parser.add_argument("--from-jsonl", help="re-audit a saved run instead of running Claude")
+    parser.add_argument("--run-results", help="original live results.json; restores trace-bound timing/context for replay")
     parser.add_argument("--verification", help="independent JSON receipt bound to --from-jsonl")
     parser.add_argument("--returncode", type=int, help="original process exit code for --from-jsonl")
     parser.add_argument("--json", action="store_true", help="print machine-readable results")
     args = parser.parse_args(argv)
     replay = args.from_jsonl is not None
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", args.server_name):
+        parser.error("invalid --server-name")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", args.label):
+        parser.error("invalid --label")
+    if args.run_results is not None and (not args.run_results.strip() or not replay):
+        parser.error("--run-results requires --from-jsonl and a results file")
+    if replay and args.context:
+        parser.error("--context is live metadata; replay restores it with --run-results")
+    if args.mcp_config is not None and (not args.mcp_config.strip() or replay):
+        parser.error("--mcp-config requires a live run and a config file")
+    context = None
+    if args.context:
+        try:
+            context = json.loads(pathlib.Path(args.context).read_text())
+            if not isinstance(context, dict):
+                raise ValueError("--context must contain a JSON object")
+        except (OSError, ValueError) as error:
+            parser.error(str(error))
+    if not replay:
+        try:
+            mcp_configuration(args.mcp, args.mcp_config)
+        except (OSError, ValueError) as error:
+            parser.error(str(error))
     if replay and not args.from_jsonl.strip():
         parser.error("--from-jsonl must name a trace file")
     if args.verification is not None and not args.verification.strip():
@@ -238,7 +309,40 @@ def main(argv=None):
             parser.error("no matching task header; provide --task NAME")
         header, _ = parse_task(task)
         try:
-            rows = [assess(header, args.from_jsonl, args.returncode, args.verification)]
+            code = args.returncode
+            prefix = f"mcp__{args.server_name}__"
+            original = None
+            if args.run_results:
+                archived = json.loads(pathlib.Path(args.run_results).read_text())
+                fingerprint = hashlib.sha256(pathlib.Path(args.from_jsonl).read_bytes()).hexdigest()
+                if not isinstance(archived, list):
+                    raise ValueError("--run-results must contain a result list")
+                matches = [row for row in archived if isinstance(row,dict) and row.get("task")==header["name"] and row.get("trace_sha256")==fingerprint]
+                if len(matches) != 1:
+                    raise ValueError("original results must contain exactly one matching task/trace")
+                original = matches[0]
+                recorded_code = original.get("process_returncode")
+                if recorded_code is not None and type(recorded_code) is not int:
+                    raise ValueError("original process returncode must be an integer or unknown")
+                if code is not None and code != recorded_code:
+                    raise ValueError("--returncode disagrees with original live results")
+                code = recorded_code
+                prefix = original.get("tool_namespace",TOOL_PREFIX)
+                if not isinstance(prefix,str) or not re.fullmatch(r"mcp__[A-Za-z0-9_-]{1,64}__",prefix):
+                    raise ValueError("invalid original tool namespace")
+                trial = original.get("trial",{})
+                if not isinstance(trial,dict):
+                    raise ValueError("original trial metadata must be an object")
+                wall = original.get("wall_ms")
+                if wall is not None and (type(wall) is not int or wall < 0):
+                    raise ValueError("original wall time must be nonnegative or unknown")
+                if trial and trial.get("task_sha256") != hashlib.sha256(task.read_bytes()).hexdigest():
+                    raise ValueError("task changed since the original live run")
+            row = assess(header,args.from_jsonl,code,args.verification,prefix)
+            if original is not None:
+                for field in ("trial","wall_ms"):
+                    if field in original:row[field]=original[field]
+            rows = [row]
         except (OSError, ValueError) as error:
             parser.error(str(error))
     else:
@@ -247,9 +351,13 @@ def main(argv=None):
             tasks = [HERE / "tasks" / f"{name}.md" for name in args.task]
         if not tasks:
             parser.error("no benchmark tasks were selected")
-        out_dir = HERE / "out" / datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        out_dir.mkdir(parents=True, exist_ok=True)
-        rows = [run_task(task, out_dir, args.mcp, args.model) for task in tasks]
+        for task in tasks:
+            if not task.is_file():
+                parser.error(f"benchmark task does not exist: {task.name}")
+        parent = HERE / "out"
+        parent.mkdir(parents=True, exist_ok=True)
+        out_dir = pathlib.Path(tempfile.mkdtemp(prefix=datetime.datetime.now().strftime("%Y%m%d-%H%M%S-")+args.label+"-",dir=parent))
+        rows = [run_task(task, out_dir, args.mcp, args.model,args.mcp_config,args.label,context) for task in tasks]
         (out_dir / "results.json").write_text(json.dumps(rows, ensure_ascii=False, indent=2))
     if args.json:
         print(json.dumps(rows, ensure_ascii=False, indent=2))

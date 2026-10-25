@@ -74,3 +74,88 @@ when verification or the original exit status is missing. Exit codes are 0 for
 verified passes, 1 for failed checks or postconditions, 2 for invalid arguments
 or receipts, and 3 for unverified results. Compare runs with the same model,
 device, task, initial state and verification procedure.
+
+## Paired products
+
+The reference project uses the `iphone_use` MCP namespace and a Python command
+with arguments/cwd; see its [pinned config](https://github.com/zhongerxin/iPhone-use/blob/3ce9c080534e89fab91a237bf1c53a4a7e9d80a7/.mcp.json).
+`--mcp-config FILE` accepts exactly one local stdio server, preserving its args,
+cwd and env. Use absolute paths in an ordinary CLI config, rather than the
+plugin-only `${PLUGIN_ROOT}` placeholder. Only that server's tool namespace is
+allowed. A trace calling outside tools fails its execution audit.
+
+A reference config has this shape (no installation or phone connection is
+performed by this example):
+
+```json
+{"mcpServers":{"iphone_use":{"command":"python3",
+ "args":["/absolute/reference/server/iphone_use.py"],
+ "cwd":"/absolute/reference"}}}
+```
+
+Each live trial records its label, exact task/prompt hashes, requested model and
+model identity observed in the CLI init event. `--context FILE` adds operator
+metadata. Metadata is an assertion to audit, not evidence that a device/build was
+actually used. Do not put credentials or private account data in context files.
+Use an opaque lab device id instead of publishing its UDID. For example:
+
+```json
+{
+  "pair_id":"settings-01", "position":1,
+  "device":"lab-phone-1", "ios":"27.0", "transport":"usb",
+  "app_versions":{"com.apple.Preferences":"fixture-version"},
+  "initial_state":"home-fixture-v1", "dataset":"synthetic-v1",
+  "product_revision":"repository@commit-and-build-hash"
+}
+```
+
+For the counterpart, retain the same conditions and pair id; use position 2 and
+its own product revision. Repeat a second pair in the opposite order, resetting
+and independently checking the same initial state each time. Run the products
+separately. Source/runner/build identity, transport and initial-state evidence
+must be collected outside the model trace too.
+
+```bash
+scripts/agent-bench/run.py --task settings-ios-version --model EXACT_MODEL_ID \
+  --mcp /absolute/candidate/iphone-use-mcp --label candidate --context candidate-context.json
+scripts/agent-bench/run.py --task settings-ios-version --model EXACT_MODEL_ID \
+  --mcp-config reference-config.json --label reference --context reference-context.json
+```
+
+Artifact directories use unique private names (mode 0700), including runs started
+in the same second. Their `mcp.json` copy is mode 0600 and is never embedded in
+results; it may contain credentials. Raw traces can include screen content.
+Neither raw artifacts nor configurations belong in public benchmark reports.
+
+After an independent check produces the trace-bound receipt described above,
+re-audit with `--run-results` to restore the **original** wall time, namespace,
+exit status and trial conditions. It rejects trace/task drift, ambiguous matches
+and conflicting exit codes. It does not rerun the task or invent missing timing.
+
+```bash
+scripts/agent-bench/run.py --from-jsonl out/RUN/settings-ios-version.jsonl \
+  --run-results out/RUN/results.json --verification receipt.json --json > verified.json
+# An older external trace can instead name its namespace explicitly:
+scripts/agent-bench/run.py --from-jsonl reference/settings-ios-version.jsonl \
+  --server-name iphone_use --returncode 0 --verification reference-receipt.json --json
+```
+
+`compare.py` combines re-audited result lists. Supply both products from at least
+two opposite-order pairs for every task. Missing counterparts remain in attempt
+denominators. Missing receipts or wall time leave `paired_data_ready:false`
+(exit 3); they never become zero-duration passes. Mixed devices, OS, transports,
+apps/data/initial states, models, task hashes or revisions within a label/stratum,
+reused traces, and mismatched receipts are rejected (exit 2).
+
+```bash
+python3 scripts/agent-bench/compare.py candidate-01-verified.json reference-01-verified.json \
+  candidate-02-verified.json reference-02-verified.json
+```
+
+The report retains failed/unverified attempts and shows all-attempt wall-time
+medians separately from verified-success medians. CLI `num_turns` is reported as
+`reported_turns`; it is not an independent count of model network requests.
+Reported token/cost counters do not establish actual subscription billing.
+`paired_data_ready:true` means the supplied trial records pass consistency gates,
+not that either product wins or that the broader competitive goal is achieved.
+These helpers do not perform independent postcondition checks themselves.

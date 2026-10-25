@@ -1,0 +1,31 @@
+{
+  "scope": "read-only availability checks; not device acceptance",
+  "chrome_use": {
+    "version": "1.5.265",
+    "relay_up": false,
+    "transport_responsive": false,
+    "connected_profiles": 0,
+    "session_running": false,
+    "tabs_recorded": 0
+  },
+  "alternate_browser_inventory": {
+    "browser_count": 0,
+    "chrome_running": false
+  },
+  "phone_status": {
+    "reachable": false,
+    "error": "connection refused"
+  },
+  "devicectl": {
+    "records": 4,
+    "tunnels_connected": 0
+  },
+  "usbmux_metadata": {
+    "iphone_records_probed": 3,
+    "not_attached_exit3": 3
+  },
+  "phone_reconnects": 0,
+  "phone_screen_reads": 0,
+  "phone_input_requests": 0,
+  "raw_device_identifiers_committed": false
+}

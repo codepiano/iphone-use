@@ -1,0 +1,22 @@
+{
+  "scope": "hermetic benchmark tooling checks only; no actual model or phone trial",
+  "python": "3.9.6",
+  "platform": "Darwin",
+  "sources": {
+    "scripts/agent-bench/run.py": "dbcdffdbaf5cb280c04144c7c991e98ed6b60f0bcc44912df8ff01f6d2609a1b",
+    "scripts/agent-bench/compare.py": "abc4e0f25f59864480100357050e5fa16aa7fcb21389b20c3786d7f3e7ffb8dd",
+    "scripts/test-agent-bench.py": "1d6b443c34954645c9b0af262c6830462a9fb8f6563c137244d2f75b85f0d596",
+    "scripts/test-agent-bench-paired.py": "99f830892143d02a64bac5b3055f05b7e36c118eca8c03f03050b84c0c1e82f5",
+    ".github/workflows/pr-checks.yml": "e43fdf747838e75fc8c047b26d5a8a55af11df77b0198152df04a6c1b611a26b"
+  },
+  "logs": {
+    "existing": {
+      "sha256": "728cc135928b0c68e9748277183558857c192ca402729b6eda4d969e78fe07b3",
+      "output": "agent-bench: ok"
+    },
+    "custom": {
+      "sha256": "28cacf8a763090b38a74363ba98a81b3aec21b7c6daaf7c36f05933906d163fb",
+      "output": "agent-bench paired: ok (synthetic traces, stub executable and fixture metadata only)"
+    }
+  }
+}

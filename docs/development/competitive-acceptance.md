@@ -139,6 +139,16 @@ A screenshot, HTTP acknowledgement or model's final answer alone is insufficient
 Use `scripts/agent-bench` for our traces and independent verification receipts;
 keep equivalent raw trace and postcondition evidence for the reference.
 
+The [paired benchmark driver](../../scripts/agent-bench/README.md#paired-products)
+now accepts a single explicit reference stdio configuration and records its
+namespace, task hashes, CLI model identity and operator trial conditions.
+Re-audit restores original trace-bound timing/status before independent receipt
+attachment. The comparison helper keeps failures and orphan attempts, refuses
+mixed conditions and leaves missing evidence unready. Its hermetic tests use
+synthetic traces and a stub executable; **no actual paired product trial has
+been performed**. CLI reported turns remain distinct from independently counted
+model network requests, and readiness of supplied records is not superiority.
+
 ## Current candidate evidence
 
 [First binding validation](../measurements/input-target-2026-10-24/README.md),
