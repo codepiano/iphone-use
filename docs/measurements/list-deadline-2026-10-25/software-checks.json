@@ -1,0 +1,63 @@
+{
+  "scope": "candidate checks; timer tests are virtual-time, actual deadline trial is Simulator only",
+  "logs": {
+    "before": {
+      "sha256": "1d1fee41ef3f9a652b1406cf4a0b9540815c74beb94d3bcd1027858f6ecc374b",
+      "summaries": [
+        "test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.75s",
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 38s"
+      ]
+    },
+    "final_deadline_cases": {
+      "sha256": "c9ab12d73e76ae464a8e1a6826d7a554247a00673ed1799ff6407d85ed7f5717",
+      "summaries": [
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.09s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.03s",
+        "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.25s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.09s",
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 51.52s"
+      ]
+    },
+    "mcp": {
+      "sha256": "7769438fa6139263c2ead9cea97915e7c1186eda3bed9358def64c8fca3b4988",
+      "summaries": [
+        "test result: ok. 246 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 33.48s",
+        "test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.34s",
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 28.81s"
+      ]
+    },
+    "server": {
+      "sha256": "24fb289b8fa4cdd9cf7f20b6dc480b1d5a90e8f1a47f3c7566297e428f5dc709",
+      "summaries": [
+        "test result: ok. 892 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 16.52s",
+        "test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 53.75s",
+        "test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 61.70s",
+        "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.55s",
+        "test result: ok. 107 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.79s",
+        "test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 36.44s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.03s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.57s",
+        "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.93s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.21s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.49s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.15s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.15s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.58s",
+        "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.10s",
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 49.03s"
+      ]
+    },
+    "clippy": {
+      "sha256": "4669034ffb6abb64daef1878ede60114ce22841c87446f8f7df7d94d36105253",
+      "summaries": [
+        "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.24s"
+      ]
+    },
+    "build": {
+      "sha256": "abf9db2fa024b26fa2f69250ad85958ea08b57c590edd973af8459e283f007d6",
+      "summaries": [
+        "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 48.35s"
+      ]
+    }
+  }
+}

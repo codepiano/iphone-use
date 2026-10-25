@@ -1,0 +1,11 @@
+{
+  "scope": "fixture-owned verification; not a daemon acknowledgement or full AX-value assumption",
+  "files": {
+    "fixture.swift": "787a8dc66caae33e4936ddf0b66fbd95d2f8e275bc320a1b82d1f83abc58c095",
+    "InputGuard.app/InputGuard": "1d5da336c18153ea7ffd0e339d11a6240f3fac6fd93382ad34429fcd44a7fef7",
+    "list-deadline-field-oracle.json": "791c68f79383d70e9b11e42c51c979a74f12698bf98fcf47980a26b5e5eb322f"
+  },
+  "field_characters": 6015,
+  "ax_attribute_characters_observed": 512,
+  "full_value_reader_issue_resolved": false
+}

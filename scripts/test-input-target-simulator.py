@@ -31,6 +31,7 @@ ROOT = Path(__file__).resolve().parent.parent
 BUNDLE = "com.leeguoo.iphone-use.input-guard-fixture"
 FIXTURE = r'''
 import UIKit
+import CryptoKit
 @main final class AppDelegate: UIResponder, UIApplicationDelegate {
   func application(_ application: UIApplication,
                    didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool { true }
@@ -39,8 +40,23 @@ import UIKit
   var window: UIWindow?
   private weak var secondField: UITextField?
   private var shifted = false
+  private var fieldReceiptGeneration = 0
   @objc private func shiftFocusIfRequested(_ field: UITextField) {
     let marker = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("input-started.count")
+    fieldReceiptGeneration += 1
+    if field.text?.hasPrefix("queue-deadline-") == true {
+      let generation = fieldReceiptGeneration
+      let receiptFile = marker.deletingLastPathComponent().appendingPathComponent("field-a-state.json")
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self, weak field] in
+        guard self?.fieldReceiptGeneration == generation, let field = field else { return }
+        let value = field.text ?? ""
+        let digest = SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+        let state: [String: Any] = ["characters": value.count, "sha256": digest]
+        if let data = try? JSONSerialization.data(withJSONObject: state, options: [.sortedKeys]) {
+          try? data.write(to: receiptFile, options: .atomic)
+        }
+      }
+    }
     if field.text?.isEmpty != false {
       shifted = false
       try? FileManager.default.removeItem(at: marker)
@@ -195,6 +211,7 @@ def main():
     parser.add_argument("--input-privacy", action="store_true", help="verify pending and in-flight typing across private holds")
     parser.add_argument("--observation-scope", action="store_true", help="verify applied input keeps its receipt while stale observations are withheld")
     parser.add_argument("--native-scope", action="store_true", help="verify no late relaunch after acknowledged termination")
+    parser.add_argument("--list-deadline", action="store_true", help="observe the real 80-second queue deadline with an owned long-input fixture (adds ~110s)")
     parser.add_argument("--list-recovery", action="store_true", help="verify scoped list diagnostics and interruption after native swipe ACK")
     parser.add_argument("--video", action="store_true", help="verify native H.264 via WorkBuddy resources and independent ffmpeg decode (requires --hosts)")
     parser.add_argument("--runtime", default="com.apple.CoreSimulator.SimRuntime.iOS-27-0")
@@ -209,6 +226,8 @@ def main():
     video_peers = []
     daemon_binary = args.daemon.resolve(strict=True) if args.daemon else None
     mcp_binary = args.mcp.resolve(strict=True) if args.mcp else None
+    if args.list_deadline and not daemon_binary:
+        raise RuntimeError("--list-deadline requires --daemon")
     if args.list_recovery and not (daemon_binary and mcp_binary):
         raise RuntimeError("--list-recovery requires --daemon and --mcp")
     if args.video and (not args.hosts or not shutil.which("ffmpeg")):
@@ -383,7 +402,7 @@ def main():
             with (out / "daemon.log").open("w") as log:
                 daemon = subprocess.Popen([str(daemon_binary), "serve"], env=env, stdout=log, stderr=log, start_new_session=True)
 
-            def api(path, body=None, owner="input-continuation-fixture", takeover=False):
+            def api(path, body=None, owner="input-continuation-fixture", takeover=False, timeout=60):
                 data = None if body is None else json.dumps(body).encode()
                 headers = {"Content-Type": "application/json", "Authorization": "Bearer " + tok,
                            "X-Phone-Control": "1", "X-Phone-Owner": owner}
@@ -391,7 +410,7 @@ def main():
                     headers["X-Phone-Owner-Takeover"] = "1"
                 request = urllib.request.Request(f"http://127.0.0.1:{daemon_port}{path}", data=data, headers=headers)
                 try:
-                    with opener.open(request, timeout=60) as response:
+                    with opener.open(request, timeout=timeout) as response:
                         return response.status, json.load(response)
                 except urllib.error.HTTPError as error:
                     return error.code, json.load(error)
@@ -1067,13 +1086,13 @@ def main():
                 video_peers.append(peer)
                 peer.initialize()
                 before_actions=route_count("/actions")
-                for find in [True,False]:
-                    result=peer.request("tools/call",{"name":"phone_scroll_find" if find else "phone_collect_list",
-                        "arguments":{"label":"__list_recovery_missing__","max_swipes":0} if find else {"row_kind":"Slider","max_pages":1}})["result"]
+                for lookup in [True,False]:
+                    result=peer.request("tools/call",{"name":"phone_scroll_find" if lookup else "phone_collect_list",
+                        "arguments":{"label":"__list_recovery_missing__","max_swipes":0} if lookup else {"row_kind":"Slider","max_pages":1}})["result"]
                     verdict=result.get("structuredContent",{})
                     assert verdict.get("swipes")==0 and verdict.get("native_mutations_confirmed")==0,verdict
-                    assert bool(result.get("isError"))==find,result
-                    if find:assert verdict.get("found") is False and verdict.get("error")=="element_not_found",verdict
+                    assert bool(result.get("isError"))==lookup,result
+                    if lookup:assert verdict.get("found") is False and verdict.get("error")=="element_not_found",verdict
                     else:assert verdict.get("complete") is False and verdict.get("stop_reason")=="no_rows",verdict
                     images=[block for block in result.get("content",[]) if block.get("type")=="image"]
                     assert len(images)==1,result
@@ -1081,7 +1100,7 @@ def main():
                     assert "png_base64" not in json.dumps(verdict)
                     assert all("png_base64" not in block.get("text","") for block in result.get("content",[]))
                     assert route_count("/actions")==before_actions
-                    reports.append({"case":"stdio-scroll-find-fresh-diagnostic-without-swipe" if find else "stdio-collect-no-rows-fresh-diagnostic-keeps-incomplete",
+                    reports.append({"case":"stdio-scroll-find-fresh-diagnostic-without-swipe" if lookup else "stdio-collect-no-rows-fresh-diagnostic-keeps-incomplete",
                         "passed":True,"image_blocks":1,"native_swipes":0,"original_verdict_preserved":True})
                 before_actions=route_count("/actions")
                 source_reads=lambda:sum(bool(re.search(r"ipu-runner: GET (?:/session/[^/ ]+)?/source(?:\?[^ ]*)? ->",line)) for line in log_path.read_text(errors="replace").splitlines())
@@ -1105,6 +1124,65 @@ def main():
                 reports.append({"case":"list-private-transition-preserves-swipe-ack-without-post-scope-read","passed":True,
                     "native_swipes_confirmed":1,"native_mutations_uncertain":0,"later_source_reads":0,"retry_safe":False})
                 peer.close()
+
+            if args.list_deadline:
+                # An interrupted gesture can still be decelerating. Start a
+                # new owned fixture task, rather than replaying a guarded clear.
+                command("xcrun","simctl","terminate",udid,BUNDLE)
+                command("xcrun","simctl","launch",udid,BUNDLE)
+                settle_fixture()
+                assert api("/agent/input",{"type":"text","text":""})[0]==200
+                first,second=find("field-a"),find("field-b")
+                wait_for(lambda:call(prefix+f"/element/{first}/attribute/focused") is True,"fresh deadline fixture focus")
+                assert call(prefix+f"/element/{first}/attribute/value") in (None,""),"fresh workload field is not empty"
+                container=Path(command("xcrun","simctl","get_app_container",udid,BUNDLE,"data"))
+                marker=container/"Documents/input-started.count"
+                if marker.exists():marker.unlink()  # Synthetic fixture marker only.
+                field_receipt=container/"Documents/field-a-state.json"
+                if field_receipt.exists():field_receipt.unlink()
+                text="queue-deadline-"+"字"*6000
+                before_actions=route_count("/actions")
+                count_sources=lambda:sum(bool(re.search(r"ipu-runner: GET (?:/session/[^/ ]+)?/source(?:\?[^ ]*)? ->",line)) for line in log_path.read_text(errors="replace").splitlines())
+                before_sources=count_sources()
+                pool=ThreadPoolExecutor(max_workers=2)
+                try:
+                    typing=pool.submit(api,"/agent/input",{"type":"text","text":text,"clear":False},timeout=360)
+                    until=time.monotonic()+10
+                    while not marker.exists():
+                        if typing.done() or time.monotonic()>=until:raise RuntimeError("long input did not start before queue deadline probe")
+                        time.sleep(0.01)
+                    started=time.monotonic()
+                    (out/"list-deadline-progress.json").write_text(json.dumps({"phase":"queued_behind_owned_input","started_at_ms":round(time.time()*1000)})+"\n")
+                    queued=pool.submit(api,"/agent/scroll_find",{"label":"__deadline_fixture_missing__","max_swipes":1},timeout=90)
+                    status,receipt=queued.result(timeout=92)
+                    elapsed=round((time.monotonic()-started)*1000)
+                    (out/"list-deadline-receipt.json").write_text(json.dumps({"status":status,"elapsed_ms":elapsed,"receipt":receipt},indent=2)+"\n")
+                    assert status==504 and receipt.get("error")=="list_deadline",receipt
+                    assert receipt.get("outcome")=="not_sent" and receipt.get("retry_safe") is True,receipt
+                    assert receipt.get("native_mutations_confirmed")==0 and receipt.get("native_mutations_uncertain")==0 and receipt.get("swipes")==0,receipt
+                    assert 80000<=elapsed<=85000,{"elapsed_ms":elapsed}
+                    assert not typing.done(),"busy precondition ended before the queue deadline"
+                    assert count_sources()==before_sources and route_count("/actions")==before_actions
+                    (out/"list-deadline-progress.json").write_text(json.dumps({"phase":"deadline_returned_waiting_for_original_input","elapsed_ms":elapsed})+"\n")
+                    status,finished=typing.result(timeout=60)
+                    assert status==200 and finished.get("ok") is True,finished
+                    assert count_sources()==before_sources and route_count("/actions")==before_actions
+                    first=find("field-a")
+                    readback=call(prefix+f"/element/{first}/attribute/value")
+                    expected_hash=hashlib.sha256(text.encode()).hexdigest()
+                    def fixture_value_matches():
+                        if not field_receipt.exists():return False
+                        state=json.loads(field_receipt.read_text())
+                        return state.get("characters")==len(text) and state.get("sha256")==expected_hash
+                    wait_for(fixture_value_matches,"fixture-owned full field count/hash")
+                    oracle=json.loads(field_receipt.read_text())
+                    (out/"list-deadline-field-oracle.json").write_text(json.dumps(oracle,indent=2)+"\n")
+                    (out/"list-deadline-progress.json").write_text(json.dumps({"phase":"finished_original_input_and_independent_readback","elapsed_ms":elapsed,"characters_verified":oracle["characters"],"readback_sha256":oracle["sha256"],"ax_attribute_chars_observed":len(readback or "")})+"\n")
+                    reports.append({"case":"real-queued-list-stops-at-entry-deadline-before-native-dispatch","passed":True,
+                        "elapsed_ms":elapsed,"native_mutations_confirmed":0,"native_mutations_uncertain":0,"new_swipes":0,"new_source_reads":0,
+                        "busy_input_observed":True,"privacy_or_owner_transition_used_for_cleanup":False,"original_input_completed":True,"independent_characters_verified":oracle["characters"],"fixture_value_sha256":oracle["sha256"],"ax_attribute_chars_observed":len(readback or "")})
+                finally:
+                    pool.shutdown(wait=False,cancel_futures=True)
 
     except Exception as error:
         reports.append({"case": "harness-or-current-case", "passed": False, "error": str(error),"error_type":type(error).__name__,"traceback":traceback.format_exc(limit=5)})
@@ -1143,7 +1221,7 @@ def main():
         if args.video:
             files.extend(map(Path,["runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerH264.swift","runner/IPhoneUseRunner/IPhoneUseRunnerUITests/RunnerMJPEG.swift"]))
         if daemon_binary:
-            files.extend(map(Path, ["crates/server/src/http.rs", "crates/server/src/runner.rs", "crates/server/src/input_continuation.rs", "crates/server/src/recovery.rs", "crates/server/src/video.rs", "crates/server/src/observation.rs", "crates/server/src/native_scope.rs", "crates/server/src/timing.rs"]))
+            files.extend(map(Path, ["Cargo.lock", "crates/server/Cargo.toml", "crates/mcp/Cargo.toml", "crates/server/src/http.rs", "crates/server/src/collect.rs", "crates/server/src/runner.rs", "crates/server/src/input_continuation.rs", "crates/server/src/recovery.rs", "crates/server/src/video.rs", "crates/server/src/observation.rs", "crates/server/src/native_scope.rs", "crates/server/src/timing.rs"]))
         if mcp_binary:
             files.extend(map(Path, ["crates/mcp/src/server.rs", "crates/mcp/src/client.rs", "crates/mcp/src/screen.rs", "crates/mcp/src/screen.html", "crates/mcp/src/screen_video.rs", "crates/mcp/src/compact.rs"]))
         manifest = {"scope": "actual XCTest runner on disposable iOS Simulator; not physical-device evidence",
@@ -1157,7 +1235,7 @@ def main():
             manifest["mcp_binary_sha256"] = hashlib.sha256(mcp_binary.read_bytes()).hexdigest()
         (out / "results.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(json.dumps({"cases": reports, "observations": observations, "cleanup_errors": cleanup_errors}))
-    expected = (20 if mcp_binary else 19 if daemon_binary else 6) + ((3 if mcp_binary else 2) if args.recovery else 0) + 2 * int(args.hosts) + 3 * int(args.input_privacy) + 2 * int(args.observation_scope) + int(args.native_scope) + 4 * int(args.video) + 3 * int(args.list_recovery)
+    expected = (20 if mcp_binary else 19 if daemon_binary else 6) + ((3 if mcp_binary else 2) if args.recovery else 0) + 2 * int(args.hosts) + 3 * int(args.input_privacy) + 2 * int(args.observation_scope) + int(args.native_scope) + 4 * int(args.video) + 3 * int(args.list_recovery) + int(args.list_deadline)
     return 0 if len(reports) == expected and all(r["passed"] for r in reports) and not cleanup_errors else 1
 
 

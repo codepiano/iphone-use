@@ -87,8 +87,7 @@ base64 duplication in text or structured output.
 [Recovery evidence](../measurements/recovery-image-2026-10-25/README.md) records
 software checks and the actual candidate integration results. [List recovery](../measurements/list-recovery-2026-10-25/README.md) adds
 `scroll_find`/`collect` diagnostics and entry/read/send/publication scope guards.
-Physical popups, real scrolling apps, custom-drawn screens, overall queued
-traversal deadlines, server-side cancellation after disconnect and image
+Physical popups, real scrolling apps, custom-drawn screens, server-side cancellation after disconnect and image
 rendering in real hosts remain open.
 
 ## Candidate host adapters
@@ -163,7 +162,7 @@ model network requests, and readiness of supplied records is not superiority.
 [action observations](../measurements/observation-scope-2026-10-25/README.md)
 and [native admission](../measurements/native-scope-2026-10-25/README.md)
 retain exact staged source/binary hashes and earlier failures.
-The latest combined Simulator run passes 38 cases through the actual daemon,
+The latest combined Simulator run passes 39 cases through the actual daemon,
 runner and stdio MCP. It includes private input interruption and valid fresh
 work after expiry, alongside the prior target/cancellation/recovery/host checks.
 The native admission case additionally preserves one termination acknowledgement
@@ -177,6 +176,14 @@ List diagnostics additionally preserve coverage and produce one fresh image over
 stdio; private on/off after a swipe ACK preserves one confirmed gesture and
 sends no later source request. The first counter-instrumentation failure and the
 corrected 38-case run are retained separately.
+[List deadline evidence](../measurements/list-deadline-2026-10-25/README.md)
+adds an entry-wide 80-second budget, historical partial-row checkpoints and
+budget-limited recovery. The real queue probe returns after 80.005 seconds with
+zero dispatch and remains inactive after the independent occupying input ends;
+no owner/privacy transition masks termination. The fixture verifies 6,015
+characters by its own count/hash while AX returns only 512. Full-value AX reading
+and explicit completeness/truncation reporting remain open; this discrepancy
+must not be called input loss or complete reading.
 Physical acceptance, other action/key/set_value and observation/vault paths,
 remaining opaque-action/flow/vault/log, recovery/host/video work, distribution and comparative task trials
 remain open. The broader goal is not complete.

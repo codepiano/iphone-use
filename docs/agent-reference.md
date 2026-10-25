@@ -1468,3 +1468,20 @@ do not request a diagnostic capture. Capture stays in the original owner/private
 scope, uses the existing two-second/image-size limits, and can be disabled with
 `X-Phone-Recovery-Image: none`. MCP lifts the PNG into one image block in all
 output modes, preserving unknown-dispatch/replay advice in text.
+
+### List execution deadline
+
+List handlers use one 80-second execution deadline from handler entry. Queue,
+preparation, traversal and optional recovery capture share it; a fresh deadline
+is not created after obtaining the runner lock. Native admission checks it too.
+On expiry, `list_deadline` returns HTTP 504: zero sent mutations are not_sent,
+confirmed prefixes are partial, and unacknowledged sends remain unknown.
+A current operation may still finish on the phone; no automatic replay occurs.
+
+A collection retains completed-page rows and page counts as historical partial
+results, with complete:false and no actionable snapshot. These are not claims
+about the current viewport or full coverage. A late privacy/owner change still
+withholds them at body publication. Optional recovery images cannot extend the
+execution deadline; budget exhaustion omits the image without replacing a
+lookup result that already completed. Server-side cancellation on client
+transport disconnect remains a separate contract.

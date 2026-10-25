@@ -3863,7 +3863,7 @@ fn list_result(
                     .as_ref()
                     .and_then(|body| body.get("error"))
                     .and_then(serde_json::Value::as_str)
-                    == Some("app_changed") =>
+                    .is_some_and(|error|matches!(error,"app_changed"|"list_deadline")) =>
         {
             let result = if response.ok() {
                 CallToolResult::success(vec![Content::text(text)])

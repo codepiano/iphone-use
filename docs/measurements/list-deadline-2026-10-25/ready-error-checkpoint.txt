@@ -1,0 +1,58 @@
+
+running 9 tests
+test collect_is_complete_only_when_the_end_label_shows ... ok
+test collect_refuses_a_bad_request_without_touching_the_phone ... ok
+test collect_dedupes_across_pages_and_stops_when_the_list_stops_moving ... ok
+test scroll_find_after_a_failed_swipe_reports_the_screen_it_left ... ok
+test scroll_find_gives_up_after_its_swipe_budget_with_near_misses ... ok
+test scroll_find_names_near_misses_scrolled_off_the_screen ... ok
+test scroll_find_stops_at_once_on_an_ambiguous_label ... ok
+test scroll_find_reads_again_after_a_failed_swipe_and_finds_the_row ... ok
+test scroll_find_swipes_once_and_finds_the_row ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.25s
+
+
+running 6 tests
+test deadline_checkpoint_waiting_for_publication_is_redacted_after_privacy_change ... ok
+test deadline_after_ack_retains_known_rows_but_never_claims_a_current_snapshot ... ok
+test queue_wait_consumes_the_original_budget_before_any_native_request ... ok
+test deadline_during_a_native_swipe_stays_unknown_and_never_reads_or_replays ... ok
+test recovery_capture_cannot_extend_the_handler_deadline_or_replace_lookup_failure ... ok
+test session_preparation_timeout_is_unsent_and_does_not_degrade_device_health ... FAILED
+
+failures:
+
+---- session_preparation_timeout_is_unsent_and_does_not_degrade_device_health stdout ----
+
+thread 'session_preparation_timeout_is_unsent_and_does_not_degrade_device_health' (31749447) panicked at crates/server/tests/list_deadline.rs:248:9:
+assertion `left == right` failed: {"app":"Fixture","complete":false,"coverage":"NOT complete: the collection stopped early (swipe_failed). rows are deduplicated on (kind, label, value), so identical-looking rows collapse into one; only what the accessibility tree exposes is collected.","end_label_seen":false,"native_mutations_confirmed":0,"native_mutations_uncertain":0,"ok":true,"pages":[{"new_rows":1,"page":1,"rows_seen":1}],"recovery":{"image_omitted":"request_deadline","next_step":"The original failure is unchanged; recovery capture was unavailable or over budget. Check current owner/privacy and, only if the task still needs it, request one fresh screenshot before choosing a new action. Never replay an uncertain operation","replay_action":false,"visual_check_required":true},"row_count":1,"rows":[{"kind":"Cell","label":"KNOWN_ROW","page":1}],"stop_error":"POST /session: error sending request for url (http://127.0.0.1:50440/session): operation timed out","stop_reason":"swipe_failed","swipes":0,"timing":{"daemon_ms":2,"runner":[{"bytes":254,"call":"GET /source","count":1,"ms":197},{"bytes":0,"call":"POST /session","count":1,"ms":192}],"runner_ms":389,"total_ms":391}}
+  left: 200
+ right: 504
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    session_preparation_timeout_is_unsent_and_does_not_degrade_device_health
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.76s
+
+   Compiling server v0.23.0 (/private/tmp/iphone-use-runner-input-target-guard/crates/server)
+warning: use of deprecated method `std::sync::atomic::Atomic::<usize>::fetch_update`: renamed to `try_update` for consistency
+   --> crates/server/src/http.rs:882:11
+    |
+882 |         c.fetch_update(
+    |           ^^^^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+    |
+882 -         c.fetch_update(
+882 +         c.try_update(
+    |
+
+warning: `server` (lib) generated 1 warning (run `cargo fix --lib -p server` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 55.32s
+     Running tests/collect_list.rs (target/debug/deps/collect_list-0b1028542657bfd4)
+     Running tests/list_deadline.rs (target/debug/deps/list_deadline-a446e69cdb2ceea3)
+error: test failed, to rerun pass `-p server --test list_deadline`

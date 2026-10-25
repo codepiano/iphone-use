@@ -930,3 +930,35 @@ fn list_diagnostics_lift_one_image_and_keep_coverage_delivery_in_all_modes() {
         }
     }
 }
+
+#[test]
+fn deadline_keeps_partial_collection_rows_in_all_output_modes() {
+    for mode in ["full", "slim", "off"] {
+        let body = serde_json::json!({"ok":false,"error":"list_deadline","outcome":"partial","retry_safe":false,"stop_reason":"deadline","complete":false,"rows":[{"kind":"Cell","label":"KNOWN_ROW","page":1}],"pages":[{"page":1,"rows_seen":1,"new_rows":1}],"swipes":1,"native_mutations_confirmed":1,"native_mutations_uncertain":0,"coverage":"Rows are historical, incomplete and have no current snapshot","recovery":{"image_omitted":"request_deadline","replay_action":false}});
+        let daemon = ScriptedDaemon::start("504 Gateway Timeout", body.to_string().into_bytes());
+        let mut mcp = McpChild::start_with(&daemon.url, mode);
+        let reply = mcp.call_tool(2, "phone_collect_list", serde_json::json!({"max_pages":3}));
+        let result = &reply["result"];
+        assert_eq!(result["isError"], true, "{reply}");
+        let text = result["content"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|block| block["text"].as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            text.contains("KNOWN_ROW")
+                && text.contains("deadline")
+                && text.contains("1 acknowledged")
+                && text.contains("do not replay"),
+            "{text}"
+        );
+        assert!(result["content"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|block| block["type"] != "image"));
+        assert_eq!(daemon.requests.lock().unwrap().len(), 1);
+    }
+}

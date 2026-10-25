@@ -9897,9 +9897,36 @@ fn validate_text_request(action: &serde_json::Map<String, serde_json::Value>) ->
     Ok(())
 }
 
-fn native_guard(state:&AppState,scope:&crate::input_continuation::Scope)->Arc<crate::native_scope::Guard>{
-    let scope=scope.clone();let owner=state.owner_epoch.clone();let privacy=state.privacy_epoch.clone();let until=state.private_until.clone();
-    crate::native_scope::Guard::new(move || InputContext{scope:&scope,owner_epoch:&owner,privacy_epoch:&privacy,private_until:&until}.refusal().map(|(reason,_)|reason))
+fn native_guard(
+    state: &AppState,
+    scope: &crate::input_continuation::Scope,
+) -> Arc<crate::native_scope::Guard> {
+    native_guard_until(state, scope, None)
+}
+fn native_guard_until(
+    state: &AppState,
+    scope: &crate::input_continuation::Scope,
+    deadline: Option<tokio::time::Instant>,
+) -> Arc<crate::native_scope::Guard> {
+    let scope = scope.clone();
+    let owner = state.owner_epoch.clone();
+    let privacy = state.privacy_epoch.clone();
+    let until = state.private_until.clone();
+    crate::native_scope::Guard::new(move || {
+        InputContext {
+            scope: &scope,
+            owner_epoch: &owner,
+            privacy_epoch: &privacy,
+            private_until: &until,
+        }
+        .refusal()
+        .map(|v| v.0)
+        .or_else(|| {
+            deadline
+                .filter(|time| tokio::time::Instant::now() >= *time)
+                .map(|_| "list_deadline")
+        })
+    })
 }
 
 fn native_partial_body(confirmed:u64)->serde_json::Value {
@@ -12657,16 +12684,31 @@ async fn agent_actions_claimed(
 // for one label, swiping on the agent's behalf (see `crate::collect`).
 // ---------------------------------------------------------------------------
 
+#[derive(Default)]
+struct ListProgress {
+    swipes: std::sync::atomic::AtomicU64,
+    checkpoint: Mutex<Option<serde_json::Value>>,
+}
+
 /// The runner as a [`crate::collect::Pager`]: a page is the element tree, a
 /// swipe is the coordinate scroll `/agent/input` sends (`runner_scroll`).
 struct RunnerPager<'a> {
     w: &'a mut crate::runner::RunnerClient,
     screen: Option<(f64, f64)>,
     first_page: Option<crate::collect::Page>,
-    swipes: Arc<std::sync::atomic::AtomicU64>,
+    progress: Arc<ListProgress>,
 }
 
 impl crate::collect::Pager for RunnerPager<'_> {
+    fn checkpoint(
+        &mut self,
+        rows: &[crate::collect::CollectedRow],
+        pages: &[crate::collect::PageReport],
+    ) {
+        *recover(self.progress.checkpoint.lock()) =
+            Some(serde_json::json!({"rows":rows,"row_count":rows.len(),"pages":pages}));
+    }
+
     async fn read(&mut self) -> anyhow::Result<crate::collect::Page> {
         crate::native_scope::read(async {
             if let Some(page) = self.first_page.take() {
@@ -12709,7 +12751,8 @@ impl crate::collect::Pager for RunnerPager<'_> {
         let (x, y) = region.center();
         let dy = crate::collect::page_dy(region.h * height, direction);
         runner_scroll(self.w, x, y, 0.0, dy).await?;
-        self.swipes
+        self.progress
+            .swipes
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         // The swipe ACK remains confirmed if a later read-only settle is revoked.
         let _ = crate::native_scope::read(async {
@@ -12884,6 +12927,7 @@ async fn scoped_list(
     body: String,
     find: bool,
 ) -> Response {
+    let deadline = tokio::time::Instant::now() + crate::collect::COLLECT_DEADLINE;
     let generation = state
         .privacy_epoch
         .load(std::sync::atomic::Ordering::Acquire);
@@ -12895,23 +12939,28 @@ async fn scoped_list(
     }
     let recovery = capture_recovery_scope(&state, &headers);
     let scope = capture_input_scope(&state, &headers, generation, recovery.as_ref());
-    let progress = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let progress = Arc::new(ListProgress::default());
     let fence = MutationObservationFence {
         state: state.clone(),
         scope: scope.clone(),
     };
-    let guard = scope.as_ref().map(|scope| native_guard(&state, scope));
+    let guard = scope
+        .as_ref()
+        .map(|scope| native_guard_until(&state, scope, Some(deadline)));
+    let mut timed_out = false;
     let response = if request_scope_refusal(&state, scope.as_ref()).is_some() {
         None
     } else if let Some(guard) = &guard {
-        guard
-            .run(async {
+        match tokio::time::timeout_at(
+            deadline,
+            guard.run(async {
                 if find {
                     agent_scroll_find_claimed(
                         State(state.clone()),
                         headers.clone(),
                         body,
                         progress.clone(),
+                        deadline,
                     )
                     .await
                 } else {
@@ -12920,11 +12969,20 @@ async fn scoped_list(
                         headers.clone(),
                         body,
                         progress.clone(),
+                        deadline,
                     )
                     .await
                 }
-            })
-            .await
+            }),
+        )
+        .await
+        {
+            Ok(response) => response,
+            Err(_) => {
+                timed_out = true;
+                None
+            }
+        }
     } else {
         None
     };
@@ -12932,9 +12990,15 @@ async fn scoped_list(
         .as_ref()
         .map(|guard| guard.counts())
         .unwrap_or_default();
-    let confirmed_swipes = progress.load(std::sync::atomic::Ordering::Acquire);
+    let confirmed_swipes = progress.swipes.load(std::sync::atomic::Ordering::Acquire);
+    timed_out |= tokio::time::Instant::now() >= deadline;
+    timed_out |= guard
+        .as_ref()
+        .is_some_and(|guard| guard.denied() && guard.reason() == "list_deadline");
     let interrupted = request_scope_refusal(&state, scope.as_ref()).is_some()
-        || guard.as_ref().is_some_and(|guard| guard.denied());
+        || guard
+            .as_ref()
+            .is_some_and(|guard| guard.denied() && guard.reason() != "list_deadline");
     let mut response = if interrupted {
         recover(state.element_snapshots.lock()).clear();
         recover(state.owner_snapshots.lock()).clear();
@@ -12961,6 +13025,48 @@ async fn scoped_list(
         let body = serde_json::json!({"ok":false,"error":error,"outcome":if counts.uncertain()>0{"unknown"}else if sent{"partial"}else{"not_sent"},"retry_safe":!sent,
             "swipes":confirmed_swipes,"native_mutations_confirmed":counts.confirmed,"native_mutations_uncertain":counts.uncertain()});
         json_response(status, crate::observation::redact(body, reason))
+    } else if timed_out {
+        let sent = counts.confirmed > 0 || counts.uncertain() > 0;
+        let mut body = recover(progress.checkpoint.lock())
+            .clone()
+            .unwrap_or_else(|| serde_json::json!({}));
+        if find {
+            body["found"] = false.into();
+        } else {
+            body["rows"] = body
+                .get("rows")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!([]));
+            body["pages"] = body
+                .get("pages")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!([]));
+            body["row_count"] = body["rows"].as_array().map_or(0, Vec::len).into();
+            body["complete"] = false.into();
+            body["coverage"]="Only rows observed before the deadline are retained. Rows are deduplicated on kind/label/value and limited to accessibility data. Coverage is incomplete and later gestures may have moved the page; read again before acting on a row".into();
+        }
+        body["ok"] = false.into();
+        body["error"] = "list_deadline".into();
+        body["stop_reason"] = "deadline".into();
+        body["outcome"] = if counts.uncertain() > 0 {
+            "unknown"
+        } else if sent {
+            "partial"
+        } else {
+            "not_sent"
+        }
+        .into();
+        body["retry_safe"] = (!sent).into();
+        body["swipes"] = confirmed_swipes.into();
+        body["native_mutations_confirmed"] = counts.confirmed.into();
+        body["native_mutations_uncertain"] = counts.uncertain().into();
+        body["recovery"] = serde_json::json!({"visual_check_required":true,"replay_action":false,"image_omitted":"request_deadline"});
+        body["hint"] = if sent {
+            "The request time budget ended; input may still finish on the phone. Observe fresh state before planning remaining work; never replay applied or uncertain input or the whole call"
+        } else {
+            "No input was sent before the time budget ended. Check whether another operation is still running before starting fresh work"
+        }.into();
+        json_response(StatusCode::GATEWAY_TIMEOUT, body)
     } else {
         let response = response.unwrap_or_else(list_scope_error);
         let (response, body) = read_json_response(response).await;
@@ -12982,7 +13088,21 @@ async fn scoped_list(
     if let Some(recovery) = recovery {
         response.extensions_mut().insert(recovery);
     }
-    attach_visual_recovery(&state, &headers, response, crate::recovery::list_advice).await
+    if timed_out {
+        response
+    } else if let Some(guard) = guard {
+        guard
+            .scoped(attach_visual_recovery(
+                &state,
+                &headers,
+                response,
+                crate::recovery::list_advice,
+                Some(deadline),
+            ))
+            .await
+    } else {
+        response
+    }
 }
 
 /// `POST /agent/collect` — read rows of one kind across pages:
@@ -12993,7 +13113,8 @@ async fn agent_collect_claimed(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     body: String,
-    progress: Arc<std::sync::atomic::AtomicU64>,
+    progress: Arc<ListProgress>,
+    deadline: tokio::time::Instant,
 ) -> Response {
     let parsed = if body.trim().is_empty() {
         Ok(serde_json::Value::Null)
@@ -13008,7 +13129,6 @@ async fn agent_collect_claimed(
     let Some(runner) = state.runner.clone() else {
         return ControlRefusal::runner_not_configured().into_response();
     };
-    let deadline = tokio::time::Instant::now() + crate::collect::COLLECT_DEADLINE;
     let _priority = state.begin_runner_control();
     let mut w = match begin_list_control(&state, &headers, &runner, deadline).await {
         Ok(w) => w,
@@ -13018,7 +13138,7 @@ async fn agent_collect_claimed(
         w: &mut w,
         screen: None,
         first_page: None,
-        swipes: progress,
+        progress,
     };
     use crate::collect::Pager as _;
     let page = match pager.read().await {
@@ -13242,7 +13362,8 @@ async fn agent_scroll_find_claimed(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     body: String,
-    progress: Arc<std::sync::atomic::AtomicU64>,
+    progress: Arc<ListProgress>,
+    deadline: tokio::time::Instant,
 ) -> Response {
     let request = match serde_json::from_str::<serde_json::Value>(&body)
         .map_err(|e| format!("body is not JSON: {e}"))
@@ -13255,7 +13376,6 @@ async fn agent_scroll_find_claimed(
     let Some(runner) = state.runner.clone() else {
         return ControlRefusal::runner_not_configured().into_response();
     };
-    let deadline = tokio::time::Instant::now() + crate::collect::COLLECT_DEADLINE;
     let _priority = state.begin_runner_control();
     let mut w = match begin_list_control(&state, &headers, &runner, deadline).await {
         Ok(w) => w,
@@ -13265,7 +13385,7 @@ async fn agent_scroll_find_claimed(
         w: &mut w,
         screen: None,
         first_page: None,
-        swipes: progress,
+        progress,
     };
     use crate::collect::Pager as _;
     let page = match pager.read().await {
@@ -13930,12 +14050,15 @@ async fn attach_failure_recovery(
     headers: &HeaderMap,
     response: Response,
 ) -> Response {
-    attach_visual_recovery(state,headers,response,crate::recovery::advice).await
+    attach_visual_recovery(state, headers, response, crate::recovery::advice, None).await
 }
 
 async fn attach_visual_recovery(
-    state: &Arc<AppState>, headers: &HeaderMap, response: Response,
+    state: &Arc<AppState>,
+    headers: &HeaderMap,
+    response: Response,
     advice: fn(&serde_json::Value) -> Option<&'static str>,
+    deadline: Option<tokio::time::Instant>,
 ) -> Response {
     if headers
         .get("x-phone-recovery-image")
@@ -13957,7 +14080,9 @@ async fn attach_visual_recovery(
     };
     json["recovery"] =
         serde_json::json!({"visual_check_required":true,"replay_action":false,"next_step":advice});
-    if !recovery_scope_current(state, &scope) {
+    if deadline.is_some_and(|time| tokio::time::Instant::now() >= time) {
+        json["recovery"]["image_omitted"] = "request_deadline".into();
+    } else if !recovery_scope_current(state, &scope) {
         json["recovery"]["image_omitted"] = "owner_or_privacy_changed".into();
     } else {
         let budget =
@@ -13965,7 +14090,9 @@ async fn attach_visual_recovery(
         let capture = async {
             let mut outcome = crate::scope::ImageOutcome::Unavailable;
             for side in crate::scope::IMAGE_SIDES {
-                if !recovery_scope_current(state, &scope) {
+                if deadline.is_some_and(|time| tokio::time::Instant::now() >= time)
+                    || !recovery_scope_current(state, &scope)
+                {
                     break;
                 }
                 let requested_ms = crate::metrics::now_ms();
@@ -14016,7 +14143,12 @@ async fn attach_visual_recovery(
             }
             outcome
         };
-        match tokio::time::timeout(std::time::Duration::from_secs(2), capture).await {
+        let capture_end = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+        let capture_end = deadline.map_or(capture_end, |time| time.min(capture_end));
+        match tokio::time::timeout_at(capture_end, capture).await {
+            Ok(_) if deadline.is_some_and(|time| tokio::time::Instant::now() >= time) => {
+                json["recovery"]["image_omitted"] = "request_deadline".into();
+            }
             Ok(outcome) if recovery_scope_current(state, &scope) => {
                 let dimensions = match &outcome {
                     crate::scope::ImageOutcome::Attached { png, .. } if png.len() >= 24 => Some([
@@ -14038,7 +14170,13 @@ async fn attach_visual_recovery(
             Ok(_) => json["recovery"]["image_omitted"] = "owner_or_privacy_changed".into(),
             Err(_) => {
                 json["image_unavailable"] = true.into();
-                json["recovery"]["image_omitted"] = "capture_timeout".into();
+                json["recovery"]["image_omitted"] =
+                    if deadline.is_some_and(|time| tokio::time::Instant::now() >= time) {
+                        "request_deadline"
+                    } else {
+                        "capture_timeout"
+                    }
+                    .into();
             }
         }
     }
@@ -17211,6 +17349,7 @@ async fn agent_screenshot_capture(
             .await
         }
         Err(failure) => {
+            if failure.cause=="scope_revoked" {return list_scope_error();}
             tracing::warn!(
                 "agent screenshot: failed after {} attempt(s) ({}): {}",
                 failure.attempts,
@@ -17315,6 +17454,9 @@ async fn attempt_capture(
     request: crate::runner::ShotRequest,
     budget: std::time::Duration,
 ) -> Result<crate::runner::Capture, (&'static str, String)> {
+    if let Err(error) = crate::native_scope::ensure_current() {
+        return Err(("scope_revoked", error.to_string()));
+    }
     let started = tokio::time::Instant::now();
     // The lock wait counts against the budget, the request gets what is left.
     let captured = tokio::time::timeout(budget, async {
@@ -17324,10 +17466,17 @@ async fn attempt_capture(
             .await
     })
     .await;
+    if let Err(error) = crate::native_scope::ensure_current() {
+        return Err(("scope_revoked", error.to_string()));
+    }
     match captured {
         Ok(Ok(capture)) => Ok(capture),
         Ok(Err(error)) => Err((
-            crate::runner::screenshot_failure_cause(&error),
+            if crate::native_scope::is_revoked(&error) {
+                "scope_revoked"
+            } else {
+                crate::runner::screenshot_failure_cause(&error)
+            },
             format!("{error:#}"),
         )),
         Err(_) => Err((
