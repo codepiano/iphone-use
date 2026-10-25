@@ -1,0 +1,18 @@
+{
+  "connection-loss": {
+    "scope": "Reused native candidate device build; isolated identities and local development signing",
+    "native_pre_sign_macho_sha256": "61df97a1efaea64ab078d8a0c77ad8793f79f3b0d68328f0bb9c2a8fc52ce61c",
+    "native_signed_macho_sha256": "6a00e86199d71f9c374bfc87541ffaf5e2d9b4a9402132d325aeed1839031f3f",
+    "fixture_macho_sha256": "c8fa1864d101339dc6c17799077c09dda88b4ebae04d76a17e9d691b54c86abd",
+    "runner_id": "com.leeguoo.iphone-use.acceptance.axcharacters.xctrunner",
+    "fixture_id": "com.leeguoo.iphone-use.acceptance.axcharacters.fixture"
+  },
+  "fresh-cohort": {
+    "scope": "Reused native candidate device build; isolated identities and local development signing",
+    "native_pre_sign_macho_sha256": "61df97a1efaea64ab078d8a0c77ad8793f79f3b0d68328f0bb9c2a8fc52ce61c",
+    "native_signed_macho_sha256": "9c7f6146d3c2b3bf11648e06385f70e25b8b31e427a6d3e01a523a954be58760",
+    "fixture_macho_sha256": "351f51bb3e08bae2a2d36adfbb423cb2b34cadd401de68d7204155cdde25e58d",
+    "runner_id": "com.leeguoo.iphone-use.acceptance.axcharacters.xctrunner",
+    "fixture_id": "com.leeguoo.iphone-use.acceptance.axcharacters.fixture"
+  }
+}

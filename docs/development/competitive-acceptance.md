@@ -105,6 +105,14 @@ Limits to close before claiming input superiority:
   The prototype remains outside the product. Bulk wrapper redirect, unfocused
   delegate bypass and unavailable local/foreground read shortcuts are retained;
   none is promoted to a safety or latency win.
+- An isolated [shared-boundary character prototype](../measurements/ax-input-boundary-probes-2026-10-26/README.md)
+  subsequently completes one physical 501-character append with an exact App
+  hash in 8.286 native seconds and reaches A20/B0. It checks before the first
+  action and after every action, sharing each adjacent boundary only across pure
+  local work. Three Simulator long samples also complete. The physical cohort
+  still fails overall: an earlier connection-loss request and a later empty-field
+  foreground-refusal request lack complete receipts. This is no default change
+  or comparative latency win. Raw attribute-schema alternatives remain readonly.
 - Old runners without the capability keep their existing input behavior;
   they must not be described as protected.
 - Ordinary short text on `ipu:atomicText` binds, optionally clears, types and

@@ -1,0 +1,16 @@
+{
+  "simulator_records": 17,
+  "readonly_schema_cases": 3,
+  "schema_samples_per_case": 3,
+  "physical_verified_long_501": 1,
+  "physical_verified_native_seconds": 8.285715937614441,
+  "physical_cohort_overall_passed": false,
+  "unknown_trials": [
+    "first long request lost connection; no final App receipt",
+    "later empty-field response not preserved before foreground refusal"
+  ],
+  "guard_boundary": "n+1 complete live checks; no reuse across requests/waits/errors",
+  "default_product_changed": false,
+  "ci_run": 40243760599,
+  "ci_attempt_1_ios18.2": "failed before first-focus-typing-0 receipt; 13 previous cases passed"
+}

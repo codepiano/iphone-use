@@ -344,17 +344,38 @@ def input_scroll_anchor(record, dy=300):
 
 
 def input_case(daemon, args, label, kind):
+    # Own this output before any operation. A preparation failure must remain a
+    # failed case, with a clear distinction from a possibly dispatched batch.
     out = args.out / label
     out.mkdir()
+    attempt = {"phase": "preparing", "input_attempted": False}
+    try:
+        return _input_case(daemon, args, label, kind, attempt)
+    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+        report = {"case": label, "carrier": "batch", "passed": False,
+                  "errors": [f"{attempt['phase']} failed: {error}"],
+                  "harness_error": str(error), "attempt": attempt}
+        (out / "result.json").write_text(json.dumps(report, indent=2) + "\n")
+        print(json.dumps({"case": label, "passed": False, "attempt": attempt,
+                          "errors": report["errors"]}), flush=True)
+        return report
+
+
+def _input_case(daemon, args, label, kind, attempt):
+    out = args.out / label
     nonce = uuid.uuid4().hex
+    attempt.update(phase="fixture_launch", run_id=nonce)
     daemon.require_simulator(args.udid)
     command(["xcrun", "simctl", "terminate", args.udid, BUNDLE], check=False, timeout=30)
     env = {k: v for k, v in os.environ.items() if not k.startswith("SIMCTL_CHILD_")}
     env.update(SIMCTL_CHILD_GESTURE_RUN_ID=nonce, SIMCTL_CHILD_GESTURE_FIXTURE_MODE="input")
     command(["xcrun", "simctl", "launch", args.udid, BUNDLE], env=env, timeout=60)
+    attempt["phase"] = "fixture_readiness"
     before = daemon.wait_metrics(nonce, identifier="input-result")
     if not before or before.get("selections") != [] or before.get("text") != "":
         raise RuntimeError("input fixture is not fresh; no input sent")
+    attempt["phase"] = "input_preflight"
+    attempt["before"] = before
     row = 8 if kind == "scroll" else 3
     steps = []
     if kind == "scroll":
@@ -375,9 +396,11 @@ def input_case(daemon, args, label, kind):
     try:
         # Exactly one send. Wait only for the receiver's postcondition below;
         # a missing acknowledgement or selection must never replay the batch.
+        attempt.update(phase="input_dispatch", input_attempted=True, steps=steps)
         reply = daemon.call("/agent/actions", {"steps": steps, "observe": True})
     except (OSError, ValueError) as error:
         reply_error = str(error)
+    attempt.update(phase="input_postcondition", reply=reply, reply_error=reply_error)
     after = None
     until = time.monotonic() + 4
     while time.monotonic() < until:
@@ -388,7 +411,8 @@ def input_case(daemon, args, label, kind):
     errors = judge_input(after, nonce, kind, row)
     if reply_error or not isinstance(reply, dict) or reply.get("ok") is not True:
         errors.append("input acknowledgement failed: " + str(reply_error or reply))
-    report = {"case": label, "carrier": "batch", "passed": not errors, "errors": errors,
+    attempt["phase"] = "complete"
+    report = {"attempt": attempt, "case": label, "carrier": "batch", "passed": not errors, "errors": errors,
               "before": before, "after": after, "steps": steps, "reply": reply, "reply_error": reply_error}
     (out / "result.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps({"case": label, "passed": not errors, "after": after, "errors": errors}), flush=True)
