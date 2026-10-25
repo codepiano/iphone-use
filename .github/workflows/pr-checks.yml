@@ -153,12 +153,13 @@ jobs:
           tools = listing["result"]["tools"]
           names = sorted(tool["name"] for tool in tools)
 
-          assert len(names) == 39, names
+          assert len(names) == 40, names
           for required in (
               "phone_capabilities",
               "phone_home_layout",
               "phone_status",
               "phone_run_steps",
+              "phone_set_value",
               "phone_hold",
               "phone_release_owner",
           ):
@@ -175,6 +176,7 @@ jobs:
               "phone_tap",
               "phone_scroll",
               "phone_type",
+              "phone_set_value",
               "phone_key",
               "phone_shortcut",
               "phone_tap_element",

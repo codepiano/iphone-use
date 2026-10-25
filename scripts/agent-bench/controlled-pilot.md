@@ -39,7 +39,7 @@ retain the incomplete records, and do not reset into another live trial.
 
 For native read-only tasks expose `phone_status`, `phone_elements`,
 `phone_read_value`, `phone_screenshot`. Write tasks may additionally expose
-`phone_tap_element`, `phone_tap_label`, `phone_type`, `phone_run_steps`. Native
+`phone_tap_element`, `phone_tap_label`, `phone_type`, `phone_set_value`, `phone_run_steps`. Native
 profiles are enforced by the MCP server. For reference allow `pua_ready`,
 `pua_observe`, `pua_find`; write tasks may add `pua_tap`, `pua_type_text`,
 `pua_batch`, `pua_wait`. Derive an exact CLI `deny_tools` list from all other

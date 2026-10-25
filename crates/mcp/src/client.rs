@@ -658,7 +658,11 @@ impl DaemonClient {
     /// ordinary input. A continuation has a daemon-side budget of at most 15 seconds.
     pub async fn input_value_observed(&self, action: &serde_json::Value, observe: bool) -> anyhow::Result<DaemonResponse> {
         let path = if observe { self.observed_input_path() } else { "/agent/input".into() };
-        let typing = action.get("text").and_then(serde_json::Value::as_str).map(text_allowance).unwrap_or_default();
+        let text = match action.get("type").and_then(serde_json::Value::as_str) {
+            Some("set_value") => action.get("value"),
+            _ => action.get("text"),
+        };
+        let typing = text.and_then(serde_json::Value::as_str).map(text_allowance).unwrap_or_default();
         let req = self.auth(self.http().post(self.url(&path)))
             .header("x-phone-control", "1")
             .header(header::CONTENT_TYPE, "application/json")

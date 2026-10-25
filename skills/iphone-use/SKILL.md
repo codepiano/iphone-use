@@ -96,6 +96,7 @@ it off again.
 | Tap by locator | `tap_locator` + `locator` | `phone_run_steps` step | `tap_locator` |
 | Tap a point | `tap` + `x`,`y` | `phone_tap` | `tap` |
 | Type | `text` (`clear:true` explicitly replaces the focused field; up to 20000 chars — on a safe partial use `continue_token` alone; unknown delivery requires inspecting the original field) | `phone_type` | `type` (`input` names a runtime value) |
+| Replace a selected field | `set_value` + `element`, `snapshot`, `value` (up to 1000 chars, empty clears) | `phone_set_value` | — |
 | Key | `key` `return`… | `phone_key` | `key` |
 | Home / Spotlight | `shortcut` | `phone_shortcut` | `shortcut` |
 | Scroll | `scroll` `dy` (80 ≈ 15% of a screen, 400 ≈ 75%) | `phone_scroll` (`x`, `y`, `dx`, `dy` required) | `scroll` (`x`, `y`, `dx`, `dy` required in MCP batches) |
@@ -152,6 +153,14 @@ curl -s -H "$AUTH" -H "$MUTATION" -H "$OWNER" -X POST "$HOST/agent/actions" -d '
 | Reconnect to check health | `phone_status`; reconnect only when the task needs the phone |
 | Type without checking focus | Confirm the foreground app and focused field, then type |
 | Repeat a label that was not found | Use the `did you mean` label the error offers, or re-read |
+
+Selected replacement: read `phone_elements`, then call `phone_set_value` with
+that exact `snapshot`, the field's zero-based `element` index, and its complete
+`value` (up to 1000 Unicode characters; empty clears). This selects the field
+even when another field has focus. Verify the resulting original field; unknown
+delivery can include partial edits and must not trigger a replay. Original-field
+binding during clear/chunks requires a supporting native Runner; older Runners
+retain their existing clear/type behavior.
 
 Bounded long input: `phone_type {"text":"…","budget_ms":15000}` can return a
 single-use `continue_token` at a safe chunk boundary. Continue with

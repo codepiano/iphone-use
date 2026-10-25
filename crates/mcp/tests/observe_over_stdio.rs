@@ -92,7 +92,7 @@ impl ScriptedDaemon {
                             body.len()
                         );
                         let _ = stream.write_all(head.as_bytes());
-                        let _ = stream.write_all(&body);
+                        let _ = stream.write_all(body);
                     }
                     Err(ref error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                         std::thread::sleep(Duration::from_millis(10));
@@ -989,4 +989,59 @@ fn readonly_value_text_is_complete_and_single_copy_in_all_modes() {
             .to_ascii_lowercase()
             .contains("x-phone-control:"));
     }
+}
+
+#[test]
+fn selected_replacement_forwards_the_original_snapshot_and_unicode_value() {
+    let daemon = ScriptedDaemon::start("200 OK", br#"{"ok":true,"native_mutations_confirmed":1}"#.to_vec());
+    let mut mcp = McpChild::start(&daemon.url);
+    let reply = mcp.call_tool(2, "phone_set_value", serde_json::json!({
+        "element":2,"snapshot":"caller-original","value":"替换🙂","observe":false
+    }));
+    assert_ne!(reply["result"]["isError"], true, "{reply}");
+    let requests = daemon.requests.lock().unwrap();
+    let writes: Vec<_> = requests.iter().filter(|r|r.starts_with("POST /agent/input ")).collect();
+    assert_eq!(writes.len(),1,"{requests:?}");
+    let body: serde_json::Value = serde_json::from_str(writes[0].split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    assert_eq!(body,serde_json::json!({"type":"set_value","element":2,"snapshot":"caller-original","value":"替换🙂"}));
+}
+
+#[test]
+fn selected_replacement_observes_by_default_and_can_clear() {
+    let daemon = ScriptedDaemon::start("200 OK", br#"{"ok":true}"#.to_vec());
+    let mut mcp = McpChild::start(&daemon.url);
+    let reply = mcp.call_tool(2, "phone_set_value", serde_json::json!({
+        "element":0,"snapshot":"caller-original","value":""
+    }));
+    assert_ne!(reply["result"]["isError"], true, "{reply}");
+    let requests = daemon.requests.lock().unwrap();
+    let writes: Vec<_> = requests.iter().filter(|r|r.starts_with("POST /agent/input?")).collect();
+    assert_eq!(writes.len(),1,"{requests:?}");
+    assert!(writes[0].starts_with("POST /agent/input?return=delta "), "{requests:?}");
+    let body: serde_json::Value = serde_json::from_str(writes[0].split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    assert_eq!(body["value"], "");
+    assert_eq!(body["snapshot"], "caller-original");
+}
+
+#[test]
+fn selected_replacement_rejects_missing_binding_or_oversized_value_without_dispatch() {
+    let daemon = ScriptedDaemon::start("200 OK", br#"{"ok":true}"#.to_vec());
+    let mut mcp = McpChild::start(&daemon.url);
+    for (id,args) in [(2,serde_json::json!({"element":0,"snapshot":" ","value":"x","observe":false})),
+                      (3,serde_json::json!({"element":0,"snapshot":"original","value":"字".repeat(1001),"observe":false}))] {
+        let reply=mcp.call_tool(id,"phone_set_value",args);
+        assert_eq!(reply["result"]["isError"],true,"{reply}");
+    }
+    assert!(!daemon.requests.lock().unwrap().iter().any(|r|r.starts_with("POST /agent/input ")));
+}
+
+#[test]
+fn selected_replacement_keeps_unknown_delivery_and_never_retries_the_write() {
+    let daemon = ScriptedDaemon::start("502 Bad Gateway", br#"{"ok":false,"outcome":"unknown","retry_safe":false,"native_mutations_uncertain":1}"#.to_vec());
+    let mut mcp = McpChild::start(&daemon.url);
+    let reply=mcp.call_tool(2,"phone_set_value",serde_json::json!({"element":1,"snapshot":"original","value":"replacement","observe":false}));
+    assert_eq!(reply["result"]["isError"],true,"{reply}");
+    assert_eq!(reply["result"]["structuredContent"]["outcome"],"unknown","{reply}");
+    assert_eq!(reply["result"]["structuredContent"]["retry_safe"],false,"{reply}");
+    assert_eq!(daemon.requests.lock().unwrap().iter().filter(|r|r.starts_with("POST /agent/input ")).count(),1);
 }

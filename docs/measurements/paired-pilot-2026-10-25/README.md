@@ -152,6 +152,27 @@ passes 34 cases. [Build validation](final/build-validation.json) records 278
 separate device-independent logic checks and an unsigned iOS build. These checks
 do not replace the actual AX/keyboard fixture runs.
 
+## Selected replacement through the MCP entry point
+
+The new `phone_set_value` tool exposes the daemon's selected-field operation to
+MCP clients. A separate [actual stdio receipt](selected-mcp-entry.json) records
+one invocation on an owned Simulator: the caller passes the exact observation
+token and B's index while A initially has focus. B receives all 501 requested
+characters; App-owned hashes confirm A, the multiline field and the secure dummy
+remain unchanged. This is a single entry-point acceptance case, not an additional
+paired/model benchmark. The MCP binary was built with Rust 1.99.1; its hash is in
+the receipt. The controller reports no cleanup errors and independently finds
+its owned Simulator absent afterward.
+
+The tool forwards the original snapshot without substituting or refreshing it,
+defaults to observed output and retains daemon delivery verdicts. Its stdio
+regressions cover Unicode forwarding, default observation/empty clearing,
+rejection before dispatch and no mutation replay after an unknown outcome.
+The [local validation record](selected-mcp-validation.json) records Rust 1.96.0
+MCP all-target tests (302 passed, one existing ignored) and all-target Clippy.
+Supporting native Runners retain the original field across clear/chunks; older
+Runners keep their existing clear/type behavior.
+
 ## Retained failures and limits
 
 The [earlier ABBA candidate](remote-diagnostics/paired-v6-file-functional/results.json)

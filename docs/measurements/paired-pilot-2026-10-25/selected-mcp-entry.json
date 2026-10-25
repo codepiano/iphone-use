@@ -1,0 +1,112 @@
+{
+  "scope": "Actual stdio MCP/daemon/native Runner on an owned Simulator; no model or physical device; built with local Rust 1.99.1 before CI-toolchain checks",
+  "selected_field": "b",
+  "requested_characters": 501,
+  "caller_snapshot": "JR0yD77f1hIShodZrhbDqBh15TK9MdAIa2vRKr9Tz5E",
+  "selected_index": 3,
+  "app_receipt": {
+    "advance_on_clear": false,
+    "advance_triggered": false,
+    "events": {
+      "a": 0,
+      "b": 501,
+      "multi": 0,
+      "secure": 0
+    },
+    "fields": {
+      "a": {
+        "characters": 3,
+        "sha256": "cba06b5736faf67e54b07b561eae94395e774c517a7d910a54369e1263ccfbd4"
+      },
+      "b": {
+        "characters": 501,
+        "sha256": "30e4235fb42b5b4d6e11a22878959af9eb205179c386f161b11b1070cae77d70"
+      },
+      "multi": {
+        "characters": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "secure": {
+        "characters": 22,
+        "sha256": "023fd8e9652154ec7ea7426db84fabdff86b75361da7999a16343a0b38af23f4"
+      }
+    },
+    "focus": "b",
+    "foreground_active": true,
+    "initial_focus_established": true,
+    "keyboard_did_show": true,
+    "pid": 34578,
+    "seed": "short",
+    "selection": {
+      "a": {
+        "length": 0,
+        "location": 3
+      },
+      "b": {
+        "length": 0,
+        "location": 501
+      }
+    },
+    "selection_commands": 0,
+    "shift_trigger_length": 0,
+    "title": "Paired fixture block-0-warmup",
+    "trial": "block-0-warmup"
+  },
+  "reply": {
+    "jsonrpc": "2.0",
+    "id": 3,
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "replaced the selected field"
+        }
+      ],
+      "structuredContent": {
+        "ok": true,
+        "timing": {
+          "daemon_ms": 10,
+          "runner": [
+            {
+              "bytes": 139,
+              "call": "POST /elements",
+              "count": 1,
+              "ms": 18
+            },
+            {
+              "bytes": 65,
+              "call": "GET /element/:id/rect",
+              "count": 1,
+              "ms": 3
+            },
+            {
+              "bytes": 1501,
+              "call": "GET /element/:id/attribute/value",
+              "count": 2,
+              "ms": 9
+            },
+            {
+              "bytes": 64,
+              "call": "POST /ipu/element/:id/replace",
+              "count": 1,
+              "ms": 4098
+            },
+            {
+              "bytes": 28,
+              "call": "POST /wda/keys",
+              "count": 2,
+              "ms": 5468
+            }
+          ],
+          "runner_ms": 9596,
+          "total_ms": 9606
+        },
+        "transport": "runner"
+      },
+      "isError": false
+    }
+  },
+  "mcp_binary_sha256": "d2bd6a8dadfe811aa0dff7a313791e0023d8afa8a8482f6a327e197bc97eeef5",
+  "cleanup_errors": [],
+  "simulator_removed": true
+}

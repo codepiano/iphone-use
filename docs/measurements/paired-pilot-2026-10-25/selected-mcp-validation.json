@@ -1,0 +1,25 @@
+{
+  "scope": "Local MCP checks, not physical-device/model/release acceptance",
+  "toolchain": "Rust 1.96.0",
+  "test": {
+    "command": "RUSTUP_TOOLCHAIN=1.96.0 CARGO_BUILD_JOBS=1 ~/.local/bin/heavy-cargo test -p iphone-use-mcp --all-targets",
+    "exit_code": 0,
+    "passed": 302,
+    "ignored": 1,
+    "new_stdio_tests": [
+      "selected_replacement_forwards_the_original_snapshot_and_unicode_value",
+      "selected_replacement_keeps_unknown_delivery_and_never_retries_the_write",
+      "selected_replacement_rejects_missing_binding_or_oversized_value_without_dispatch",
+      "selected_replacement_observes_by_default_and_can_clear"
+    ]
+  },
+  "clippy": {
+    "command": "RUSTUP_TOOLCHAIN=1.96.0 CARGO_BUILD_JOBS=1 ~/.local/bin/heavy-cargo clippy -p iphone-use-mcp --all-targets -- -D warnings",
+    "exit_code": 0
+  },
+  "sha256": {
+    "crates/mcp/src/server.rs": "e0434508cbcfefcced0b38e494083e8cdab2f6a38d083225a15e153c1df30cfb",
+    "crates/mcp/src/client.rs": "631e5c684674d13b2a01f5d236aa2b7e3da0e028a1279950f07f411fcbb2f028",
+    "crates/mcp/tests/observe_over_stdio.rs": "147bf358b355b89e5e82b0087f47d7d9c34dd797f3dd82e04f2ce7240ce66590"
+  }
+}

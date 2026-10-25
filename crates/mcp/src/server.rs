@@ -167,6 +167,22 @@ pub struct TapElementParams {
     pub observe: Option<bool>,
 }
 
+/// Replace the field selected in the caller's exact observation.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SetValueParams {
+    /// Zero-based field index from phone_elements.
+    pub element: usize,
+    /// Token from that same phone_elements response. Never substitute another snapshot.
+    pub snapshot: String,
+    /// Complete replacement, up to 1000 Unicode characters. Empty clears the field.
+    #[schemars(length(max = 1000))]
+    pub value: String,
+    /// Default true: return the resulting screen change.
+    #[serde(default)]
+    pub observe: Option<bool>,
+}
+
 /// `phone_screenshot`'s default size: legible, and ~40 % fewer image tokens
 /// than a full-resolution capture.
 const DEFAULT_SCREENSHOT_MAX_SIDE: u32 = 1200;
@@ -1167,6 +1183,42 @@ impl PhoneHandler {
         let observe = observe.unwrap_or(true);
         match self.daemon.input_value_observed(&action, observe).await {
             Ok(response) => daemon_action_result(&response, observe, "ok"),
+            Err(error) => unknown_action_result("transport_error", format!("the call failed: {error:#}.")),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // phone_set_value
+    // -----------------------------------------------------------------------
+
+    #[tool(
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = true,
+        ),
+        description = "Replace one explicitly selected nonsecure text field, rather than the current focus. Read \
+        phone_elements first and pass its exact snapshot and field index with the complete value (up to 1000 \
+        Unicode characters); an empty value clears it. Requires phone_status.drivable=true. The daemon checks \
+        the caller's observation and focuses the selected field. Supporting native runners bind clear and \
+        subsequent chunks to that original field; older runners use their existing clear/type path. Clearing \
+        failure stops input. Newlines require a multiline field, and secure fields refuse. An unknown outcome \
+        may include partial changes: inspect the original field and never replay the whole value automatically. \
+        Use phone_type for appending to current focus. observe defaults true; verify the resulting value."
+    )]
+    async fn phone_set_value(
+        &self,
+        Parameters(SetValueParams { element, snapshot, value, observe }): Parameters<SetValueParams>,
+    ) -> CallToolResult {
+        if snapshot.trim().is_empty() || snapshot.chars().count() > 200 || value.chars().count() > 1000 {
+            return not_sent_result("invalid_replacement", "No request was sent: supply the original snapshot (1..200 characters), its field index and a value of at most 1000 characters".into());
+        }
+        self.progress_reset();
+        let observe = observe.unwrap_or(true);
+        let action = serde_json::json!({"type":"set_value","element":element,"snapshot":snapshot,"value":value});
+        match self.daemon.input_value_observed(&action, observe).await {
+            Ok(response) => daemon_action_result(&response, observe, "replaced the selected field"),
             Err(error) => unknown_action_result("transport_error", format!("the call failed: {error:#}.")),
         }
     }
@@ -4518,7 +4570,7 @@ mod tests {
 
         assert_eq!(
             names.len(),
-            39,
+            40,
             "tool count changed; update README, the skill, and the CI assertion: {names:?}"
         );
         for required in [
@@ -4536,6 +4588,7 @@ mod tests {
             "phone_collect_list",
             "phone_scroll_find",
             "phone_read_value",
+            "phone_set_value",
             "phone_logs",
             "phone_crashes",
             "phone_set_location",
@@ -4568,6 +4621,7 @@ mod tests {
             "phone_tap",
             "phone_scroll",
             "phone_type",
+            "phone_set_value",
             "phone_key",
             "phone_shortcut",
             "phone_tap_element",
@@ -5335,7 +5389,7 @@ mod tests {
                 assert!(tool.get("_meta").is_none(), "{name} has no _meta: {tool}");
             }
         }
-        assert_eq!(tools.len(), 39, "the whole documented surface");
+        assert_eq!(tools.len(), 40, "the whole documented surface");
     }
 
     #[test]
