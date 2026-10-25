@@ -97,6 +97,14 @@ Limits to close before claiming input superiority:
   change notifications. Ordinary typing controls honor the same vetoes. That
   prototype was rejected for default input and is not shipped. Its focus fault
   triggers after 500 characters, so it does not close the character-20 gap.
+- Later [target-bound AX character experiments](../measurements/ax-bound-character-probes-2026-10-26/README.md)
+  reach A20/B0 on the physical character-20 fault and preserve reached focused
+  field vetoes. Ordinary 501-character hardware requests still expire in the
+  unchanged ten-second experimental budget (195–251 characters initially;
+  281–322 after deduplicating foreground reads), while Simulator samples finish.
+  The prototype remains outside the product. Bulk wrapper redirect, unfocused
+  delegate bypass and unavailable local/foreground read shortcuts are retained;
+  none is promoted to a safety or latency win.
 - Old runners without the capability keep their existing input behavior;
   they must not be described as protected.
 - Ordinary short text on `ipu:atomicText` binds, optionally clears, types and
@@ -281,3 +289,8 @@ not provider completeness on every app or physical-device support.
 Physical acceptance, other action/key and observation/vault paths,
 remaining opaque-action/flow/vault/log, recovery/host/video work, distribution and comparative task trials
 remain open. The broader goal is not complete.
+
+The explicitly [paired hosted lanes](../measurements/ci-paired-success-2026-10-26/README.md)
+at d9c3e67 complete Xcode15.4/iOS17.5 and Xcode16.2/iOS18.2 with 16 original
+input/gesture cases and 15 recovery observation contracts each. This is CI
+acceptance of the existing product candidate, not the experimental AX backend.
