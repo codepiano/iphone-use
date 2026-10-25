@@ -62,6 +62,11 @@ Limits to close before claiming input superiority:
   reports that chunk as unknown. The simulator covers this with a 20/180 split
   between two fields. This does not prove per-character isolation, rapid
   away-and-back focus detection or physical-device behavior.
+- The inspected Xcode 27.0 Simulator client implements
+  `XCTRunnerDaemonSessionEventRequest.invalidate` as a logging no-op. Calling
+  that method cannot provide an in-flight cancellation guarantee. Keep this
+  [artifact observation](../measurements/paired-pilot-2026-10-25/event-request-invalidation-27.0.json)
+  separate from physical behavior and from other possible cancellation routes.
 - Old runners without the capability keep their existing input behavior;
   they must not be described as protected.
 - Ordinary short text on `ipu:atomicText` binds, optionally clears, types and
