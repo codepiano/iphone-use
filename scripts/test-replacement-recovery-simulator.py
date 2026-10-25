@@ -167,9 +167,18 @@ def main():
         require_target(daemon, args)
         pair.fixture.command("xcrun", "simctl", "install", args.udid, app)
         installed = True
+        # Resolve installation metadata before launch/keyboard initialization.
+        # A hosted iOS 18.2 run stalled in get_app_container after launch before
+        # any input. Keep the read bounded and preserve its phase on failure.
+        phase = time.monotonic()
+        print(json.dumps({"setup_phase":"resolve_fixture_container"}), flush=True)
+        documents = Path(pair.fixture.command("xcrun", "simctl", "get_app_container", args.udid, BUNDLE, "data", timeout=30)) / "Documents"
+        print(json.dumps({"setup_phase":"fixture_container_resolved", "elapsed_seconds":time.monotonic()-phase}), flush=True)
         peer = pair.Peer([str(args.mcp)], environment, args.out / "mcp.log")
+        phase = time.monotonic()
+        print(json.dumps({"setup_phase":"launch_fixture"}), flush=True)
         pair.fixture.command("xcrun", "simctl", "launch", args.udid, BUNDLE, "--trial", "recovery-warmup", "--seed", "short")
-        documents = Path(pair.fixture.command("xcrun", "simctl", "get_app_container", args.udid, BUNDLE, "data")) / "Documents"
+        print(json.dumps({"setup_phase":"fixture_launch_returned", "elapsed_seconds":time.monotonic()-phase}), flush=True)
         receipt = documents / "paired-state.json"
         def state():
             return json.loads(receipt.read_text()) if receipt.exists() else {}
