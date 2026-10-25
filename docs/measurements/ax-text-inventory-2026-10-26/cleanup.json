@@ -1,0 +1,11 @@
+{
+  "exit_code": 0,
+  "live_owned_pids": [],
+  "owned_simulator_present": false,
+  "managed_record_present": false,
+  "restored_source_sha256": {
+    "IPURBridge.h": "5f1b000f3d9f561158f4393dfa374daef06638044d5f7ca312b465f73067444f",
+    "IPURBridge.m": "ed16957de351dc69acf8f9b57d37e89a291fcab8647c4a364f887e5e1209074a",
+    "RunnerRoutes.swift": "74f4e260f8cc62727702c32b38ecc692d9918a1b9c11f80daa65a81c57476c6c"
+  }
+}
