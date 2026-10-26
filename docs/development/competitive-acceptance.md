@@ -327,3 +327,11 @@ The explicitly [paired hosted lanes](../measurements/ci-paired-success-2026-10-2
 at d9c3e67 complete Xcode15.4/iOS17.5 and Xcode16.2/iOS18.2 with 16 original
 input/gesture cases and 15 recovery observation contracts each. This is CI
 acceptance of the existing product candidate, not the experimental AX backend.
+
+Physical follow-up: the isolated complete-value character Runner completes two
+public stdio MCP `phone_type(clear:false)` appends on iPhone 17 Pro Max/iOS 27.2:
+`old` + 501 in 9.56 s and 6015 + 501 in 21.47 s, both with exact independent App
+hashes and unchanged unrelated fields. Owned apps/services were removed and all
+21 preexisting apps preserved. This supplies positive physical completion/latency
+observations; the hardware negative cohort and comparative speed remain open.
+[Physical evidence](../measurements/complete-value-physical-2026-10-26/README.md).

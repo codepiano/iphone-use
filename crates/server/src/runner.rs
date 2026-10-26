@@ -3968,10 +3968,39 @@ mod tests {
             while !stopping.load(Ordering::Acquire) {
                 match listener.accept() {
                     Ok((mut stream,_)) => {
-                        stream.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
-                        stream.set_write_timeout(Some(Duration::from_secs(1))).unwrap();
-                        let mut bytes=[0u8;8192];
-                        if stream.read(&mut bytes).unwrap_or(0)==0 {continue;}
+                        // Socket readiness is not request arrival. A one-second
+                        // read deadline can close an accepted socket while a
+                        // parallel CI worker has not scheduled its sender yet.
+                        // Poll until the complete request or the client-owned
+                        // bound ends; never create a second mock wall clock.
+                        stream.set_nonblocking(true).unwrap();
+                        let mut raw = Vec::new();
+                        let mut bytes = [0u8; 8192];
+                        let complete = loop {
+                            if stopping.load(Ordering::Acquire) { break false; }
+                            match stream.read(&mut bytes) {
+                                Ok(0) => break false,
+                                Ok(n) => raw.extend_from_slice(&bytes[..n]),
+                                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                                    std::thread::sleep(Duration::from_millis(2));
+                                    continue;
+                                }
+                                Err(_) => break false,
+                            }
+                            let Some(end) = raw.windows(4).position(|w| w == b"\r\n\r\n") else { continue; };
+                            let head = String::from_utf8_lossy(&raw[..end]);
+                            let length = head.lines().find_map(|line| {
+                                line.to_ascii_lowercase().strip_prefix("content-length:")
+                                    .and_then(|value| value.trim().parse::<usize>().ok())
+                            }).unwrap_or(0);
+                            if raw.len() >= end + 4 + length {
+                                assert!(head.starts_with("POST /session/s/ipu/element/original/replace "));
+                                let body: serde_json::Value = serde_json::from_slice(&raw[end+4..end+4+length]).unwrap();
+                                assert_eq!(body["recoverFocusAfterClear"], true);
+                                break true;
+                            }
+                        };
+                        if !complete { continue; }
                         count.fetch_add(1,Ordering::AcqRel);
                         let body=r#"{"value":{"error":"unknown error","message":"clear or focus uncertain"}}"#;
                         let response=format!("HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len());
@@ -3990,7 +4019,9 @@ mod tests {
         })));
         stop.store(true,Ordering::Release);server.join().unwrap();
         let outcome=result.unwrap().expect("the bounded request must reach the mock and return");
-        assert!(outcome.is_err());
+        let error = outcome.unwrap_err();
+        assert!(format!("{error:#}").contains("clear or focus uncertain"),
+            "must observe the scripted runner failure, not a connection/timeout failure: {error:#}");
         assert_eq!(seen.load(Ordering::Acquire),1,"no fallback, replay or tail after uncertain prefix");
     }
 
