@@ -131,6 +131,13 @@ Limits to close before claiming input superiority:
   this remains a failure, and the private Runner stays outside product defaults.
   A separate cold launch has API/PID/App proof at about 1.59 seconds; host/runtime
   differences prevent attributing a speed win or the earlier timeout to QoS.
+- The isolated [complete-value boundary followup](../measurements/complete-value-boundaries-2026-10-26/README.md)
+  identifies 512-unit truncated snapshots against the complete 6015-unit AX
+  value. Complete-value progress checks, bracketed by the same full guards,
+  subsequently verify all 17 Simulator protocol observations, including exact
+  6015+501 input, A20/B0, A221/B0 and Return event controls. The long-field public
+  task takes about 14.56 seconds; physical latency and capability negotiation
+  remain open. Product Native sources/default keyboard stay unchanged.
 - Old runners without the capability keep their existing input behavior;
   they must not be described as protected.
 - Ordinary short text on `ipu:atomicText` binds, optionally clears, types and

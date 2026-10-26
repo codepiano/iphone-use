@@ -67,3 +67,8 @@ counter and the SDK Runner patches; they are not product defaults or signed
 packages. No real iPhone, independent model, actual domestic host, merge,
 release or installed/downloaded artifact acceptance ran here. The long-field
 failure and broader acceptance matrix keep the overall objective open.
+
+A later [complete-value boundary followup](../complete-value-boundaries-2026-10-26/README.md)
+identifies the truncated snapshot and completes this same protocol cohort in an
+isolated revised Runner. The failed records above remain failures; promotion
+still requires physical/public-path and compatibility evidence.

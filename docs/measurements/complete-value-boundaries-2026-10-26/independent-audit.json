@@ -1,0 +1,129 @@
+{
+  "records": 17,
+  "expected_records": 17,
+  "harness_errors": [],
+  "cleanup_errors": [],
+  "case_checks": [
+    {
+      "case": "type-501",
+      "verified": true,
+      "errors": [],
+      "seconds": 3.336754582996946,
+      "mode": "full"
+    },
+    {
+      "case": "type-empty-501",
+      "verified": true,
+      "errors": [],
+      "seconds": 3.190491082990775,
+      "mode": "full"
+    },
+    {
+      "case": "type-unicode",
+      "verified": true,
+      "errors": [],
+      "seconds": 0.07358949998160824,
+      "mode": "full"
+    },
+    {
+      "case": "type-focus-20",
+      "verified": true,
+      "errors": [],
+      "seconds": 0.1909376660187263,
+      "mode": "full"
+    },
+    {
+      "case": "type-focus-221",
+      "verified": true,
+      "errors": [],
+      "seconds": 1.3561621670087334,
+      "mode": "full"
+    },
+    {
+      "case": "type-veto",
+      "verified": true,
+      "errors": [],
+      "seconds": 0.047598499979358166,
+      "mode": "full"
+    },
+    {
+      "case": "type-multiline",
+      "verified": true,
+      "errors": [],
+      "seconds": 0.1128919170005247,
+      "mode": "full"
+    },
+    {
+      "case": "replace-501",
+      "verified": true,
+      "errors": [],
+      "seconds": 3.434812499996042,
+      "mode": "full"
+    },
+    {
+      "case": "replace-focus-20",
+      "verified": true,
+      "errors": [],
+      "seconds": 0.22281450001173653,
+      "mode": "full"
+    },
+    {
+      "case": "replace-focus-221",
+      "verified": true,
+      "errors": [],
+      "seconds": 1.3596879160031676,
+      "mode": "full"
+    },
+    {
+      "case": "replace-veto",
+      "verified": true,
+      "errors": [],
+      "seconds": 1.0800130829738919,
+      "mode": "full"
+    },
+    {
+      "case": "replace-clear-handoff",
+      "verified": true,
+      "errors": [],
+      "seconds": 3.862471917003859,
+      "mode": "full"
+    },
+    {
+      "case": "batch-replace-focus-20",
+      "verified": true,
+      "errors": [],
+      "seconds": 0.22823199999402277,
+      "mode": "full"
+    },
+    {
+      "case": "batch-replace-focus-221",
+      "verified": true,
+      "errors": [],
+      "seconds": 1.3669257089786697,
+      "mode": "full"
+    },
+    {
+      "case": "batch-default-replace-focus-221",
+      "verified": true,
+      "errors": [],
+      "seconds": 1.3646627500129398,
+      "mode": "default"
+    },
+    {
+      "case": "type-after-long-seed",
+      "verified": true,
+      "errors": [],
+      "seconds": 14.55560304201208,
+      "mode": "default"
+    },
+    {
+      "case": "return-positive-control",
+      "verified": true,
+      "errors": [],
+      "seconds": 0.22345300001325086,
+      "mode": "default"
+    }
+  ],
+  "issues": [],
+  "passed": true
+}
