@@ -26418,6 +26418,51 @@ mod tests {
     }
 
     #[test]
+    fn focused_text_contract_preserves_locked_field_and_batch_order() {
+        block(async {
+            for locked in [true, false] {
+                let calls = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+                let seen = calls.clone();
+                let mut runner = MockRunner::start(move |request| {
+                    seen.lock().unwrap().push(request.lines().next().unwrap().to_string());
+                    if request.starts_with("POST /session ") {
+                        return r#"{"value":{"sessionId":"SESSION","capabilities":{"ipu:atomicText":true}}}"#.into();
+                    }
+                    if request.contains("/ipu/text") && locked {
+                        return r#"{"value":{"error":"invalid element state","message":"device is locked; no text sent"}}"#.into();
+                    }
+                    healthy_runner_responder(request)
+                });
+                let state = readiness_state_with_runner(runner.base());
+                recover(state.runner_health.lock()).locked = Some(locked);
+                let scope = capture_input_scope(&state, &HeaderMap::new(), 0, None);
+                let response = if locked {
+                    agent_input_claimed(State(state), Query(AgentInputQuery::default()),
+                        HeaderMap::new(), serde_json::json!({"type":"text","text":"x"}).to_string(), scope).await
+                } else {
+                    agent_actions_claimed(State(state), HeaderMap::new(), serde_json::json!({"steps":[
+                        {"kind":"action","action":{"type":"text","text":"x"}},
+                        {"kind":"action","action":{"type":"launch_app","bundle":"com.example.fixture"}}
+                    ]}).to_string(), scope).await
+                };
+                let calls = calls.lock().unwrap();
+                assert!(!calls.iter().any(|r| r.contains("/unlock") || r.contains("/openurl")), "{calls:?}");
+                let text = calls.iter().position(|r| r.contains("/ipu/text")).expect("atomic text dispatched");
+                if locked {
+                    assert!(!response.status().is_success());
+                    assert!(!calls.iter().any(|r| r.contains("/launch") || r.contains("/activate")), "{calls:?}");
+                } else {
+                    assert!(response.status().is_success(), "{} {calls:?}", response.status());
+                    let launch = calls.iter().position(|r| r.contains("/launch") || r.contains("/activate")).expect("launch dispatched");
+                    assert!(text < launch, "later launch must not precede focused text: {calls:?}");
+                }
+                drop(calls);
+                runner.shutdown();
+            }
+        });
+    }
+
+    #[test]
     fn short_text_is_still_one_runner_request() {
         block(async {
             let (mut runner, keys, _) = counting_keys_runner(0);

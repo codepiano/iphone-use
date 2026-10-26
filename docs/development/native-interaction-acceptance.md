@@ -12,8 +12,11 @@ live under scripts/fixtures/replacement-recovery.
   No per-character isolation or rollback guarantee is made.
 - Full-value reads, selected replacement, continuation, bounded traversal and
   native video must be reviewed and released independently with their tests.
-- Short locked-field typing and text-before-launch batches need explicit
-  compatibility coverage before the aggregate is mergeable.
+- Text requests preserve the already-focused field: they do not run Focus
+  shortcuts or unlock the phone, including short text. A locked-field error
+  stops input without unlock or replay. A batch starting with text defers Focus
+  for the whole batch, and dispatches a later launch only after text succeeds.
+  A mock-runner regression covers both cases through the production dispatch.
 - Resource-based video must carry the selected instance; it must never read
   the startup daemon as a fallback for another selected phone.
 
