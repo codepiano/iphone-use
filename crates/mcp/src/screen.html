@@ -427,7 +427,9 @@
       let body;
       if (RESOURCE_FRAMES) {
         if (!ready) await connect();
-        const uri=wantsVideo ? VIDEO_RESOURCE + (videoScope?"0/":"1/") + (++frameNonce) : FRAME_RESOURCE + "600/" + (++frameNonce);
+        const baseUri=wantsVideo ? VIDEO_RESOURCE + (videoScope?"0/":"1/") + (++frameNonce) : FRAME_RESOURCE + "600/" + (++frameNonce);
+        const uri = routingInstance === null ? baseUri : baseUri.replace(
+          "ui://iphone-use/", "ui://iphone-use/instance-v1/" + routingInstance + "/");
         const result = await request("resources/read", { uri });
         const item = result && result.contents && result.contents.find((item) => typeof item.text === "string");
         if (!item) throw new Error("empty frame");

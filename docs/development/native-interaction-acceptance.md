@@ -17,9 +17,14 @@ live under scripts/fixtures/replacement-recovery.
   stops input without unlock or replay. A batch starting with text defers Focus
   for the whole batch, and dispatches a later launch only after text succeeds.
   A mock-runner regression covers both cases through the production dispatch.
-- Resource-based video must carry the selected instance; it must never read
-  the startup daemon as a fallback for another selected phone.
+- Resource-based image/video requests carry the selected instance in each URI.
+  Two isolated mock daemons verify target credentials and no fallback, including
+  interleaved reads and invalid targets. Host panel tests cover both default and
+  named targets. Actual host application acceptance remains outstanding.
 
 The current integration branch compiles and passes 912 server library tests
 and 255 MCP library tests (one ignored in each); this does not replace the
 remaining integration, host, physical and default-path acceptance lanes.
+
+The routing revision passes 256 MCP library tests (one ignored), the real stdio
+instance suite, both host panel suites, and the locked-text/batch-order regression.

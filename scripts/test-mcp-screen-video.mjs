@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const html=fs.readFileSync(new URL('../crates/mcp/src/screen.html',import.meta.url),'utf8');
-for (const resources of [false,true]) {
+for (const resources of [false,true]) for (const instance of [null,"i13"]) {
   const elements=new Map(),events=new Map(),timers=new Map(),messages=[];
   let timerId=0,now=0,privateScreen=false,unavailable=false,scope='boot-0',draws=0,closed=0,noOutput=false,landscape=false;
   const outputs=[];let configured=0,currentDecoder=null,packetsPerBatch=1,ppsVersion=1;
@@ -26,7 +26,7 @@ for (const resources of [false,true]) {
     if(request.method==='ui/initialize')result={hostContext:{}};
     else {
       let video,reset;
-      if(resources){assert.equal(request.method,'resources/read');video=request.params.uri.includes('/video-v1/');reset=request.params.uri.includes('/video-v1/1/');}
+      if(resources){assert.equal(request.method,'resources/read');assert.equal(request.params.uri.includes('/instance-v1/i13/'),instance==='i13');video=request.params.uri.includes('/video-v1/');reset=request.params.uri.includes('/video-v1/1/');}
       else {assert.equal(request.method,'tools/call');assert.equal(request.params.name,'phone_screen_frame');video=request.params.arguments.video;reset=request.params.arguments.reset;}
       let body={drivable:true,private_secs:privateScreen?60:null};
       if(privateScreen)body={...body,clear_frame:true};
@@ -47,7 +47,10 @@ for (const resources of [false,true]) {
     setTimeout(handler,delay){timers.set(++timerId,{handler,delay,due:now+delay});return timerId;},clearTimeout(id){timers.delete(id);},console});
   const flush=async()=>{for(let i=0;i<8;i++)await new Promise(resolve=>setImmediate(resolve));};
   const poll=async()=>{const item=[...timers].filter(([,value])=>value.delay<8000).sort((a,b)=>a[1].due-b[1].due)[0];assert(item);timers.delete(item[0]);now=Math.max(now,item[1].due);item[1].handler();await flush();};
-  await flush();await poll();assert.equal(draws,1);assert.equal(element('video').hidden,false);assert.equal(element('image').hidden,true);
+  await flush();
+  assert.equal(messages.filter(m=>m.method==='resources/read'||m.method==='tools/call').length,0);
+  events.get('message')({source:window.parent,data:{jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{_meta:{'iphone-use/instance':instance}}}});
+  await poll();assert.equal(draws,1);assert.equal(element('video').hidden,false);assert.equal(element('image').hidden,true);
   await poll();assert.equal(draws,2);assert.equal(configured,1,'identical SPS/PPS keyframes must reuse the decoder');
   const priorOutput=outputs[outputs.length-1];ppsVersion=2;await poll();assert.equal(configured,2,'PPS changes reconfigure even with the same SPS/codec');
   const afterPps=draws;priorOutput();assert.equal(draws,afterPps,'old configuration output cannot restore pixels');

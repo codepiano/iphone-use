@@ -436,6 +436,12 @@ use an explicit key for submission. Secure fields require the person to act.
 Older runners without the capability retain their ordinary keyboard route and
 must not be described as providing the atomic field contract.
 
+**Focused text preparation.** Text requests, including short text, preserve
+already-focused input: they do not run Focus shortcuts or unlock the phone.
+A locked-field refusal stops without unlock or replay. A batch starting with
+text defers Focus for that batch; any later launch runs only after the preceding
+text succeeds. Prepare and verify the intended field before requesting text.
+
 **Cancelling a foreground MCP call.** `notifications/cancelled` is connected
 to the tool request's cancellation token. Before dispatch it reports `not_sent`;
 after dispatch it reports `unknown` and closes the foreground HTTP request,

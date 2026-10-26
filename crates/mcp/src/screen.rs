@@ -90,6 +90,21 @@ pub const FRAME_RESOURCE_PREFIX: &str = "ui://iphone-use/frame-v1/";
 
 pub const VIDEO_RESOURCE_PREFIX: &str = "ui://iphone-use/video-v1/";
 
+/// Named frame resources carry their own target, including across concurrent panels.
+/// Malformed names and non-frame resources never fall back to the startup daemon.
+pub fn resource_route(host: Host, uri: &str) -> Result<(Option<&str>, String), &'static str> {
+    let Some(tail) = uri.strip_prefix("ui://iphone-use/instance-v1/") else {
+        return Ok((None, uri.to_string()));
+    };
+    let (name, resource) = tail.split_once('/').ok_or("missing instance resource")?;
+    if !crate::instances::valid_name(name) { return Err("invalid instance resource target"); }
+    let base = format!("ui://iphone-use/{resource}");
+    if resource_video_reset(host, &base).is_none() && resource_frame_side(host, &base).is_none() {
+        return Err("only frame resources may select an instance");
+    }
+    Ok((Some(name), base))
+}
+
 pub fn resource_video_reset(host: Host, uri: &str) -> Option<bool> {
     if host != Host::WorkBuddy {return None;}
     let (reset,nonce)=uri.strip_prefix(VIDEO_RESOURCE_PREFIX)?.split_once('/')?;
@@ -337,6 +352,17 @@ pub fn frame_result(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn named_resources_require_valid_explicit_targets() {
+        assert_eq!(resource_route(Host::WorkBuddy, "ui://iphone-use/instance-v1/i13/video-v1/1/42").unwrap(),
+            (Some("i13"), "ui://iphone-use/video-v1/1/42".into()));
+        assert_eq!(resource_route(Host::WorkBuddy, "ui://iphone-use/instance-v1/default/frame-v1/600/42").unwrap().0, Some("default"));
+        for suffix in ["runner/video-v1/0/1", "i13/../frame-v1/600/1", "i13/frame-v1/600/no", "i13/screen.html", "i13"] {
+            assert!(resource_route(Host::WorkBuddy, &format!("ui://iphone-use/instance-v1/{suffix}")).is_err());
+        }
+        assert!(resource_route(Host::Generic, "ui://iphone-use/instance-v1/i13/video-v1/0/1").is_err());
+    }
 
     #[test]
     fn native_video_resources_are_read_only_and_bounded() {

@@ -3239,20 +3239,28 @@ impl ServerHandler for PhoneHandler {
         request: rmcp::model::ReadResourceRequestParams,
         context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<rmcp::model::ReadResourceResult, rmcp::ErrorData> {
-        if let Some(reset) = crate::screen::resource_video_reset(self.host, &request.uri) {
+        let (instance, uri) = crate::screen::resource_route(self.host, &request.uri)
+            .map_err(|message| rmcp::ErrorData::invalid_params(message, None))?;
+        let selected = match instance {
+            Some(name) => Some(self.for_instance(name).map_err(|_| rmcp::ErrorData::invalid_params(
+                "instance resource unavailable or unsafe; no other phone selected", None))?),
+            None => None,
+        };
+        let handler = selected.as_ref().unwrap_or(self);
+        if let Some(reset) = crate::screen::resource_video_reset(self.host, &uri) {
             if self.profile.refusal(crate::screen::FRAME_TOOL).is_some() {
                 return Err(rmcp::ErrorData::resource_not_found("video access is disabled by IPHONE_USE_MCP_TOOLS",None));
             }
             let frame = tokio::select! {
                 biased;
                 _ = context.ct.cancelled()=>return Err(rmcp::ErrorData::internal_error("video read cancelled",None)),
-                frame = tokio::time::timeout(std::time::Duration::from_secs(8),self.phone_screen_frame(Parameters(ScreenFrameParams {video:Some(true),reset:Some(reset),..Default::default()})))=>frame.map_err(|_|rmcp::ErrorData::internal_error("video read timed out",None))?,
+                frame = tokio::time::timeout(std::time::Duration::from_secs(8),handler.phone_screen_frame(Parameters(ScreenFrameParams {video:Some(true),reset:Some(reset),..Default::default()})))=>frame.map_err(|_|rmcp::ErrorData::internal_error("video read timed out",None))?,
             };
             return Ok(rmcp::model::ReadResourceResult::new(vec![rmcp::model::ResourceContents::TextResourceContents {
                 uri:request.uri,mime_type:Some("application/json".into()),text:frame.structured_content.unwrap_or_else(||serde_json::json!({"ok":false,"clear_frame":true,"video_unavailable":true})).to_string(),meta:None,
             }]));
         }
-        if let Some(side) = crate::screen::resource_frame_side(self.host, &request.uri) {
+        if let Some(side) = crate::screen::resource_frame_side(self.host, &uri) {
             if self.profile.refusal(crate::screen::FRAME_TOOL).is_some() {
                 return Err(rmcp::ErrorData::resource_not_found("frame access is disabled by IPHONE_USE_MCP_TOOLS", None));
             }
@@ -3262,7 +3270,7 @@ impl ServerHandler for PhoneHandler {
             let frame = tokio::select! {
                 biased;
                 _ = context.ct.cancelled() => return Err(rmcp::ErrorData::internal_error("frame read cancelled", None)),
-                frame = tokio::time::timeout(std::time::Duration::from_secs(8), self.phone_screen_frame(
+                frame = tokio::time::timeout(std::time::Duration::from_secs(8), handler.phone_screen_frame(
                     Parameters(ScreenFrameParams {max_side:Some(side), fresh:Some(false), ..Default::default()}))) => frame
                     .map_err(|_| rmcp::ErrorData::internal_error("frame read timed out", None))?,
             };

@@ -5,7 +5,7 @@ import fs from "node:fs";
 import vm from "node:vm";
 
 const html = fs.readFileSync(new URL("../crates/mcp/src/screen.html", import.meta.url), "utf8");
-for (const resources of [false, true]) {
+for (const resources of [false, true]) for (const instance of [null, "i13"]) {
   const elements = new Map();
   function element(id) {
     if (!elements.has(id)) elements.set(id, {
@@ -28,7 +28,8 @@ for (const resources of [false, true]) {
       if (request.method === "ui/initialize") result = {hostContext:{theme:"dark"}};
       else if (request.method === "resources/read") {
         assert(resources);
-        assert.match(request.params.uri, /^ui:\/\/iphone-use\/frame-v1\/600\/\d+$/);
+        assert.equal(request.params.uri.includes("/instance-v1/i13/"), instance === "i13");
+        assert.match(request.params.uri.replace("instance-v1/i13/", ""), /^ui:\/\/iphone-use\/frame-v1\/600\/\d+$/);
         result = {contents:[{uri:request.params.uri,mimeType:"application/json",text:JSON.stringify(body())}]};
       } else if (request.method === "tools/call") {
         assert(!resources, "WorkBuddy cannot forward app tools/call");
@@ -55,7 +56,10 @@ for (const resources of [false, true]) {
     const found=[...timers].filter(([,t])=>t.delay<8000).sort((a,b)=>a[1].delay-b[1].delay)[0];assert(found,"panel must schedule next poll");
     timers.delete(found[0]);found[1].handler();await flush();
   };
-  await flush();await poll();
+  await flush();
+  assert.equal(messages.filter(m=>m.method==="resources/read" || m.method==="tools/call").length,0,"unbound panel must not read startup phone");
+  events.get("message")({source:window.parent,data:{jsonrpc:"2.0",method:"ui/notifications/tool-result",params:{_meta:{"iphone-use/instance":instance}}}});
+  await poll();
   assert.equal(element("image").hidden,false);
   assert.equal(element("image").src,"data:image/png;base64,fixture");
   assert.equal(element("toolbar").hidden === true,resources);
