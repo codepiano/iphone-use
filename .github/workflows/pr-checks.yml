@@ -176,10 +176,12 @@ jobs:
           tools = listing["result"]["tools"]
           names = sorted(tool["name"] for tool in tools)
 
-          assert len(names) == 40, names
+          expected_names = json.load(open("scripts/fixtures/mcp-tools.json"))
+          assert sorted(names) == expected_names, names
           for required in (
               "phone_capabilities",
               "phone_home_layout",
+              "phone_instances",
               "phone_status",
               "phone_run_steps",
               "phone_set_value",
@@ -211,6 +213,12 @@ jobs:
 
           print(f"MCP exposes {len(names)} tools; observe is optional on all seven.")
           PY
+
+      - name: MCP instance routing and panel binding
+        shell: bash
+        run: |
+          python3 scripts/test-mcp-instances.py target/debug/iphone-use-mcp
+          node scripts/test-mcp-instance-panel.cjs
 
       - name: Offline flow validation
         shell: bash

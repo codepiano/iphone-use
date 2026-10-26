@@ -18,6 +18,22 @@ Agent  ── /agent/* ──────────> iphone-use daemon ── 
 
 设计、生命周期、失败状态和安全边界见 **[`docs/direct-device-architecture.html`](direct-device-architecture.html)**。
 
+### 把手机交还给使用者
+
+同时按住两个音量键可结束 iOS UI 自动化。受管 runner 会停住，直到下一次明确的
+agent 或网页请求；后台定时任务和预热不会重连。`iphone-use pause` 还会持久保存
+人工接管状态，需执行 `iphone-use resume` 或在网页切回 agent 模式。取消自动化的
+密码提示也会保存人工接管状态；恢复失败时继续拒绝 agent 输入。
+
+可选通知提供 **结束控制** 按钮。默认启动只使用已有通知授权，不弹权限框；
+明确设置通知权限时可用 `IPU_RUNNER_EXIT_NOTICE=1`，`0` 则禁用通知。拒绝授权后
+仍可使用音量键或 pause 退出。点通知正文不会结束控制，模拟器不显示该通知。
+
+通知权限需显式设置：`IPU_RUNNER_EXIT_NOTICE=1 iphone-use setup` 在此实例的 Runner
+中请求授权；`0` 禁用通知，`auto` 恢复为只使用已有授权、不弹权限框。受管 supervisor
+会保存选择，并传给 Xcode 和 iOS 15/16 启动器；其他实例的设置独立保留。
+
+
 ## 快速开始
 
 ### 前置条件
@@ -446,6 +462,18 @@ SOCKS 代理即使能连通，也可能影响**新建 Wi-Fi 隧道**。[#313](ht
 可恢复就绪。code 74 本身不能证明用户漏输密码，也不能证明 Wi-Fi 永远无法启动。
 保持手机解锁，有提示时处理；已经授权则检查隧道和 runner 日志。该环境的纯 Wi-Fi
 冷启动、隔离其他变量的 SOCKS 对照仍未验证。
+
+[v0.23.0 实机验收](qa/2026-10-26-wifi-bootstrap.md) 按上述诊断执行，未刷新设备服务，恢复 SOCKS 后无线输入仍通过；不代表已确认 SOCKS 唯一根因或纯无线冷启动。
+
+
+### 恢复缺失配置的命名实例
+
+命名实例丢失 LaunchAgent 后，setup 可从该实例私有的 `runner-product.json`
+（schema 1、v3 产品键）恢复目标设备；显式参数和 plist 配置优先，不借用其他
+实例或默认手机。记录无效时仍需明确 UDID。缺少 daemon 时，在构建或启动 Runner
+前提示带实例名和目标的官方安装器命令，doctor、resume 使用同一恢复方向。
+凭据、端口和 LaunchAgent 仍由官方安装器管理。手机不可见时先 USB 连接、解锁，
+有提示时完成信任；不可见本身不能证明配对丢失。
 
 ## 开发
 

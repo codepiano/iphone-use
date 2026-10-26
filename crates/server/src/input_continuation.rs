@@ -2,6 +2,8 @@
 //! session replacement, owner incarnation/privacy change or expiry invalidates the pending work.
 use std::time::{Duration, Instant};
 
+pub const TTL_MS: u64 = 60_000;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Scope {
     pub owner: String,
@@ -53,7 +55,7 @@ impl Store {
             scope,
             session,
             token: token.clone(),
-            expires: now + Duration::from_secs(60),
+            expires: now + Duration::from_millis(TTL_MS),
         });
         Some(token)
     }
@@ -128,7 +130,7 @@ mod tests {
                     &Scope { privacy_epoch: u64::from(reason == 4), ..scope("a", if reason == 1 { 2 } else { 1 }) },
                     if reason == 2 { "other" } else { "s" },
                     if reason == 0 {
-                        now + Duration::from_secs(60)
+                        now + Duration::from_millis(TTL_MS)
                     } else {
                         now
                     }

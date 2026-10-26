@@ -38,7 +38,19 @@ pub fn resolve_transport(raw: &str) -> Result<&'static str, String> {
     match raw.trim().to_ascii_lowercase().as_str() {
         "" | TRANSPORT_AUTO => Ok(TRANSPORT_AUTO),
         TRANSPORT_USB => Ok(TRANSPORT_USB),
-        other => Err(format!("IPU_RUNNER_TRANSPORT must be auto or usb (got '{other}')")),
+        other => Err(format!(
+            "IPU_RUNNER_TRANSPORT must be auto or usb (got '{other}')"
+        )),
+    }
+}
+
+/// Explicit permission setup is opt-in; auto uses existing permission only.
+fn resolve_exit_notice(explicit: Option<&str>, persisted: &str) -> Result<Option<bool>, String> {
+    match explicit.unwrap_or(persisted).trim() {
+        "" | "auto" => Ok(None),
+        "0" => Ok(Some(false)),
+        "1" => Ok(Some(true)),
+        _ => Err("IPU_RUNNER_EXIT_NOTICE must be auto, 0 or 1".into()),
     }
 }
 
@@ -90,6 +102,7 @@ pub struct Ctx {
     /// is off the cable through CoreDevice's encrypted Wi-Fi tunnel, USB
     /// preferred when both are there; `usb` requires the cable for that.
     pub transport: String,
+    pub exit_notice: Option<bool>,
     pub udid: String,
     /// `IPU_RUNNER_KEEPALIVE=1`: the launchd supervisor's run.
     pub keepalive: bool,
@@ -119,6 +132,65 @@ fn env_is_set(key: &str) -> bool {
 }
 
 impl Ctx {
+    /// A named instance must never fall back to whichever phone is attached.
+    /// Recover only its own private product record, after explicit/plist targets.
+    fn recover_recorded_target(&mut self) {
+        if self.instance.is_default()
+            || !self.udid.is_empty()
+            || !sys::marker_file_secure(&self.runner_cache)
+        {
+            return;
+        }
+        let record = std::fs::read_to_string(&self.runner_cache)
+            .ok()
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
+        let Some(record) = record.filter(|r| r["schema_version"] == 1) else {
+            return;
+        };
+        let Some(key) = record["key"].as_str() else {
+            return;
+        };
+        let fields: Vec<_> = key.split('|').collect();
+        if matches!(fields.len(), 10 | 11) && fields[0] == "v3" {
+            let target = fields[5];
+            if !target.is_empty()
+                && target.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-')
+                && target.bytes().any(|b| b.is_ascii_hexdigit())
+            {
+                self.udid = target.to_owned();
+            }
+        }
+    }
+
+    /// Use the official installer to restore missing daemon configuration;
+    /// never synthesize credentials or borrow another instance's LaunchAgent.
+    pub fn recovery_command(&self) -> String {
+        if self.instance.is_default() {
+            return "iphone-use setup".into();
+        }
+        let target = if !self.udid.is_empty()
+            && self
+                .udid
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() || b == b'-')
+        {
+            self.udid.as_str()
+        } else {
+            "<UDID>"
+        };
+        format!("curl -fsSL https://raw.githubusercontent.com/leeguooooo/iphone-use/main/install.sh | bash -s -- --instance {} --udid {target}", self.instance.name)
+    }
+
+    pub fn missing_daemon_recovery(&self) -> Option<String> {
+        (!self.instance.is_default() && !self.daemon_plist.is_file()).then(|| {
+            format!(
+                "instance {} is missing its daemon LaunchAgent; restore the instance with: {}",
+                self.instance.name,
+                self.recovery_command()
+            )
+        })
+    }
+
     /// Resolve from the environment. `Err` carries the message and exit code
     /// `setup-runner.sh` used (2 for an unusable instance, 1 otherwise).
     pub fn resolve() -> Result<Ctx, (String, i32)> {
@@ -164,6 +236,7 @@ impl Ctx {
             asc_issuer_id: String::new(),
             allow_lan: "0".into(),
             transport: TRANSPORT_AUTO.into(),
+            exit_notice: None,
             udid: String::new(),
             keepalive: false,
             developer_dir: None,
@@ -209,7 +282,8 @@ impl Ctx {
         let runner_project = runner_src.join("IPhoneUseRunner/IPhoneUseRunner.xcodeproj");
 
         let port_from_url = |key: &str| port_from_loopback_url(&daemon_env(key));
-        let mut runner_port = env("IPU_RUNNER_PORT").unwrap_or_else(|| runner_env("IPU_RUNNER_PORT"));
+        let mut runner_port =
+            env("IPU_RUNNER_PORT").unwrap_or_else(|| runner_env("IPU_RUNNER_PORT"));
         if runner_port.is_empty() {
             runner_port = port_from_url("IPHONE_USE_RUNNER_URL");
         }
@@ -250,8 +324,10 @@ impl Ctx {
             }
         }
 
-        let mut bundle_id = env("IPU_RUNNER_BUNDLE_ID").unwrap_or_else(|| runner_env("IPU_RUNNER_BUNDLE_ID"));
-        let mut team_id = env("IPU_RUNNER_TEAM_ID").unwrap_or_else(|| runner_env("IPU_RUNNER_TEAM_ID"));
+        let mut bundle_id =
+            env("IPU_RUNNER_BUNDLE_ID").unwrap_or_else(|| runner_env("IPU_RUNNER_BUNDLE_ID"));
+        let mut team_id =
+            env("IPU_RUNNER_TEAM_ID").unwrap_or_else(|| runner_env("IPU_RUNNER_TEAM_ID"));
         let (mut asc_path, mut asc_id, mut asc_issuer) = (
             std::env::var("IPU_RUNNER_ASC_KEY_PATH").unwrap_or_default(),
             std::env::var("IPU_RUNNER_ASC_KEY_ID").unwrap_or_default(),
@@ -343,8 +419,20 @@ impl Ctx {
         ctx.asc_issuer_id = asc_issuer;
         ctx.allow_lan = allow_lan;
         ctx.transport = transport;
+        ctx.exit_notice = resolve_exit_notice(std::env::var("IPU_RUNNER_EXIT_NOTICE").ok().as_deref(),
+            &runner_env("IPU_RUNNER_EXIT_NOTICE")).map_err(|message| (message, 1))?;
         ctx.udid = udid;
+        ctx.recover_recorded_target();
         Ok(ctx)
+    }
+
+    pub fn exit_notice_value(&self) -> &'static str {
+        match self.exit_notice { None => "auto", Some(false) => "0", Some(true) => "1" }
+    }
+
+    /// Xcode strips TEST_RUNNER_; the legacy launcher receives the plain key.
+    pub fn exit_notice_env(&self, prefix: &str) -> (String, String) {
+        (format!("{prefix}IPU_RUNNER_EXIT_NOTICE"), self.exit_notice_value().into())
     }
 
     pub fn state_dir(&self) -> &Path {
@@ -788,6 +876,100 @@ pub mod tests_support {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn notice_permission_is_explicit_and_survives_supervisor_configuration() {
+        assert_eq!(resolve_exit_notice(None, "").unwrap(), None);
+        assert_eq!(resolve_exit_notice(None, "1").unwrap(), Some(true));
+        assert_eq!(resolve_exit_notice(Some("0"), "1").unwrap(), Some(false));
+        assert_eq!(resolve_exit_notice(Some("auto"), "1").unwrap(), None);
+        assert_eq!(resolve_exit_notice(Some(""), "1").unwrap(), None);
+        assert!(resolve_exit_notice(Some("yes"), "0").is_err());
+        assert!(resolve_exit_notice(None, "bad-stored-value").is_err());
+        let mut ctx = tests_support::ctx();
+        for (setting, value) in [(None, "auto"), (Some(false), "0"), (Some(true), "1")] {
+            ctx.exit_notice = setting;
+            let (_, persisted) = ctx.exit_notice_env("");
+            assert_eq!(resolve_exit_notice(None, &persisted).unwrap(), setting);
+            assert_eq!(ctx.exit_notice_env("TEST_RUNNER_"),
+                ("TEST_RUNNER_IPU_RUNNER_EXIT_NOTICE".into(), value.into()));
+        }
+    }
+
+    #[test]
+    fn named_recovery_uses_only_its_own_secure_record_and_preserves_overrides() {
+        let root = tempfile::tempdir().unwrap();
+        let mut ctx = Ctx::paths(Instance::derive("i13", root.path(), None).unwrap());
+        std::fs::create_dir_all(ctx.state_dir()).unwrap();
+        let record = br#"{"schema_version":1,"key":"v3|src|bundle|team|account|00008110-001ABC|Xcode 27.1|27.1||embed|icon"}"#;
+        sys::write_atomic(&ctx.runner_cache, record, 0o600).unwrap();
+        ctx.recover_recorded_target();
+        assert_eq!(ctx.udid, "00008110-001ABC");
+        assert_eq!(super::super::commands::resume(&ctx), 1);
+        assert!(super::super::flow::Setup::new(ctx.clone()).body().is_err());
+        assert!(!ctx.runner_agent_plist.exists());
+        let hint = ctx.missing_daemon_recovery().unwrap();
+        assert!(hint.contains("--instance i13 --udid 00008110-001ABC"));
+        ctx.udid = "DEADBEEF".into();
+        ctx.recover_recorded_target();
+        assert_eq!(ctx.udid, "DEADBEEF", "configured target takes precedence");
+        std::fs::create_dir_all(&ctx.daemon_plist).unwrap();
+        assert!(ctx.missing_daemon_recovery().is_some(), "a directory is not a daemon plist");
+        assert_eq!(super::super::commands::resume(&ctx), 1);
+        assert!(super::super::flow::Setup::new(ctx.clone()).body().is_err());
+        std::fs::remove_dir(&ctx.daemon_plist).unwrap();
+        std::fs::write(&ctx.daemon_plist, "existing").unwrap();
+        assert!(ctx.missing_daemon_recovery().is_none());
+        let mut other = Ctx::paths(Instance::derive("other", root.path(), None).unwrap());
+        other.recover_recorded_target();
+        assert!(
+            other.udid.is_empty(),
+            "never borrow another instance's target"
+        );
+    }
+
+    #[test]
+    fn target_recovery_rejects_untrusted_or_unknown_records() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let root = tempfile::tempdir().unwrap();
+        let mut ctx = Ctx::paths(Instance::derive("i13", root.path(), None).unwrap());
+        std::fs::create_dir_all(ctx.state_dir()).unwrap();
+        for key in [
+            "v4|src|b|t|account|ABCD|x|sdk||embed",
+            "v3|src|b|t|account|$(bad)|x|sdk||embed",
+            "v3|src|b|t|account||x|sdk||embed",
+            "v3|src|b|t|account|ABCD",
+        ] {
+            sys::write_atomic(
+                &ctx.runner_cache,
+                serde_json::json!({"schema_version":1,"key":key})
+                    .to_string()
+                    .as_bytes(),
+                0o600,
+            )
+            .unwrap();
+            ctx.recover_recorded_target();
+            assert!(ctx.udid.is_empty(), "{key}");
+        }
+        let record = br#"{"schema_version":1,"key":"v3|src|b|t|account|ABCD|x|sdk||embed"}"#;
+        sys::write_atomic(&ctx.runner_cache, record, 0o644).unwrap();
+        ctx.recover_recorded_target();
+        assert!(ctx.udid.is_empty());
+        std::fs::set_permissions(&ctx.runner_cache, std::fs::Permissions::from_mode(0o600))
+            .unwrap();
+        let target = root.path().join("record");
+        std::fs::rename(&ctx.runner_cache, &target).unwrap();
+        symlink(&target, &ctx.runner_cache).unwrap();
+        ctx.recover_recorded_target();
+        assert!(ctx.udid.is_empty());
+        let mut default = Ctx::paths(Instance::derive("", root.path(), None).unwrap());
+        sys::write_atomic(&default.runner_cache, record, 0o600).unwrap();
+        default.recover_recorded_target();
+        assert!(
+            default.udid.is_empty(),
+            "default discovery behavior is unchanged"
+        );
+    }
 
     #[test]
     fn transport_defaults_to_auto_and_only_usb_opts_out_of_the_tunnel() {

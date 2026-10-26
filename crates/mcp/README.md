@@ -2,7 +2,7 @@
 
 MCP stdio server that wraps the `iphone-use` daemon's agent HTTP API,
 giving MCP clients (Claude Desktop, Claude Code, etc.) native tool access
-to a real iPhone. The daemon drives the phone through its own XCTest runner.
+to a real iPhone. The daemon drives the phone through its native XCTest Runner.
 
 ## Prerequisites
 
@@ -325,6 +325,7 @@ carries a `registry.hint` to save it as a flow, and a failed `phone_flow_run` na
 | `phone_release_owner` | — | Release this session's owner lease when the task is done |
 | `phone_login` | `item?`, `user?`, `submit?`, `code_via?`, `code_from?` | Sign the app on screen in from the user's own vault entry (bitwarden-use), inside the daemon; the password never reaches the model |
 | `phone_screenshot` | `max_side?`, `overlay?` | Capture current screen → PNG image content; `overlay=true` draws each interactive element's frame and `phone_elements` index on it |
+| `phone_instances` | — | List installed local instances and bounded read-only status; never reconnects or claims a phone. |
 | `phone_home_layout` | `page?` | Read all home pages, Dock, folder pages and widget stacks without UI input. `page` selects one zero-based page. Page indexes include hidden/Focus-filtered pages and differ from visible page-control numbers. Grid positions are derived from reported icon order and widget spans; `positions_complete=false` / null positions mean unknown. No pixel coordinates or layout restore. Requires a paired physical target reachable through usbmuxd; obeys private holds. |
 | `phone_read_value` | `identifier?` xor `label?`, `kind?`, `max_utf16?` | Read exactly one full AX value without focusing, waking or taking a lease. Explicit completeness/UTF-16 budget, secure-field refusal and scope withholding; long value appears once in text, metadata in structured output. |
 | `phone_elements` | `query?`, `limit?`, `ocr?`, `include_hidden?` | The UI as a flattened element list — prefer over screenshots for reasoning. `query` keeps rows whose label/identifier/value/placeholder contain the text; `limit` caps the rows. Kept rows keep their index and the snapshot, so taps still work. `include_hidden=true` expands off-screen/not-drawn rows with original indexes and a `hidden` marker instead of the five-label summary; scroll them into view and read again before acting. The 200-row / 32 KiB text budget still applies. `ocr=auto` adds text read from pixels (Vision) when the tree has no interactive rows, `ocr=force` always; those rows are listed under the tree with `phone_tap` coordinates |
@@ -501,3 +502,26 @@ Visual mutation failures can carry a fresh recovery screenshot. The server emits
 one image block, retaining only source/time/dimension metadata in text and
 structured output; error, outcome, retry safety and batch progress are unchanged.
 An unavailable or privacy-withheld image never turns a failed action into a success.
+
+### Selecting an installed instance per call
+
+Call `phone_instances` to list local installed daemons. Every other `phone_*`
+tool accepts an optional `instance` name, such as `i13` or `default`:
+`phone_status({"instance":"i13"})`, then
+`phone_tap({"instance":"i13","x":0.5,"y":0.5})`.
+Omitting it keeps the daemon configured when this MCP server started, including
+explicit remote URL/token configurations. An explicit name resolves only that
+instance's private LaunchAgent and local port; unavailable/unsafe configurations
+fail without fallback or reusing environment credentials. It does not change any
+daemon's target, restart a service, or grant permission to reconnect a parked phone.
+
+Use the same explicit instance throughout an operation. Each has separate
+snapshot, run and progress state; a concurrent call keeps its own pinned target.
+A batch or flow stays on one instance. The screen panel waits for its opening
+tool's target and sends that instance with frame and Home calls. Installed local
+LaunchAgents are supported; simulator-only records are not discovery targets.
+
+Local daemon calls bypass process/system HTTP proxies. Automatic credentials
+are loaded only for a parsed loopback URL matching the selected LaunchAgent's
+port and without URL userinfo. An explicit remote URL/token keeps its configured
+transport; a different local port requires its own explicit credentials.

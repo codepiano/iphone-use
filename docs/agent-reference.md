@@ -41,7 +41,8 @@ passcode.
 | reconnecting (`reconnecting:true`) | Bring-up running | If `setup_blocked_on` is set, follow `hint`; else report `setup_phase`/`setup_message` and poll. A first build after an Xcode update can take minutes. |
 | `blocked` / `offline` | Something stands in the way | Read `hint` and `setup_blocked_on` (see [Setup blockers](#setup-blockers)); resolve it first. When the person has to act, relay `next_step` (`{zh,en}`, the same line the web page and iOS app show) instead of paraphrasing `hint`. |
 | `degraded` | runner answers but the last read/action did not complete (heavy page, stalled app) | **Not** a blocker; `setup_blocked_on` is empty. Wait `retry_after_secs` (3s) and read again; do not restart anything. |
-| `released` + `human_handoff:true` | The operator handed the phone to a person | Input answers `409 phone_handed_to_human`. Ask the operator before sending `{"mode":"agent"}`. |
+| `released` + `human_handoff:true` | The operator handed the phone to a person | Input answers `409 phone_handed_to_human`. Ask the operator before sending `{"mode":"agent"}`. Also set by `iphone-use pause` and by a passcode prompt cancelled on the phone; it survives daemon restarts. `iphone-use resume` clears it. |
+| `released` + `ended_on_phone:true` | The person ended the session on the phone (both volume keys) | Nothing restarts the runner on its own and pre-warm skips it. Ask before acting; the next action or `{"mode":"agent"}` starts it again. |
 
 **Lock readiness.** `lock_readiness` says whether the phone will lock on its
 own while nobody drives it, so an owner with many phones sees which ones get
@@ -920,8 +921,8 @@ worked example below.
 
 ## MCP specifics
 
-37 tools (one, `phone_screen_frame`, is hidden from the model and used only by the live screen panel): `phone_status`, `phone_screen`, `phone_capabilities`, `phone_reconnect`, `phone_hold`,
-`phone_release_owner`, `phone_login`, `phone_apps`, `phone_screenshot`, `phone_elements`, `phone_tap`,
+41 tools (one, `phone_screen_frame`, is hidden from the model and used only by the live screen panel): `phone_status`, `phone_screen`, `phone_capabilities`, `phone_reconnect`, `phone_hold`,
+`phone_release_owner`, `phone_login`, `phone_apps`, `phone_screenshot`, `phone_elements`, `phone_home_layout`, `phone_instances`, `phone_tap`,
 `phone_tap_element`, `phone_tap_label`, `phone_scroll`, `phone_scroll_find`, `phone_collect_list`, `phone_type`,
 `phone_key`, `phone_shortcut`, `phone_run_steps`, `phone_jev_run`,
 `phone_run_start`, `phone_run_end`, `phone_flow_list / info / run / draft /
@@ -979,7 +980,7 @@ update / publish / report`, and the device tools `phone_logs`, `phone_crashes`,
   tools also `destructiveHint`, `idempotentHint`). Read-only: `phone_status`,
   `phone_capabilities`, `phone_apps`, `phone_screen`, `phone_screen_frame`,
   `phone_screenshot`, `phone_elements`, `phone_crashes`, `phone_flow_list`,
-  `phone_flow_info`, `phone_flow_draft`. `phone_logs` is not read-only (its
+  `phone_flow_info`, `phone_flow_draft`, `phone_home_layout`, `phone_instances`. `phone_logs` is not read-only (its
   start/stop change the capture); `phone_install_app` is destructive.
 - `IPHONE_USE_MCP_TOOLS` picks the exposed tools: `all` (default), `readonly`
   (only the read-only set), or a comma list of tool names (unknown names are
@@ -1557,3 +1558,36 @@ stops immediately instead of appending. They do not gain native target binding.
 A changed unexpected or unavailable final readback is unknown, never retry-safe
 no_effect. An acknowledged write with an unchanged original value reports
 value_not_applied; inspect status and the field before starting new work.
+
+When `ended_on_phone=true`, automatic schedules remain postponed. An explicitly
+requested manual schedule run may reconnect, but it still respects human handoff,
+other owners, live viewers and lock state. A parked helper reports
+`runner_build.state="parked"`, including after five minutes; it is neither
+building nor stalled.
+
+The runner uses an already authorized notification permission for its optional
+“End control” notice. Startup never requests permission by default. For an
+explicit notification setup run, `IPU_RUNNER_EXIT_NOTICE=1` requests permission;
+`0` disables the notice. Simulator runs never post it. If permission is denied,
+use both volume keys or `iphone-use pause`. Only the notification's explicit
+End control button ends the session; tapping its body does not. Pending
+notification callbacks cannot end a later runner session.
+
+Notification setup is explicit: `IPU_RUNNER_EXIT_NOTICE=1 iphone-use setup`
+requests permission on this instance's Runner. Use `0` to disable the notice or
+`auto` to return to using existing permission without a prompt. The managed
+supervisor remembers this choice and forwards it through both Xcode and the
+iOS 15/16 launcher. Other instances keep their own choice.
+
+## Choosing among installed phones in MCP
+
+`phone_instances` lists local installed LaunchAgents and bounded read-only
+status without reconnecting. All other `phone_*` tools accept optional
+`instance:"i13"` or `instance:"default"`. Use it consistently through reads and
+actions; omitted instance refers only to the server's configured daemon.
+An unavailable/unsafe selection fails without another-phone fallback or reused
+ambient credentials. Each instance keeps its own snapshots, runs and progress.
+The live panel waits for its opening tool's selection and uses it for frames
+and Home; a host that does not deliver tool input/result leaves the panel
+waiting, rather than guessing another target. This selects an installed daemon;
+it never changes a daemon's phone configuration or bypasses handoff/privacy/owner gates.
