@@ -335,3 +335,11 @@ hashes and unchanged unrelated fields. Owned apps/services were removed and all
 21 preexisting apps preserved. This supplies positive physical completion/latency
 observations; the hardware negative cohort and comparative speed remain open.
 [Physical evidence](../measurements/complete-value-physical-2026-10-26/README.md).
+
+The same signed private Native also passes four reached physical negative
+scenarios through public stdio MCP: A20/B0, A221/B0, App delegate veto and delegate
+focus handoff. Public operations fail with non-retryable partial receipts; other
+fields and submit counts remain unchanged. The initial missing-sentinel trial
+is explicitly excluded. With the two positive appends this is six planned
+physical observations, not complete hardware coverage or a default-path promotion.
+[Negative physical evidence](../measurements/complete-value-physical-negative-2026-10-26/README.md).
