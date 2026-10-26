@@ -122,6 +122,15 @@ Limits to close before claiming input superiority:
   launch stop later validation. Its roughly 20.98-second Native launch response
   arrives after the 20-second client timeout. No default keyboard or broad
   completion/latency claim follows from these records.
+- [Public MCP replacement batching and followup](../measurements/mcp-batch-replacement-2026-10-26/README.md)
+  adds snapshot-bound `set_value` to `phone_run_steps` and corrects the recovery
+  gate to the public `degraded` state. A real private-Runner cohort verifies
+  16/17 observations: seven completed controls/tasks and nine exercised stops,
+  including A20/B0, A221/B0 and an independently counted unsent Return. The
+  existing 6015-character field accepts only one of 501 appended characters;
+  this remains a failure, and the private Runner stays outside product defaults.
+  A separate cold launch has API/PID/App proof at about 1.59 seconds; host/runtime
+  differences prevent attributing a speed win or the earlier timeout to QoS.
 - Old runners without the capability keep their existing input behavior;
   they must not be described as protected.
 - Ordinary short text on `ipu:atomicText` binds, optionally clears, types and

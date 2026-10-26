@@ -1513,6 +1513,17 @@ snapshot was truncated and reports X-Value-Complete / X-Value-Source headers.
 
 ### Snapshot-bound text replacement
 
+MCP `phone_run_steps` also accepts `{"kind":"set_value","element":N,
+"snapshot":"ORIGINAL","value":"complete replacement"}`. It uses the same
+original-observation contract as `phone_set_value`; optional
+`recover_focus_after_clear` and `after_ms` retain their normal semantics.
+All step shapes and value limits are checked before the batch is sent. Put
+snapshot-bound replacement before any other modifying action: a prior mutation
+invalidates the observation even if the page looks similar. The daemon refuses instead of
+substituting another snapshot. Any failed replacement stops later steps,
+including an unsent Return. Snapshot-bound actions are for the current batch;
+use durable locators when designing a saved flow.
+
 `set_value` replaces a nonsecure TextField, SearchField or TextView selected by a
 fresh element/snapshot. Secure fields require human input. A newline in a
 single-line target refuses before clearing; use an explicit key to submit.

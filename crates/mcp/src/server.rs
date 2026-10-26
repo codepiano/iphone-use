@@ -386,6 +386,19 @@ pub enum PhoneStep {
         #[serde(default)]
         after_ms: u64,
     },
+    /// Replace the field from the caller's original observation. A screen
+    /// change can stale this snapshot; the daemon refuses rather than rebinding.
+    SetValue {
+        element: usize,
+        #[schemars(length(min = 1, max = 200))]
+        snapshot: String,
+        #[schemars(length(max = 1000))]
+        value: String,
+        #[serde(default)]
+        recover_focus_after_clear: Option<bool>,
+        #[serde(default)]
+        after_ms: u64,
+    },
     /// Send one supported device-native key.
     Key {
         name: String,
@@ -1324,10 +1337,10 @@ impl PhoneHandler {
         sequence first, holds one control lock, and stops at the first failure. Use it as soon as a \
         segment is understood; keep single-action tools for exploring an unknown screen. Step kinds: \
         launch_app, open_url, tap_locator, tap_label, tap, type, key, shortcut, scroll, swipe, drag, \
-        longpress, multi_longpress (2–5 explicit normalized points held simultaneously), back, alert (system alerts; taps on them do not act), picker, perform (toggle a \
+        set_value (element+original snapshot, up to 1000 value characters; optional recover_focus_after_clear), longpress, multi_longpress (2–5 explicit normalized points held simultaneously), back, alert (system alerts; taps on them do not act), picker, perform (toggle a \
         switch, adjust a slider: element+snapshot from phone_elements), wait_for, pause. Drag points can dwell at an edge while keeping one finger down. Guard every \
         screen change with wait_for; never batch an irreversible step you have not verified. These \
-        step objects are exactly a saved flow's `steps` — when the response carries \
+        step objects follow the saved-flow vocabulary; snapshot-bound actions need the caller's original observation. When the response carries \
         `flow_suggestion`, ask the user whether to keep the task as a flow (phone_flow_draft). \
         The result names completed/applied counts and the failed step; retry_safe=false means \
         DO NOT replay."
@@ -3480,6 +3493,15 @@ pub(crate) fn phone_steps_request(steps: Vec<PhoneStep>) -> Result<serde_json::V
                     after_ms,
                 )
             }
+            PhoneStep::SetValue { element, snapshot, value, recover_focus_after_clear, after_ms } => {
+                validate_after(after_ms)?;
+                if snapshot.trim().is_empty() || snapshot.chars().count() > 200 || value.chars().count() > 1000 {
+                    return Err(format!("steps[{index}] set_value needs the original snapshot (1..200 characters), its field index and at most 1000 value characters; no action was sent"));
+                }
+                let mut action = serde_json::json!({"type":"set_value","element":element,"snapshot":snapshot,"value":value});
+                if let Some(recover) = recover_focus_after_clear { action["recover_focus_after_clear"] = recover.into(); }
+                action_step(action, after_ms)
+            }
             PhoneStep::Key { name, after_ms } => {
                 validate_after(after_ms)?;
                 let name = name.trim().to_ascii_lowercase();
@@ -4915,6 +4937,35 @@ mod tests {
                     .unwrap();
             let error = phone_steps_request(steps).unwrap_err();
             assert!(error.contains("no action was sent"), "{bad}: {error}");
+        }
+    }
+
+    #[test]
+    fn batch_set_value_preserves_original_snapshot_value_and_explicit_recovery() {
+        for recover in [None,Some(false),Some(true)] {
+            let request=phone_steps_request(vec![PhoneStep::SetValue {element:3,snapshot:"ORIGINAL".into(),
+                value:"🙂".repeat(1000),recover_focus_after_clear:recover,after_ms:25},
+                PhoneStep::Key{name:"return".into(),after_ms:0}]).unwrap();
+            let action=&request["steps"][0]["action"];
+            assert_eq!(action["type"],"set_value"); assert_eq!(action["snapshot"],"ORIGINAL");
+            assert_eq!(action["element"],3); assert_eq!(action["value"].as_str().unwrap().chars().count(),1000);
+            assert_eq!(request["steps"][0]["after_ms"],25);
+            assert_eq!(action.get("recover_focus_after_clear").cloned(),recover.map(serde_json::Value::Bool));
+            assert_eq!(request["steps"][1]["action"]["type"],"key");
+        }
+    }
+
+    #[test]
+    fn invalid_batch_set_value_rejects_before_any_request_is_built() {
+        for (snapshot,value) in [("".into(),"x".into()),(" ".into(),"x".into()),
+            ("x".repeat(201),"x".into()),("ORIGINAL".into(),"字".repeat(1001))] {
+            let error=phone_steps_request(vec![PhoneStep::Tap{x:0.5,y:0.5,after_ms:0},
+                PhoneStep::SetValue{element:1,snapshot,value,recover_focus_after_clear:None,after_ms:0}]).unwrap_err();
+            assert!(error.contains("steps[1]")&&error.contains("no action was sent"),"{error}");
+        }
+        for bad in [serde_json::json!({"kind":"set_value","element":1,"snapshot":"S","value":"x","recover_focus_after_clear":"true"}),
+            serde_json::json!({"kind":"set_value","element":1,"snapshot":"S","value":"x","unexpected":true})] {
+            assert!(serde_json::from_value::<PhoneStep>(bad).is_err());
         }
     }
 

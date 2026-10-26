@@ -3957,14 +3957,15 @@ mod tests {
         listener.set_nonblocking(true).unwrap();
         let stop=Arc::new(AtomicBool::new(false));let seen=Arc::new(AtomicUsize::new(0));
         let stopping=stop.clone();let count=seen.clone();
-        // Construct the HTTP client before the mock's receive deadline starts.
-        // On a loaded host client initialization can otherwise consume the
-        // entire window and falsely report zero observed mutation requests.
+        // Initialize the client AND runtime before measuring the request.
+        // The mock remains alive until that bounded request finishes: a
+        // separate server wall clock can expire under parallel CI scheduling.
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all().build().unwrap();
         let mut client=RunnerClient::new(base).unwrap();client.session=Some("s".into());
         client.element_replace=true;client.replace_focus_recovery=true;
         let server=std::thread::spawn(move || {
-            let deadline=std::time::Instant::now()+Duration::from_secs(5);
-            while !stopping.load(Ordering::Acquire) && std::time::Instant::now()<deadline {
+            while !stopping.load(Ordering::Acquire) {
                 match listener.accept() {
                     Ok((mut stream,_)) => {
                         stream.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
@@ -3981,9 +3982,15 @@ mod tests {
                 }
             }
         });
-        let failed=block(client.replace_element_if_supported("original",&"字".repeat(501),true)).is_err();
+        let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| runtime.block_on(async {
+            // Keep the existing client's 20-second bound, and distinguish a
+            // request timeout from the deliberately returned delivery error.
+            tokio::time::timeout(Duration::from_secs(20),
+                client.replace_element_if_supported("original",&"字".repeat(501),true)).await
+        })));
         stop.store(true,Ordering::Release);server.join().unwrap();
-        assert!(failed);
+        let outcome=result.unwrap().expect("the bounded request must reach the mock and return");
+        assert!(outcome.is_err());
         assert_eq!(seen.load(Ordering::Acquire),1,"no fallback, replay or tail after uncertain prefix");
     }
 

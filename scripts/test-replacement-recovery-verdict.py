@@ -78,7 +78,7 @@ class IdleGateTests(unittest.TestCase):
         return {'target':'simulator','udid':self.args.udid,'owner':self.args.owner,
             'screen_private_secs':0,'human_handoff':False,'released':False,
             'reconnecting':False,'runner':True,'runner_locked':False,
-            'drivable':False,'device_state':'read_failing'}
+            'drivable':False,'device_state':'degraded'}
 
     def test_degraded_read_path_waits_on_metadata_before_resuming_strict_gate(self):
         self.daemon.require_simulator.side_effect=[RuntimeError('simulator is not drivable'),
@@ -107,7 +107,7 @@ class IdleGateTests(unittest.TestCase):
         for changes in [{'owner':'other'},{'screen_private_secs':1},{'udid':'other'},
                         {'target':'phone'},{'human_handoff':True},{'released':True},
                         {'reconnecting':True},{'runner':False},{'runner_locked':True},
-                        {'device_state':'locked'},{'runner_locked':None},{'drivable':'false'}]:
+                        {'device_state':'locked'},{'device_state':'read_failing'},{'runner_locked':None},{'drivable':'false'}]:
             with self.subTest(changes=changes):
                 self.daemon.require_simulator.side_effect=RuntimeError('simulator is not drivable')
                 self.daemon.call.return_value=dict(self.recovering_status(),**changes)

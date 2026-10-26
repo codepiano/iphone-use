@@ -1,0 +1,99 @@
+{
+  "public-result.json": {
+    "records": 3,
+    "errors": [
+      "RuntimeError('simulator is not drivable')"
+    ],
+    "cleanup_errors": [
+      "RuntimeError('simulator is not drivable')"
+    ],
+    "batch_records": []
+  },
+  "public-result2.json": {
+    "records": 14,
+    "errors": [
+      "KeyError('elements')"
+    ],
+    "cleanup_errors": [],
+    "batch_records": [
+      {
+        "case": "batch-replace-focus-20",
+        "rpc_error": {
+          "code": -32602,
+          "message": "failed to deserialize parameters: unknown variant `set_value`, expected one of `tap`, `longpress`, `multi_longpress`, `swipe`, `drag`, `tap_label`, `tap_locator`, `type`, `key`, `shortcut`, `scroll`, `launch_app`, `open_url`, `back`, `alert`, `picker`, `perform`, `wait_for`, `pause`"
+        },
+        "received_verdict": {
+          "error": null,
+          "outcome": null,
+          "retry_safe": null,
+          "failed_step": null,
+          "completed": null,
+          "applied_actions": null
+        },
+        "app_shift_marker": 0
+      },
+      {
+        "case": "batch-replace-focus-221",
+        "rpc_error": {
+          "code": -32602,
+          "message": "failed to deserialize parameters: unknown variant `set_value`, expected one of `tap`, `longpress`, `multi_longpress`, `swipe`, `drag`, `tap_label`, `tap_locator`, `type`, `key`, `shortcut`, `scroll`, `launch_app`, `open_url`, `back`, `alert`, `picker`, `perform`, `wait_for`, `pause`"
+        },
+        "received_verdict": {
+          "error": null,
+          "outcome": null,
+          "retry_safe": null,
+          "failed_step": null,
+          "completed": null,
+          "applied_actions": null
+        },
+        "app_shift_marker": 0
+      }
+    ]
+  },
+  "public-result3.json": {
+    "records": 16,
+    "errors": [],
+    "cleanup_errors": [],
+    "batch_records": [
+      {
+        "case": "batch-replace-focus-20",
+        "rpc_error": null,
+        "received_verdict": {
+          "error": "stale_element_snapshot",
+          "outcome": "not_sent",
+          "retry_safe": false,
+          "failed_step": 1,
+          "completed": 1,
+          "applied_actions": 1
+        },
+        "app_shift_marker": 0
+      },
+      {
+        "case": "batch-replace-focus-221",
+        "rpc_error": null,
+        "received_verdict": {
+          "error": "stale_element_snapshot",
+          "outcome": "not_sent",
+          "retry_safe": false,
+          "failed_step": 1,
+          "completed": 1,
+          "applied_actions": 1
+        },
+        "app_shift_marker": 0
+      },
+      {
+        "case": "batch-default-replace-focus-221",
+        "rpc_error": null,
+        "received_verdict": {
+          "error": "stale_element_snapshot",
+          "outcome": "not_sent",
+          "retry_safe": false,
+          "failed_step": 1,
+          "completed": 1,
+          "applied_actions": 1
+        },
+        "app_shift_marker": 0
+      }
+    ]
+  }
+}

@@ -151,7 +151,15 @@ def wait_for_native_idle(daemon, args, peer=None, phase="setup", timeout=15):
                 and status.get("runner") is True
                 and status.get("runner_locked") is False)
             recovering = same_scope and (status.get("drivable") is True or
-                (status.get("drivable") is False and status.get("device_state") == "read_failing"))
+                (status.get("drivable") is False and status.get("device_state") == "degraded"))
+            # Keep the actual public status enum, not the internal advice name,
+            # in the receipt so a future cross-layer mismatch is inspectable.
+            if hasattr(args, "out"):
+                sample = {"phase":phase,"device_state":status.get("device_state") if isinstance(status,dict) else None,
+                    "drivable":status.get("drivable") if isinstance(status,dict) else None,
+                    "same_scope":same_scope,"recovering":recovering}
+                with (args.out / "idle-status.jsonl").open("a") as log:
+                    log.write(json.dumps(sample)+"\n")
             if not recovering:
                 raise
             left = deadline - time.monotonic()
