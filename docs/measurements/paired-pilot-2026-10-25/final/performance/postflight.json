@@ -1,9 +1,0 @@
-{
-  "host_load": [
-    2.79736328125,
-    5.50634765625,
-    10.23193359375
-  ],
-  "memory_bytes": "17179869184",
-  "swap_usage": "vm.swapusage: total = 0.00M  used = 0.00M  free = 0.00M  (encrypted)"
-}

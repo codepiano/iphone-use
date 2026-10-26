@@ -75,14 +75,14 @@ fixture trial. It never replays a write.
 The script runs inside `scripts/test-simulator-smoke.sh` after gesture acceptance;
 its state/receipt verdicts also run without a device through
 `python3 scripts/test-replacement-recovery-verdict.py`, including rejection of
-the actual retained misclick. See the [CI-path run and cleanup evidence](../measurements/recovery-ci-2026-10-26/README.md).
+the actual retained misclick. See the [CI-path run and cleanup evidence](native-interaction-acceptance.md).
 
 The followup gate checks the actual public `device_state:"degraded"`, not the
 internal `read_failing` advice name. Its runtime samples and the remaining
-long-field failure are in the [public batching followup](../measurements/mcp-batch-replacement-2026-10-26/README.md).
+long-field failure are in the [public batching followup](native-interaction-acceptance.md).
 
 Startup/next-case/cleanup gates now wait only on metadata for explicit native
 idle within a bounded setup budget; a pending MCP response, missing idle state,
 owner/privacy change or permanent busy still refuses resets and writes. No
 uncertain operation is replayed. [Hosted startup failure and subsequent M4
-validation](../measurements/recovery-idle-2026-10-26/README.md) retain both results.
+validation](native-interaction-acceptance.md) retain both results.

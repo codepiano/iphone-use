@@ -1,8 +1,0 @@
-{
-  "wda_sha": "d17782422d55ff1e5e0ceb74eb1fd509cc0c35b6",
-  "unsigned_test_macho_sha256": "c3d3ee3d5c23076bdbe0f3f0a9095242fcb54cff39653d0aa08d9f29d91aca70",
-  "signed_test_macho_sha256": "e3cd7306deee88a5a86e67be2a03bc6e2d2d0246b2ddeebed8a71a643ed951e4",
-  "runner_id": "com.leeguoo.iphone-use.acceptance.e73.wda.xctrunner",
-  "build_toolchain": "Xcode 27.0/iPhoneOS27.0 arm64",
-  "execution_toolchain": "Xcode 27.2 beta2/iOS27.2 physical"
-}

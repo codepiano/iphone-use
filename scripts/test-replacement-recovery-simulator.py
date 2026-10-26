@@ -29,7 +29,7 @@ def module(name, filename):
     return result
 
 
-pair = module("recovery_protocol", "compare-native-wda-simulator.py")
+pair = module("recovery_protocol", "owned-mcp-fixture.py")
 drag = module("recovery_transport", "test-drag-simulator.py")
 
 # name, seed, field, length, recover, clear fault, advance, shift

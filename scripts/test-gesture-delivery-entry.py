@@ -22,7 +22,7 @@ import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("gesture_protocol", ROOT / "scripts/compare-native-wda-simulator.py")
+spec = importlib.util.spec_from_file_location("gesture_protocol", ROOT / "scripts/owned-mcp-fixture.py")
 protocol = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(protocol)
 OWNER = "gesture-delivery-entry"

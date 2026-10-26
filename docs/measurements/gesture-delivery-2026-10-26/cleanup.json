@@ -1,8 +1,0 @@
-{
-  "controller": false,
-  "runner": false,
-  "daemon": false,
-  "owned_simulator_present": false,
-  "managed_record_present": false,
-  "exit_code": 0
-}

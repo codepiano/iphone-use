@@ -1,9 +1,0 @@
-Simulator end to end	Set up job	2026-10-25T19:55:03.0970110Z Version: 20260828.587
-Simulator end to end	Set up job	2026-10-25T19:55:03.0975870Z Image: macos-14-arm64
-Simulator end to end	Set up job	2026-10-25T19:55:03.0976310Z Version: 20260831.0302.1
-Simulator end to end	Set up job	2026-10-25T19:55:03.0977090Z Included Software: https://github.com/actions/runner-images/blob/macos-14-arm64/20260831.0302/images/macos/macos-14-arm64-Readme.md
-Simulator end to end	Xcode and simulators	2026-10-25T19:58:10.8161980Z Xcode 15.4
-Simulator end to end	Xcode and simulators	2026-10-25T19:58:10.8167260Z Build version 15F31d
-Simulator end to end	Smoke test	2026-10-25T19:58:28.8421110Z Simulator: iPhone 15 (iOS 18.2, Shutdown) 2CD40538-7654-42E2-A40A-CE6D7205D087
-Simulator end to end	Smoke test	2026-10-25T20:13:40.7526090Z {"case_started": "strict-advance"}
-Simulator end to end	Smoke test	2026-10-25T20:18:45.7506330Z {"passed": false, "harness_error": "MCP operation deadline; do not replay", "cleanup_errors": ["fixture cleanup deferred: MCP delivery remains pending"]}

@@ -1,7 +1,0 @@
-{
-  "scope": "all HTTP POST paths in the actual native Runner log, normalized session ids; not a global OS input-event proof",
-  "post_paths": {
-    "/session": 1,
-    "/session/:sid/appium/settings": 7
-  }
-}

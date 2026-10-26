@@ -1,8 +1,0 @@
-{
-  "scope": "analysis of preserved first failed harness attempt",
-  "interpretation": "The source counter only recognized a session-prefixed route, while production used /source. Status/receipt assertions preceded the final unannotated counter assertion. Final code counts both namespaces and reports assertion context.",
-  "interpretation_is_inference": true,
-  "last_source_event": "2026-10-25 09:44:03.807219+0900 iPhoneUse-Runner[96407:31639690] ipu-runner: GET /source -> 200 (17.8 ms)",
-  "final_swipe_ack_event": "2026-10-25 09:44:04.711859+0900 iPhoneUse-Runner[96407:31639690] ipu-runner: POST /session/EBDB016E-1BC9-408F-A6F1-10D2C614385D/actions -> 200 (902.4 ms)",
-  "source_events_after_final_swipe_ack": 0
-}

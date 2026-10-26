@@ -1,8 +1,0 @@
-{
-  "scope": "static inspection of Simulator-side SDK client; not physical-device acceptance or proof about every cancellation route",
-  "toolchain": "Xcode 27.0\nBuild version 27A266a",
-  "framework_sha256": "ac1332bb1ac774d0dab362589fb6e2f3763551d5598827ff61b7bc983aeb0a64",
-  "architecture": "arm64",
-  "symbol": "-[XCTRunnerDaemonSessionEventRequest invalidate]",
-  "disassembly": "/Applications/Xcode-27.0.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks/XCUIAutomation.framework/XCUIAutomation:\n(__TEXT,__text) section\n-[XCTRunnerDaemonSessionEventRequest invalidate]:\n   6f468:\t00 04 00 90\tadrp\tx0, 128 ; 0xef000\n   6f46c:\t00 40 33 91\tadd\tx0, x0, #0xcd0 ; Objc cfstring ref: @\"Cancelation not currently supported for daemon event requests - this is a no-op.\"\n   6f470:\t32 87 00 14\tb\t0x91138 ; symbol stub for: __XCINFLog\n"
-}

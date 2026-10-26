@@ -1,5 +1,0 @@
-{
-  "native_pre_sign_macho_sha256": "0693c702f294c0a4f0427a4a5799d14b5994281eabce63cc78be2415de55e5df",
-  "native_signed_macho_sha256": "5aa294999e3c0b4c040dfb3344d04e977463ee2bbfa5a3277fb872661ef8281c",
-  "fixture_macho_sha256": "bf623242caed461b1333269715247fb3fc086240a51f56a5d816edb847cc4d22"
-}

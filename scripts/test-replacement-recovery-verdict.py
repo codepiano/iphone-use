@@ -12,7 +12,7 @@ from types import SimpleNamespace
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('recovery_verdict',ROOT/'scripts/test-replacement-recovery-simulator.py')
 recovery=importlib.util.module_from_spec(spec);spec.loader.exec_module(recovery)
-FOLDER=ROOT/'docs/measurements/selected-replacement-recovery-2026-10-26'
+FOLDER=ROOT/'scripts/fixtures/replacement-recovery'
 
 class VerdictTests(unittest.TestCase):
     @classmethod

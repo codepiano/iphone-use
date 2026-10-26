@@ -1,8 +1,0 @@
-{
-  "scope": "Reused native candidate device build; isolated identities and local development signing",
-  "native_pre_sign_macho_sha256": "870d99031f1fa5a066c255f7579e2d003ce941ab7dd14e4668c7aa9bf2f678c9",
-  "native_signed_macho_sha256": "c565b09623d501a3799aef75eb6c470bde69ac446a27b566bd6597d141ca29af",
-  "fixture_macho_sha256": "d84a9d21bdab6c386f03b4d47ec84ed9f1d1e468f8fe107042db42dd576d4d28",
-  "runner_id": "com.leeguoo.iphone-use.acceptance.recovery.xctrunner",
-  "fixture_id": "com.leeguoo.iphone-use.acceptance.recovery.fixture"
-}

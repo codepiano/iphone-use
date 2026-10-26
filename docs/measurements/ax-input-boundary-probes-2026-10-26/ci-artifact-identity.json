@@ -1,8 +1,0 @@
-{
-  "run_id": 40243760599,
-  "run_attempt": 2,
-  "artifact_id": 12617774233,
-  "artifact_name": "simulator-gesture-evidence-ios-18.2",
-  "artifact_zip_sha256": "15b703d0714ac26f8aebd9ecda5c3aed7537920d2e8b1ae060c5696609e41887",
-  "note": "Two artifacts have this name; download by exact ID. Name-based gh run download selected the first-attempt failure."
-}
