@@ -37,6 +37,19 @@ clear without restoring focus. The native response reports
 `focusRestoredAfterClear`; its clear receipt headers retain whether a restoration
 tap was dispatched. The daemon still checks the original field's final value.
 
+Replacement delivery failures retain a bounded ledger through `/control`, agent HTTP and
+MCP: acknowledged prefix scalars, the current uncertain segment, never-sent
+suffix scalars and whether clear was acknowledged. `replacement_incomplete`
+remains non-retryable. A connection failure on a later segment cannot erase
+previous effects or authorize replaying the whole replacement. HTTP 200 W3C
+errors retain the same bounded typed reason as non-2xx errors; a 200 status does
+not authorize a no-input refusal. Malformed prefix acknowledgements remain
+uncertain, without a usable continuation target. These are transport/Runner
+receipts; App readback remains separate. Ownership/privacy revocation retains
+its existing scope-level interruption receipt instead of treating the device
+as broken. Legacy clear/type also retains an acknowledged clear when typing
+fails afterward.
+
 Keep the default policy when focus changes should interrupt the operation. The
 opt-in permits restoring the selected field after a verified clear; it cannot
 distinguish every cause of a human/App focus change. Ownership/privacy checks

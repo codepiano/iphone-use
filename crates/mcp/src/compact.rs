@@ -656,10 +656,16 @@ pub fn failed_batch(json: &Value) -> Option<String> {
             .get("characters_uncertain")
             .and_then(Value::as_u64)
             .unwrap_or_default();
-        out.push(format!(
-            "text: {confirmed} of {total} characters typed, {uncertain} uncertain; read the field, \
-             then type only the rest (remaining_text) with clear=false — never the whole text"
-        ));
+        if json.get("error").and_then(Value::as_str) == Some("replacement_incomplete") {
+            let unsent = json.get("characters_unsent").and_then(Value::as_u64).unwrap_or_default();
+            let clear = json.get("clear_outcome").and_then(Value::as_str).unwrap_or("unknown");
+            out.push(format!("replacement: {confirmed} of {total} characters acknowledged, {uncertain} uncertain, {unsent} unsent; clear={clear}. Inspect the original field and current app/focus; DO NOT repeat the whole replacement"));
+        } else {
+            out.push(format!(
+                "text: {confirmed} of {total} characters typed, {uncertain} uncertain; read the field, \
+                 then type only the rest (remaining_text) with clear=false — never the whole text"
+            ));
+        }
     }
     let list = steps
         .iter()
@@ -1296,5 +1302,22 @@ mod value_preview_tests {
         let row=serde_json::json!({"kind":"TextField","label":"Draft","value":"PREFIX","value_truncated":true});
         let rendered=row_line(0,&row,true);assert!(rendered.contains("PREFIX")&&rendered.contains("value_truncated"));
         let short=serde_json::json!({"kind":"TextField","label":"Draft","value":"short"});assert!(!row_line(0,&short,true).contains("value_truncated"));
+    }
+}
+
+#[cfg(test)]
+mod replacement_progress_tests {
+    use super::*;
+    #[test]
+    fn replacement_partial_batch_keeps_clear_and_unsent_counts_without_append_advice() {
+        let body = serde_json::json!({"ok":false,"error":"replacement_incomplete",
+            "retry_safe":false,"outcome":"partial","failed_step":0,"completed":0,"applied_actions":0,
+            "characters_confirmed":200,"characters_uncertain":0,"characters_unsent":301,
+            "characters_total":501,"clear_outcome":"confirmed","steps":[]});
+        let rendered = failed_batch(&body).unwrap();
+        assert!(rendered.contains("replacement: 200 of 501"), "{rendered}");
+        assert!(rendered.contains("301 unsent") && rendered.contains("clear=confirmed"));
+        assert!(rendered.contains("DO NOT repeat the whole replacement"));
+        assert!(!rendered.contains("remaining_text") && !rendered.contains("clear=false"));
     }
 }

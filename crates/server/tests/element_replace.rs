@@ -384,3 +384,124 @@ fn empty_replacement_accepts_confirmed_null_but_not_failed_or_malformed_reads() 
         }
     });
 }
+
+#[test]
+fn interrupted_replacement_keeps_delivery_counts_and_never_runs_batch_suffix() {
+    block(async {
+        for batch in [false,true] {
+            for mode in ["error-in-200","refused","error","lost"] {
+                let calls = Arc::new(Mutex::new(Vec::<String>::new()));
+                let seen = calls.clone();
+                let runner = mock_runner(move |r,_| {
+                    seen.lock().unwrap().push(r.into());
+                    if r.contains("/ipu/element/FIELD/replace") {
+                        let payload: Value = serde_json::from_str(r.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+                        assert_eq!(payload["text"].as_str().unwrap().chars().count(),199);
+                        return Some((Duration::ZERO,json!({"value":{"inputTarget":"ORIGINAL"}}).to_string()));
+                    }
+                    if r.contains("/wda/keys") {
+                        if mode == "lost" { return None; }
+                        let status = match mode { "error-in-200"=>200,"refused"=>400,_=>500 };
+                        let code = if mode=="refused" {"invalid argument"} else {"unknown error"};
+                        let message = if mode=="refused" {"original focus changed; nothing was sent"} else {"current segment outcome unknown"};
+                        let body = json!({"value":{"error":code,"message":message}}).to_string();
+                        return Some((Duration::ZERO,format!("HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len())));
+                    }
+                    Some((Duration::ZERO,base(r,true)))
+                });
+                let text = "a".repeat(199)+"👨‍👩‍👧‍👦"+&"z".repeat(295);
+                let (status,body) = action(build_state_with_runner(runner.url()),batch,&text).await;
+                assert_eq!(status,if mode=="refused"{StatusCode::CONFLICT}else{StatusCode::BAD_GATEWAY},"{mode}: {body}");
+                assert_eq!(body["error"],"replacement_incomplete","{body}");
+                assert_eq!(body["outcome"],if mode=="refused"{"partial"}else{"unknown"}); assert_eq!(body["retry_safe"],false);
+                assert_eq!(body["characters_confirmed"],199);
+                assert_eq!(body["characters_uncertain"],if mode=="refused"{0}else{200});
+                assert_eq!(body["characters_unsent"],if mode=="refused"{302}else{102});
+                assert_eq!(body["characters_total"],501); assert_eq!(body["clear_outcome"],"confirmed");
+                assert!(body.get("continue_token").is_none());
+                if mode!="lost" { assert_eq!(body["detail"]["runner_error"]["message"],if mode=="refused"{"original focus changed; nothing was sent"}else{"current segment outcome unknown"}); }
+                if batch {
+                    assert_eq!(body["failed_step"],0); assert_eq!(body["completed"],0);
+                    assert_eq!(body["batch_outcome"],if mode=="refused"{"partially_applied"}else{"unknown"});
+                }
+                let calls = calls.lock().unwrap();
+                assert_eq!(calls.iter().filter(|r|r.contains("/replace")).count(),1,"{mode}");
+                assert_eq!(calls.iter().filter(|r|r.contains("/wda/keys")).count(),1,"{mode}");
+                assert!(!calls.iter().any(|r|r.contains("/clear")||r.contains("/click")||r.contains("/wda/homescreen")||(r.starts_with("POST ")&&r.contains("/element/FIELD/value"))),"{calls:?}");
+            }
+        }
+    });
+}
+
+#[test]
+fn legacy_clear_ack_is_not_erased_by_a_later_typing_failure() {
+    block(async {
+        for batch in [false,true] {
+            for mode in ["error-in-200","refused","error","lost"] {
+                let calls = Arc::new(Mutex::new(Vec::<String>::new())); let seen = calls.clone();
+                let runner = mock_runner(move |r,_| {
+                    seen.lock().unwrap().push(r.into());
+                    if r.contains("/element/FIELD/value") && r.starts_with("POST ") {
+                        if mode=="lost" {return None;}
+                        let status = match mode {"error-in-200"=>200,"refused"=>400,_=>500};
+                        let code = if mode=="refused" {"invalid argument"} else {"unknown error"};
+                        let message = if mode=="refused" {"field changed; nothing was sent"} else {"typing outcome unknown"};
+                        let body = json!({"value":{"error":code,"message":message}}).to_string();
+                        return Some((Duration::ZERO,format!("HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len())));
+                    }
+                    Some((Duration::ZERO,base(r,false)))
+                });
+                let (status,body) = action(build_state_with_runner(runner.url()),batch,"中文🙂").await;
+                assert_eq!(status,if mode=="refused"{StatusCode::CONFLICT}else{StatusCode::BAD_GATEWAY},"{body}");
+                assert_eq!(body["error"],"replacement_incomplete"); assert_eq!(body["retry_safe"],false);
+                assert_eq!(body["outcome"],if mode=="refused"{"partial"}else{"unknown"});
+                assert_eq!(body["characters_confirmed"],0); assert_eq!(body["characters_total"],3);
+                assert_eq!(body["characters_uncertain"],if mode=="refused"{0}else{3});
+                assert_eq!(body["characters_unsent"],if mode=="refused"{3}else{0});
+                assert_eq!(body["clear_outcome"],"confirmed"); assert_eq!(body["native_mutations_confirmed"],1);
+                assert_eq!(body["native_mutations_uncertain"],if mode=="refused"{0}else{1});
+                assert!(body.get("continue_token").is_none());
+                let calls = calls.lock().unwrap();
+                assert_eq!(calls.iter().filter(|r|r.contains("/clear")).count(),1);
+                assert_eq!(calls.iter().filter(|r|r.starts_with("POST ")&&r.contains("/element/FIELD/value")).count(),1);
+                assert!(!calls.iter().any(|r|r.contains("/replace")||r.contains("/wda/keys")||r.contains("/wda/homescreen")),"{calls:?}");
+            }
+        }
+    });
+}
+
+#[test]
+fn browser_control_replacement_failure_is_not_unsupported_or_retry_safe() {
+    block(async {
+        for refused in [false,true] {
+            let calls = Arc::new(Mutex::new(Vec::<String>::new())); let seen = calls.clone();
+            let runner = mock_runner(move |r,_| {
+                seen.lock().unwrap().push(r.into());
+                let response = if r.contains("/replace") {
+                    json!({"value":{"inputTarget":"ORIGINAL"}}).to_string()
+                } else if r.contains("/wda/keys") {
+                    if refused {
+                        let body=json!({"value":{"error":"invalid argument","message":"original changed; nothing was sent"}}).to_string();
+                        format!("HTTP/1.1 400 Bad Request\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len())
+                    } else {error()}
+                } else {base(r,true)};
+                Some((Duration::ZERO,response))
+            });
+            let state=build_state_with_runner(runner.url());
+            let (_,screen)=call(state.clone(),"/agent/elements",None).await;
+            let (status,body)=call(state,"/control",Some(json!({"type":"set_value","element":1,
+                "snapshot":screen["snapshot"],"value":"字".repeat(201),"ttl_ms":2500}))).await;
+            assert_eq!(status,if refused{StatusCode::CONFLICT}else{StatusCode::BAD_GATEWAY},"{body}");
+            assert_eq!(body["error"],"replacement_incomplete"); assert_eq!(body["retry_safe"],false);
+            assert_eq!(body["outcome"],if refused{"partial"}else{"unknown"});
+            assert_eq!(body["characters_confirmed"],200); assert_eq!(body["characters_total"],201);
+            assert_eq!(body["characters_uncertain"],if refused{0}else{1});
+            assert_eq!(body["characters_unsent"],if refused{1}else{0});
+            assert_eq!(body["clear_outcome"],"confirmed");
+            let calls=calls.lock().unwrap();
+            assert_eq!(calls.iter().filter(|r|r.contains("/replace")).count(),1);
+            assert_eq!(calls.iter().filter(|r|r.contains("/wda/keys")).count(),1);
+            assert!(!calls.iter().any(|r|r.contains("/clear")||r.contains("/click")||r.contains("/wda/homescreen")),"{calls:?}");
+        }
+    });
+}

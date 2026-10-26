@@ -6476,6 +6476,7 @@ enum RunnerControlOutcome {
     /// Never replayed — the caller appends only the rest.
     TextPartial { confirmed: usize, uncertain: usize },
     NativePartial { confirmed: u64 },
+    ReplacementPartial { confirmed: usize, uncertain: usize, unsent: usize, clear_confirmed: bool },
     /// The runner refused the request and said nothing reached the screen
     /// (issue #257: a scroll point outside the runner's screen). Its reason
     /// is in the `runner_error` detail.
@@ -6816,6 +6817,7 @@ enum SnapshotElementTapError {
 /// was actually safe, retrying. Only a *connect* failure qualifies; anything
 /// after the request was sent (timeout, reset mid-body) stays unknown.
 fn error_never_reached_runner(error: &anyhow::Error) -> bool {
+    if error.downcast_ref::<crate::runner::ReplacementDeliveryError>().is_some() { return false; }
     error
         .chain()
         .any(|cause| cause.downcast_ref::<reqwest::Error>().is_some_and(reqwest::Error::is_connect))
@@ -7205,9 +7207,21 @@ async fn set_value_snapshot_element(
         Ok(false) => {
             // The legacy clear may already have changed focus or text. Any failure is terminal:
             // a replacement must never silently turn into an append or retry a different field.
-            w.clear_element(&element_id).await.map_err(SnapshotElementTapError::AfterDispatch)?;
+            let total = text.chars().count();
+            if let Err(error) = w.clear_element(&element_id).await {
+                let error = if error_never_reached_runner(&error) { error } else {
+                    crate::runner::ReplacementDeliveryError::wrap(error,0,0,total,false)
+                };
+                return Err(SnapshotElementTapError::AfterDispatch(error));
+            }
             if text.is_empty() { return Ok(()); }
-            w.type_into(&element_id, &text).await
+            w.type_into(&element_id, &text).await.map_err(|error| {
+                let not_sent = error_never_reached_runner(&error)
+                    || crate::runner::runner_http_error(&error).is_some_and(crate::runner::RunnerHttpError::nothing_sent)
+                    || crate::native_scope::is_revoked(&error);
+                let uncertain = if not_sent {0} else {total};
+                crate::runner::ReplacementDeliveryError::wrap(error,0,uncertain,total-uncertain,true)
+            })
         }
     };
     // An uncertain write must never be promoted by a later read of only this field:
@@ -9296,8 +9310,19 @@ fn runner_failure_outcome(
     detail: &mut Option<serde_json::Value>,
 ) -> RunnerControlOutcome {
     use std::sync::atomic::Ordering;
-    // Revocation is permission loss, not a broken device or transport.
+    // Permission loss retains the existing scope-level receipt and must not
+    // mark the device itself broken merely because the owner/private epoch changed.
     if crate::native_scope::is_revoked(error) { return RunnerControlOutcome::Failed; }
+    if let Some(progress) = error.downcast_ref::<crate::runner::ReplacementDeliveryError>() {
+        if let Some(runner) = crate::runner::runner_http_error(error) {
+            *detail = Some(serde_json::json!({"runner_error":runner.to_json()}));
+        }
+        actionable.store(false, Ordering::Release);
+        w.invalidate_session();
+        tracing::warn!("runner control ({typ}): {error:#}");
+        return RunnerControlOutcome::ReplacementPartial { confirmed:progress.confirmed,
+            uncertain:progress.uncertain, unsent:progress.unsent, clear_confirmed:progress.clear_confirmed };
+    }
     let runner = crate::runner::runner_http_error(error);
     if let Some(runner) = runner {
         *detail = Some(serde_json::json!({ "runner_error": runner.to_json() }));
@@ -9850,6 +9875,31 @@ fn text_partial_body(
             "typing failed part-way: the first characters_confirmed characters are typed; the next characters_uncertain may be partly on screen. Read the field's value, then send only what is missing (from remaining_text) with clear=false; never resend the whole text"
         },
     })
+}
+
+fn replacement_partial_body(confirmed: usize, uncertain: usize, unsent: usize,
+    clear_confirmed: bool, detail: Option<&serde_json::Value>) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "ok":false, "error":"replacement_incomplete",
+        "outcome":if uncertain == 0 && clear_confirmed && detail.and_then(|d|d.get("native_mutations_uncertain")).and_then(serde_json::Value::as_u64).unwrap_or(0)==0 {"partial"} else {"unknown"}, "retry_safe":false,
+        "characters_confirmed":confirmed, "characters_uncertain":uncertain,
+        "characters_unsent":unsent, "characters_total":confirmed+uncertain+unsent,
+        "clear_outcome":if clear_confirmed {"confirmed"} else {"unknown"},
+        "hint":"Replacement stopped. Clearing or part of the requested value may already be applied. Inspect the original field and current app/focus before deciding what is missing; never repeat the whole replacement automatically.",
+    });
+    if let Some(detail) = detail {
+        body["detail"] = detail.clone();
+        for key in ["runner_error", "native_mutations_confirmed", "native_mutations_uncertain"] {
+            if let Some(value) = detail.get(key) { body[key] = value.clone(); }
+        }
+    }
+    body
+}
+
+fn replacement_partial_response(confirmed: usize, uncertain: usize, unsent: usize,
+    clear_confirmed: bool, detail: Option<&serde_json::Value>) -> Response {
+    let body = replacement_partial_body(confirmed, uncertain, unsent, clear_confirmed, detail);
+    with_security_headers((if body["outcome"]=="partial" {StatusCode::CONFLICT} else {StatusCode::BAD_GATEWAY}, axum::Json(body)).into_response())
 }
 
 fn text_partial_with_detail(action: &serde_json::Value, confirmed: usize, uncertain: usize,
@@ -10557,6 +10607,11 @@ async fn direct_control(
         );
     }
 
+    if let RunnerControlOutcome::ReplacementPartial { confirmed, uncertain, unsent, clear_confirmed } = outcome {
+        mark_runner_read_path_unactionable(&state);
+        record_partial_text_activity(&headers, confirmed, uncertain);
+        return replacement_partial_response(confirmed, uncertain, unsent, clear_confirmed, detail.as_ref());
+    }
     if outcome == RunnerControlOutcome::Failed {
         let locked = recover(state.runner_health.lock()).locked;
         *recover(state.runner_health.lock()) = crate::runner::RunnerHealth {
@@ -12232,6 +12287,17 @@ async fn agent_actions_claimed(
                     body["native_mutations_confirmed"]=confirmed.into();body["native_mutations_uncertain"]=0.into();
                     return agent_actions_json(StatusCode::CONFLICT,body);
                 }
+                if let RunnerControlOutcome::ReplacementPartial { confirmed, uncertain, unsent, clear_confirmed } = outcome {
+                    mark_runner_read_path_unactionable(&state);
+                    record_partial_text_activity(&headers, confirmed, uncertain);
+                    let partial = replacement_partial_body(confirmed, uncertain, unsent, clear_confirmed, step_detail.as_ref());
+                    let mut body = agent_actions_failure_body(index, completed, applied_actions,
+                        "replacement_incomplete", partial["outcome"].as_str().unwrap_or("unknown"), false, &step_results, None);
+                    for key in ["characters_confirmed", "characters_uncertain", "characters_unsent", "characters_total", "clear_outcome", "hint", "detail", "runner_error", "native_mutations_confirmed", "native_mutations_uncertain"] {
+                        if let Some(value) = partial.get(key) { body[key] = value.clone(); }
+                    }
+                    return agent_actions_json(if partial["outcome"]=="partial" {StatusCode::CONFLICT} else {StatusCode::BAD_GATEWAY}, body);
+                }
                 if let RunnerControlOutcome::TextPartial {
                     confirmed,
                     uncertain,
@@ -12353,7 +12419,7 @@ async fn agent_actions_claimed(
                         RunnerControlOutcome::Failed => {
                             (StatusCode::BAD_GATEWAY, "outcome_unknown", "unknown", false)
                         }
-                        RunnerControlOutcome::Applied | RunnerControlOutcome::TextPartial { .. } => {
+                        RunnerControlOutcome::Applied | RunnerControlOutcome::TextPartial { .. } | RunnerControlOutcome::ReplacementPartial { .. } => {
                             unreachable!()
                         }
                     };
@@ -14940,6 +15006,11 @@ async fn agent_input_claimed(
                 )
                     .into_response(),
             )
+        }
+        RunnerControlOutcome::ReplacementPartial { confirmed, uncertain, unsent, clear_confirmed } => {
+            mark_runner_read_path_unactionable(&state);
+            record_partial_text_activity(&headers, confirmed, uncertain);
+            replacement_partial_response(confirmed, uncertain, unsent, clear_confirmed, detail.as_ref())
         }
         RunnerControlOutcome::RunnerRejected => runner_rejected_response(detail.as_ref()),
         RunnerControlOutcome::Failed => runner_failed_after_dispatch_response_with(detail.as_ref()),
@@ -26457,6 +26528,32 @@ mod tests {
                 "actions failed: synthesis error"
             );
             runner.shutdown();
+        });
+    }
+
+    #[test]
+    fn replacement_progress_cannot_be_reclassified_as_a_whole_not_sent() {
+        block(async {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let base = format!("http://{}", listener.local_addr().unwrap()); drop(listener);
+            let source = reqwest::Client::builder().no_proxy().timeout(std::time::Duration::from_secs(3)).build().unwrap().post(&base).send().await.unwrap_err();
+            assert!(source.is_connect());
+            let error = crate::runner::ReplacementDeliveryError::wrap(source.into(),200,0,301,true);
+            assert!(!error_never_reached_runner(&error));
+            let mut client = crate::runner::RunnerClient::new(base).unwrap();
+            let actionable = std::sync::atomic::AtomicBool::new(true);
+            let outcome = snapshot_element_outcome(Err(SnapshotElementTapError::AfterDispatch(error)), &mut client, "test replacement").unwrap();
+            let error = outcome.unwrap_err();
+            let outcome = runner_failure_outcome(&mut client, &actionable, &error, "set_value", &mut None);
+            assert_eq!(outcome, RunnerControlOutcome::ReplacementPartial {confirmed:200,uncertain:0,unsent:301,clear_confirmed:true});
+            assert!(!actionable.load(std::sync::atomic::Ordering::Acquire));
+            let body = replacement_partial_body(200,0,301,true,None);
+            assert_eq!(body["retry_safe"],false); assert_eq!(body["outcome"],"partial");
+            assert_eq!(body["characters_total"],501); assert_eq!(body["clear_outcome"],"confirmed");
+            assert!(body.get("continue_token").is_none());
+            let unknown = replacement_partial_body(0,200,301,false,None);
+            assert_eq!(unknown["outcome"],"unknown"); assert_eq!(unknown["clear_outcome"],"unknown");
+            assert_eq!(unknown["retry_safe"],false);
         });
     }
 

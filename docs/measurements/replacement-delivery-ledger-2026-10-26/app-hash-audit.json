@@ -1,0 +1,42 @@
+{
+  "verified_records": [
+    {
+      "lane": "remote-native-public",
+      "case": "type-501",
+      "app_hash_exact": true,
+      "unrelated_fields_unchanged": true,
+      "public_mcp_seconds": 3.3226602920040023
+    },
+    {
+      "lane": "remote-native-public",
+      "case": "type-empty-501",
+      "app_hash_exact": true,
+      "unrelated_fields_unchanged": true,
+      "public_mcp_seconds": 3.207576541986782
+    },
+    {
+      "lane": "local-native-public",
+      "case": "type-501",
+      "app_hash_exact": true,
+      "unrelated_fields_unchanged": true,
+      "public_mcp_seconds": 4.996278209
+    },
+    {
+      "lane": "local-native-public",
+      "case": "type-empty-501",
+      "app_hash_exact": true,
+      "unrelated_fields_unchanged": true,
+      "public_mcp_seconds": 4.083246208000002
+    },
+    {
+      "lane": "local-native-public",
+      "case": "type-unicode",
+      "app_hash_exact": true,
+      "unrelated_fields_unchanged": true,
+      "public_mcp_seconds": 0.16345958299999808
+    }
+  ],
+  "whole_public_character_cohort_passed": false,
+  "unverified_focus_case": "received failure response; App receipt not preserved before strict health gate aborted",
+  "physical_test_this_turn": false
+}

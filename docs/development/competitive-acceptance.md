@@ -113,6 +113,15 @@ Limits to close before claiming input superiority:
   still fails overall: an earlier connection-loss request and a later empty-field
   foreground-refusal request lack complete receipts. This is no default change
   or comparative latency win. Raw attribute-schema alternatives remain readonly.
+- [Character-level replacement receipts](../measurements/replacement-delivery-ledger-2026-10-26/README.md)
+  now retain acknowledged prefix, uncertain segment, unsent suffix and clear
+  status through browser/agent HTTP and MCP. Existing unknown/native request
+  counters remain; legacy clear/type retains its acknowledged clear too. API
+  regressions pass, but the private character Runner's public-path pilot remains
+  incomplete: ordinary inputs have exact App hashes; fault readback/setup/cold
+  launch stop later validation. Its roughly 20.98-second Native launch response
+  arrives after the 20-second client timeout. No default keyboard or broad
+  completion/latency claim follows from these records.
 - Old runners without the capability keep their existing input behavior;
   they must not be described as protected.
 - Ordinary short text on `ipu:atomicText` binds, optionally clears, types and

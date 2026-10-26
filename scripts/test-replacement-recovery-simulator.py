@@ -131,7 +131,35 @@ def wait_for_native_idle(daemon, args, peer=None, phase="setup", timeout=15):
     while True:
         if peer is not None and peer.pending is not None:
             raise RuntimeError("MCP request remains pending; no fixture reset")
-        require_target(daemon, args)
+        try:
+            require_target(daemon, args)
+        except RuntimeError as error:
+            if str(error) != "simulator is not drivable":
+                raise
+            # An uncertain write deliberately degrades the read path. Status
+            # polling schedules the daemon's bounded readonly health probe;
+            # no fixture reset, input, reconnect or screen read is sent here.
+            status = daemon.call("/agent/status")
+            same_scope = (isinstance(status, dict)
+                and status.get("target") == "simulator"
+                and str(status.get("udid", "")).lower() == args.udid.lower()
+                and status.get("owner") == args.owner
+                and status.get("screen_private_secs") == 0
+                and status.get("human_handoff") is False
+                and status.get("released") is False
+                and status.get("reconnecting") is False
+                and status.get("runner") is True
+                and status.get("runner_locked") is False)
+            recovering = same_scope and (status.get("drivable") is True or
+                (status.get("drivable") is False and status.get("device_state") == "read_failing"))
+            if not recovering:
+                raise
+            left = deadline - time.monotonic()
+            if left <= 0:
+                raise RuntimeError("read path did not become drivable within setup budget; no fixture reset") from error
+            print(json.dumps({"idle_phase":phase,"waiting_read_recovery":True}), flush=True)
+            time.sleep(min(.2, left))
+            continue
         native, _ = drag.runner_call(args, "/status")
         busy = native.get("value", {}).get("busy")
         if busy is False:

@@ -1,0 +1,37 @@
+{
+  "local": {
+    "owned_simulator_count": 3,
+    "remaining_owned_simulators": [],
+    "live_owned_service_pids": [],
+    "test_ports_listening": {
+      "44331": false,
+      "8200": false
+    },
+    "rust_source_files_matched": 172,
+    "product_native_source_sha256": {
+      "IPURBridge.h": "5f1b000f3d9f561158f4393dfa374daef06638044d5f7ca312b465f73067444f",
+      "IPURBridge.m": "ed16957de351dc69acf8f9b57d37e89a291fcab8647c4a364f887e5e1209074a",
+      "RunnerRoutes.swift": "74f4e260f8cc62727702c32b38ecc692d9918a1b9c11f80daa65a81c57476c6c"
+    },
+    "current_binary_files_present": {
+      "iphone-use": false,
+      "iphone-use-mcp": false
+    },
+    "executed_binary_sha256": {
+      "iphone-use": "8ff5eb5804adb4e20b08033e003716ac51f5796c9b49141faf837d6add5c6b2a",
+      "iphone-use-mcp": "551e7d904b9c7be2be691ae803dbce30d82af77e44ac3205533077835def43b4"
+    },
+    "physical_phone_operated": false
+  },
+  "remote": {
+    "owned_simulator_count": 2,
+    "remaining_owned_simulators": [],
+    "live_owned_service_pids": [],
+    "native_source_sha256": {
+      "IPURBridge.h": "5f1b000f3d9f561158f4393dfa374daef06638044d5f7ca312b465f73067444f",
+      "IPURBridge.m": "ed16957de351dc69acf8f9b57d37e89a291fcab8647c4a364f887e5e1209074a",
+      "RunnerRoutes.swift": "74f4e260f8cc62727702c32b38ecc692d9918a1b9c11f80daa65a81c57476c6c"
+    },
+    "final_remote_rust_run_marker_present": false
+  }
+}

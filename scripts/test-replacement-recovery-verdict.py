@@ -74,6 +74,48 @@ class IdleGateTests(unittest.TestCase):
             value=recovery.wait_for_native_idle(self.daemon,self.args,peer,timeout=timeout)
         return value,call
 
+    def recovering_status(self):
+        return {'target':'simulator','udid':self.args.udid,'owner':self.args.owner,
+            'screen_private_secs':0,'human_handoff':False,'released':False,
+            'reconnecting':False,'runner':True,'runner_locked':False,
+            'drivable':False,'device_state':'read_failing'}
+
+    def test_degraded_read_path_waits_on_metadata_before_resuming_strict_gate(self):
+        self.daemon.require_simulator.side_effect=[RuntimeError('simulator is not drivable'),
+            {'owner':'test','screen_private_secs':0}]
+        self.daemon.call.return_value=self.recovering_status()
+        value,call=self.run_gate([({'value':{'busy':False}}, {})])
+        self.assertIs(value['value']['busy'],False)
+        self.assertEqual(self.clock,.2)
+        self.daemon.call.assert_called_once_with('/agent/status')
+        self.assertEqual(call.call_count,1)
+        self.assertEqual(self.daemon.require_simulator.call_count,2)
+
+    def test_degraded_read_path_has_the_same_bounded_budget_and_no_native_read(self):
+        self.daemon.require_simulator.side_effect=RuntimeError('simulator is not drivable')
+        self.daemon.call.return_value=self.recovering_status()
+        with patch.object(recovery.drag,'runner_call') as call, \
+             patch.object(recovery.time,'monotonic',side_effect=lambda:self.clock), \
+             patch.object(recovery.time,'sleep',side_effect=self.sleep), patch('builtins.print'):
+            with self.assertRaisesRegex(RuntimeError,'read path did not become drivable'):
+                recovery.wait_for_native_idle(self.daemon,self.args,timeout=.3)
+        self.assertEqual(self.clock,.3)
+        call.assert_not_called()
+        self.assertTrue(all(c.args==('/agent/status',) for c in self.daemon.call.call_args_list))
+
+    def test_read_recovery_never_waits_through_scope_lock_or_device_changes(self):
+        for changes in [{'owner':'other'},{'screen_private_secs':1},{'udid':'other'},
+                        {'target':'phone'},{'human_handoff':True},{'released':True},
+                        {'reconnecting':True},{'runner':False},{'runner_locked':True},
+                        {'device_state':'locked'},{'runner_locked':None},{'drivable':'false'}]:
+            with self.subTest(changes=changes):
+                self.daemon.require_simulator.side_effect=RuntimeError('simulator is not drivable')
+                self.daemon.call.return_value=dict(self.recovering_status(),**changes)
+                with patch.object(recovery.drag,'runner_call') as call:
+                    with self.assertRaisesRegex(RuntimeError,'simulator is not drivable'):
+                        recovery.wait_for_native_idle(self.daemon,self.args)
+                call.assert_not_called()
+
     def test_busy_startup_can_settle_before_any_reset(self):
         value,call=self.run_gate([({'value':{'busy':True}},{}),({'value':{'busy':False}}, {})])
         self.assertIs(value['value']['busy'],False)

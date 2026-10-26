@@ -1529,6 +1529,18 @@ scope loss before the tail preserves that acknowledgement and refuses later
 requests. This is not per-character interruption: the already dispatched native
 prefix or chunk can finish. The server does not expose a replacement continuation
 token for automatic retries; inspect the original field before a new replacement.
+Replacement delivery errors report `replacement_incomplete` with
+`characters_confirmed`, `characters_uncertain`, `characters_unsent` and
+`characters_total` in Unicode scalars, plus `clear_outcome` (`confirmed` or
+`unknown`). Counts describe native request acknowledgements, not independent
+App postconditions. A later connection failure retains earlier confirmed chunks;
+it cannot make the whole replacement `not_sent` or retry-safe. An invalid/missing
+prefix target token confirms neither that prefix nor its clear. `retry_safe` is
+false and no continuation token or automatic append advice is issued. Ownership
+or privacy revocation can instead retain the existing `action_interrupted`
+receipt with native request counts. Legacy clear/type replacements also retain
+an acknowledged clear when their later type request fails. A batch
+preserves these fields and its completed steps, then stops before later actions.
 Older runners keep their existing clear/type behavior, but a clear failure now
 stops immediately instead of appending. They do not gain native target binding.
 A changed unexpected or unavailable final readback is unknown, never retry-safe

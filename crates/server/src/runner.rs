@@ -1077,14 +1077,38 @@ impl RunnerClient {
         let prefix = pieces.first().copied().unwrap_or("");
         let mut body = serde_json::json!({"text":prefix});
         if recover_focus_after_clear { body["recoverFocusAfterClear"] = serde_json::Value::Bool(true); }
-        let response = self.post_req(format!("{}/session/{}/ipu/element/{}/replace",self.base,sid,id))
-            .json(&body).send_signed(&self.auth).await?;
-        let result = ensure_runner_success(response,"POST bound element replacement").await?;
-        let token = result.get("inputTarget").and_then(serde_json::Value::as_str)
-            .filter(|token| !token.is_empty() && token.len() <= 128)
-            .ok_or_else(||anyhow!("replacement acknowledged without an input target; no further text sent"))?;
+        let total = text.chars().count();
+        let prefix_len = prefix.chars().count();
+        let prefix_result = async {
+            let response = self.post_req(format!("{}/session/{}/ipu/element/{}/replace",self.base,sid,id))
+                .json(&body).send_signed(&self.auth).await?;
+            ensure_runner_success(response,"POST bound element replacement").await
+        }.await;
+        let result = match prefix_result {
+            Ok(result) => result,
+            // No mutation preceded the first request: a connect failure is still
+            // a true not-sent. Later connect failures must preserve the prefix.
+            Err(error) if error.chain().any(|e| e.downcast_ref::<reqwest::Error>().is_some_and(reqwest::Error::is_connect)) => return Err(error),
+            Err(error) => return Err(ReplacementDeliveryError::wrap(error, 0, prefix_len, total-prefix_len, false)),
+        };
+        let token = match result.get("inputTarget").and_then(serde_json::Value::as_str)
+            .filter(|token| !token.is_empty() && token.len() <= 128) {
+            Some(token) => token,
+            None => return Err(ReplacementDeliveryError::wrap(
+                anyhow!("replacement acknowledged without an input target; no further text sent"),
+                0, prefix_len, total-prefix_len, false)),
+        };
+        let mut confirmed = prefix_len;
         for chunk in pieces.iter().skip(1) {
-            self.keys_to_target(chunk,token,Duration::from_secs(20)).await?;
+            let count = chunk.chars().count();
+            if let Err(error) = self.keys_to_target(chunk,token,Duration::from_secs(20)).await {
+                let not_sent = error.chain().any(|e| e.downcast_ref::<reqwest::Error>().is_some_and(reqwest::Error::is_connect))
+                    || runner_http_error(&error).is_some_and(RunnerHttpError::nothing_sent)
+                    || crate::native_scope::is_revoked(&error);
+                let uncertain = if not_sent { 0 } else { count };
+                return Err(ReplacementDeliveryError::wrap(error, confirmed, uncertain, total-confirmed-uncertain, true));
+            }
+            confirmed += count;
         }
         Ok(true)
     }
@@ -3582,6 +3606,35 @@ async fn ensure_runner_success(
     parse_runner_value(&body, operation)
 }
 
+/// Delivery counts for one selected-field replacement. A failed later request
+/// cannot erase earlier acknowledged chunks or turn the whole action into a
+/// retryable not-sent. No requested field content is stored in this error.
+#[derive(Debug)]
+pub struct ReplacementDeliveryError {
+    pub confirmed: usize,
+    pub uncertain: usize,
+    pub unsent: usize,
+    pub clear_confirmed: bool,
+    source: anyhow::Error,
+}
+
+impl ReplacementDeliveryError {
+    pub(crate) fn wrap(source: anyhow::Error, confirmed: usize, uncertain: usize, unsent: usize, clear_confirmed: bool) -> anyhow::Error {
+        anyhow::Error::new(Self { confirmed, uncertain, unsent, clear_confirmed, source })
+    }
+}
+
+impl std::fmt::Display for ReplacementDeliveryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "replacement stopped: {} confirmed, {} uncertain, {} unsent Unicode scalars",
+            self.confirmed, self.uncertain, self.unsent)
+    }
+}
+
+impl std::error::Error for ReplacementDeliveryError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> { Some(self.source.as_ref()) }
+}
+
 /// The longest runner error message carried into logs and responses.
 const RUNNER_MESSAGE_MAX_CHARS: usize = 300;
 
@@ -3651,6 +3704,12 @@ impl RunnerHttpError {
 
 impl std::fmt::Display for RunnerHttpError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // An error inside HTTP 200 is still a W3C failure. Keep its bounded
+        // typed reason without changing the existing human-readable spelling.
+        if self.status.is_success() {
+            return write!(f, "{} failed ({}): {}", self.operation,
+                self.code.as_deref().unwrap_or("unknown error"), self.message.as_deref().unwrap_or("no message"));
+        }
         // "HTTP status 404 Not Found": callers match the status text.
         write!(f, "{} HTTP status {}", self.operation, self.status)?;
         if let Some(code) = &self.code {
@@ -3687,12 +3746,8 @@ fn parse_runner_value(body: &str, operation: &str) -> Result<serde_json::Value> 
     let value = root
         .get("value")
         .ok_or_else(|| anyhow!("{operation} response has no value ({})", body_summary(body)))?;
-    if let Some(code) = value.get("error").and_then(serde_json::Value::as_str) {
-        let message = value
-            .get("message")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("no message");
-        return Err(anyhow!("{operation} failed ({code}): {message}"));
+    if value.get("error").and_then(serde_json::Value::as_str).is_some() {
+        return Err(anyhow::Error::new(RunnerHttpError::from_body(operation, reqwest::StatusCode::OK, body)));
     }
     Ok(value.clone())
 }
@@ -3826,6 +3881,75 @@ mod tests {
     }
 
     #[test]
+    fn replacement_failure_keeps_confirmed_prefix_and_unsent_tail() {
+        for status in [200, 400, 500] {
+            let (base, server) = mock_runner(2, move |request| {
+                if request.contains("/ipu/element/original/replace ") {
+                    return r#"{"value":{"inputTarget":"original-token"}}"#.into();
+                }
+                assert!(request.contains("/wda/keys "));
+                let body = r#"{"value":{"error":"invalid argument","message":"focus changed; nothing was sent"}}"#;
+                format!("HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len())
+            });
+            let mut client = RunnerClient::new(base).unwrap();
+            client.session = Some("s".into()); client.element_replace = true;
+            let error = block(client.replace_element_if_supported("original", &"字".repeat(501), false)).unwrap_err();
+            let progress = error.downcast_ref::<ReplacementDeliveryError>().unwrap();
+            assert_eq!(progress.confirmed, 200);
+            assert_eq!(progress.uncertain, if status == 400 {0} else {200});
+            assert_eq!(progress.unsent, if status == 400 {301} else {101});
+            assert!(progress.clear_confirmed);
+            assert!(runner_http_error(&error).is_some(), "original runner error must survive");
+            server.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn replacement_later_connect_failure_keeps_effects_from_first_request() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            // Close the listener before acknowledging the prefix: the next
+            // request deterministically fails to connect, rather than resets.
+            drop(listener);
+            stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+            let mut data = Vec::new();
+            loop {
+                let mut buffer = [0u8;2048]; let n = stream.read(&mut buffer).unwrap();
+                assert!(n > 0); data.extend_from_slice(&buffer[..n]); assert!(data.len() < 8192);
+                if let Some(end) = data.windows(4).position(|x| x == b"\r\n\r\n") {
+                    let headers = String::from_utf8_lossy(&data[..end]).to_ascii_lowercase();
+                    let size: usize = headers.lines().find_map(|l| l.strip_prefix("content-length:")).unwrap().trim().parse().unwrap();
+                    if data.len() >= end+4+size { break; }
+                }
+            }
+            let body = r#"{"value":{"inputTarget":"original-token"}}"#;
+            write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+        });
+        let mut client = RunnerClient::new(base).unwrap();
+        client.session = Some("s".into()); client.element_replace = true;
+        let error = block(client.replace_element_if_supported("original", &"字".repeat(501), false)).unwrap_err();
+        let progress = error.downcast_ref::<ReplacementDeliveryError>().unwrap();
+        assert_eq!((progress.confirmed, progress.uncertain, progress.unsent), (200,0,301));
+        assert!(progress.clear_confirmed);
+        assert!(error.chain().any(|e| e.downcast_ref::<reqwest::Error>().is_some_and(reqwest::Error::is_connect)));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn replacement_malformed_prefix_ack_does_not_confirm_its_text_or_clear() {
+        let (base, server) = mock_runner(1, |_| r#"{"value":{}}"#.into());
+        let mut client = RunnerClient::new(base).unwrap();
+        client.session = Some("s".into()); client.element_replace = true;
+        let error = block(client.replace_element_if_supported("original", &"字".repeat(501), false)).unwrap_err();
+        let progress = error.downcast_ref::<ReplacementDeliveryError>().unwrap();
+        assert_eq!((progress.confirmed, progress.uncertain, progress.unsent), (0,200,301));
+        assert!(!progress.clear_confirmed);
+        server.join().unwrap();
+    }
+
+    #[test]
     fn explicit_replacement_focus_recovery_failure_never_replays_a_prefix() {
         use std::sync::{Arc,atomic::{AtomicBool,AtomicUsize,Ordering}};
         let listener=TcpListener::bind("127.0.0.1:0").unwrap();
@@ -3833,6 +3957,11 @@ mod tests {
         listener.set_nonblocking(true).unwrap();
         let stop=Arc::new(AtomicBool::new(false));let seen=Arc::new(AtomicUsize::new(0));
         let stopping=stop.clone();let count=seen.clone();
+        // Construct the HTTP client before the mock's receive deadline starts.
+        // On a loaded host client initialization can otherwise consume the
+        // entire window and falsely report zero observed mutation requests.
+        let mut client=RunnerClient::new(base).unwrap();client.session=Some("s".into());
+        client.element_replace=true;client.replace_focus_recovery=true;
         let server=std::thread::spawn(move || {
             let deadline=std::time::Instant::now()+Duration::from_secs(5);
             while !stopping.load(Ordering::Acquire) && std::time::Instant::now()<deadline {
@@ -3852,8 +3981,6 @@ mod tests {
                 }
             }
         });
-        let mut client=RunnerClient::new(base).unwrap();client.session=Some("s".into());
-        client.element_replace=true;client.replace_focus_recovery=true;
         let failed=block(client.replace_element_if_supported("original",&"字".repeat(501),true)).is_err();
         stop.store(true,Ordering::Release);server.join().unwrap();
         assert!(failed);
@@ -4604,6 +4731,17 @@ mod tests {
             .to_string();
         assert!(error.contains("invalid element state"));
         assert!(error.contains("device is locked"));
+    }
+
+    #[test]
+    fn runner_value_error_in_http_200_keeps_a_bounded_typed_reason_only() {
+        let body = serde_json::json!({"value":{"error":"unknown error","message":"x".repeat(1000),"screen":"SCREEN-CANARY"}}).to_string();
+        let error = parse_runner_value(&body,"POST guarded /wda/keys").unwrap_err();
+        let typed = runner_http_error(&error).unwrap();
+        assert_eq!(typed.status,reqwest::StatusCode::OK);
+        assert!(!typed.nothing_sent());
+        assert!(typed.message.as_ref().unwrap().chars().count() <= RUNNER_MESSAGE_MAX_CHARS+1);
+        assert!(!format!("{error:#}").contains("SCREEN-CANARY"));
     }
 
     #[test]
