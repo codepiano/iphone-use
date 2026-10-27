@@ -83,13 +83,13 @@ impl ScriptedDaemon {
                                 break;
                             }
                         }
-                        let body = if request.starts_with(b"GET /agent/status ") {
-                            status_body.as_ref().unwrap_or(&body)
-                        } else { &body };
-                        let response_status = if request.starts_with(b"GET /agent/status ") && status_body.is_some() { "200 OK" } else { status };
+                        let status_read = request.starts_with(b"GET /agent/status ");
+                        let truncated = status == "200 Truncated" && !status_read;
+                        let body = if status_read { status_body.as_ref().unwrap_or(&body) } else { &body };
+                        let response_status = if status_read && status_body.is_some() || truncated { "200 OK" } else { status };
                         let head = format!(
                             "HTTP/1.1 {response_status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                            body.len()
+                            body.len() + if truncated {64} else {0}
                         );
                         let _ = stream.write_all(head.as_bytes());
                         let _ = stream.write_all(body);
@@ -1059,4 +1059,19 @@ fn selected_replacement_keeps_unknown_delivery_and_never_retries_the_write() {
     assert_eq!(reply["result"]["structuredContent"]["outcome"],"unknown","{reply}");
     assert_eq!(reply["result"]["structuredContent"]["retry_safe"],false,"{reply}");
     assert_eq!(daemon.requests.lock().unwrap().iter().filter(|r|r.starts_with("POST /agent/input ")).count(),1);
+}
+
+#[test]
+fn failed_capture_clears_old_pixels_despite_racing_open_status() {
+    for status in ["423 Locked", "503 Service Unavailable", "200 Truncated", "200 Empty"] {
+        let daemon = ScriptedDaemon::routed(status, if status == "200 Empty" {Vec::new()} else {br#"{"ok":false,"error":"capture_refused"}"#.to_vec()}, Duration::ZERO,
+            Some(br#"{"ok":true,"drivable":true,"screen_private_secs":0}"#.to_vec()));
+        let mut child = McpChild::start_with(&daemon.url, "off");
+        let reply = child.call_tool(2, "phone_screen_frame", serde_json::json!({}));
+        let body = &reply["result"]["structuredContent"];
+        assert_eq!(body["drivable"], true, "status fixture must remain open: {body}");
+        assert!(body["private_secs"].is_null());
+        assert!(body["frame"].is_null());
+        assert_eq!(body["clear_frame"], true, "{body}");
+    }
 }

@@ -1569,11 +1569,10 @@ impl PhoneHandler {
             self.daemon.status(),
             self.daemon.screen_frame(side, fresh.unwrap_or(false))
         );
-        // Status and pixels are read concurrently. A privacy refusal from the
-        // capture wins over a status response that still said the screen was open.
-        let clear_frame = frame.as_ref().err()
-            .and_then(|error| error.downcast_ref::<crate::client::DaemonHttpError>())
-            .is_some_and(|error| error.status == reqwest::StatusCode::LOCKED);
+        // A response body can be revoked after its 200 headers, surfacing as
+        // a transport error. Any failed capture must clear the previous pixels;
+        // a concurrent status response cannot authorize reusing them.
+        let clear_frame = !matches!(&frame, Ok(bytes) if !bytes.is_empty());
         let mut result = crate::screen::frame_result(
             status
                 .map(|s| crate::screen::status_summary(&s, self.daemon.owner()))
