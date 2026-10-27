@@ -110,7 +110,7 @@ jobs:
             --xctestrun "$xctestrun" --runtime "$EXPECTED_RUNTIME" \
             --device-type com.apple.CoreSimulator.SimDeviceType.iPhone-15 \
             --daemon target/release/iphone-use --mcp target/release/iphone-use-mcp \
-            --input-privacy --observation-scope --native-scope \
+            --input-privacy --observation-scope --native-scope --expect-boundary-isolation \
             --out "$RUNNER_TEMP/input-target-acceptance"
 
       - name: Logs
