@@ -20,6 +20,7 @@ import select
 import shutil
 import signal
 import socket
+import sys
 import subprocess
 import time
 import urllib.error
@@ -232,6 +233,12 @@ class VideoPeer:
                 self.process.wait(timeout=10)
 
 
+class CaseReports(list):
+    def append(self, record):
+        super().append(record)
+        print(f"case {record.get('case')}: {'passed' if record.get('passed') else 'failed'}", file=sys.stderr, flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--xctestrun", required=True, type=Path)
@@ -253,7 +260,7 @@ def main():
     out = args.out.resolve()
     out.mkdir(mode=0o700, parents=True, exist_ok=False)
     tok = secrets.token_hex(32)
-    reports, cleanup_errors, udid, runner, daemon, mcp = [], [], None, None, None, None
+    reports, cleanup_errors, udid, runner, daemon, mcp = CaseReports(), [], None, None, None, None
     observations = []
     video_peers = []
     daemon_binary = args.daemon.resolve(strict=True) if args.daemon else None
@@ -310,6 +317,13 @@ def main():
         return result["value"]
 
     try:
+        runtimes = json.loads(command("xcrun", "simctl", "list", "runtimes", "--json"))["runtimes"]
+        runtime = next((row for row in runtimes if row.get("identifier") == args.runtime), None)
+        if not runtime or runtime.get("isAvailable") is not True:
+            raise RuntimeError("requested runtime is unavailable: " + args.runtime)
+        supported = runtime.get("supportedDeviceTypes", [])
+        if supported and not any(row.get("identifier") == args.device_type for row in supported):
+            raise RuntimeError("requested device is unsupported by runtime: " + args.device_type + " / " + args.runtime)
         app = build_fixture(out)
         udid = command("xcrun", "simctl", "create", f"ipu-input-guard-{secrets.token_hex(4)}",
                        args.device_type, args.runtime)
@@ -350,9 +364,11 @@ def main():
         wait_for(lambda: call(prefix + "/wda/activeAppInfo").get("bundleId") == BUNDLE, "fixture foreground")
 
         def settle_fixture():
+            # Slow CI captures need enough frames to establish the same quiet
+            # window. Keep the pixel/blank checks and the overall setup bound.
             until = time.monotonic() + 15
             while True:
-                observed = call(prefix + "/wda/settle?budget_ms=1000&quiet_ms=150&min_ms=500")
+                observed = call(prefix + "/wda/settle?budget_ms=3000&quiet_ms=150&min_ms=500")
                 if observed.get("stable") is True and observed.get("blank") is not True:
                     return
                 if time.monotonic() >= until:
