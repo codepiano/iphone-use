@@ -73,6 +73,7 @@ import CryptoKit
       "foreground":window?.windowScene?.activationState == .foregroundActive,
       "fields_present":firstField != nil && secondField != nil && multilineField != nil && secureField != nil,
       "fields":["a":field(firstField?.text),"b":field(secondField?.text),"multi":field(multilineField?.text),"secure":field(secureField?.text)],
+      "selection_a":firstField?.selectedTextRange.map { ["location":firstField!.offset(from:firstField!.beginningOfDocument,to:$0.start),"length":firstField!.offset(from:$0.start,to:$0.end)] } ?? [:],
       "events_a":firstEvents,"events_b":secondEvents,"returns":returnEvents,"shifted":shifted,
       "focus_a":firstField?.isFirstResponder ?? false,"focus_b":secondField?.isFirstResponder ?? false,
       "focus_multi":multilineField?.isFirstResponder ?? false,"veto":vetoMode,"veto_calls_a":vetoA,"veto_calls_multi":vetoMulti]
@@ -197,6 +198,7 @@ import CryptoKit
       first.becomeFirstResponder()
       if ProcessInfo.processInfo.arguments.contains("--long-value-fixture") {
         first.text = "queue-deadline-" + String(repeating: "字", count: 6000)
+        first.selectedTextRange = first.textRange(from:first.endOfDocument,to:first.endOfDocument)
         second.text = "🙂🙂value"
         secure.text = "fixture-secure-value"
         first.sendActions(for: .editingChanged)
@@ -304,6 +306,7 @@ def main():
     parser.add_argument("--list-recovery", action="store_true", help="verify scoped list diagnostics and interruption after native swipe ACK")
     parser.add_argument("--video", action="store_true", help="verify native H.264 via WorkBuddy resources and independent ffmpeg decode (requires --hosts)")
     parser.add_argument("--expect-boundary-isolation", action="store_true", help="experimental Runner must stop at A20/B0 in reached focus-switch faults")
+    parser.add_argument("--long-boundaries", action="store_true", help="verify long-field App veto and public MCP append")
     parser.add_argument("--runtime", default="com.apple.CoreSimulator.SimRuntime.iOS-27-0")
     parser.add_argument("--device-type", default="com.apple.CoreSimulator.SimDeviceType.iPhone-17")
     args = parser.parse_args()
@@ -316,6 +319,8 @@ def main():
     video_peers = []
     daemon_binary = args.daemon.resolve(strict=True) if args.daemon else None
     mcp_binary = args.mcp.resolve(strict=True) if args.mcp else None
+    if args.long_boundaries and not (args.expect_boundary_isolation and daemon_binary and mcp_binary):
+        raise RuntimeError("--long-boundaries requires --expect-boundary-isolation, --daemon and --mcp")
     if args.list_deadline and not daemon_binary:
         raise RuntimeError("--list-deadline requires --daemon")
     if args.list_recovery and not (daemon_binary and mcp_binary):
@@ -1004,6 +1009,7 @@ def main():
                     "clientInfo": {"name": "input-cancel-fixture", "version": "1"}}})
                 assert "result" in reply(1)
                 rpc({"jsonrpc": "2.0", "method": "notifications/initialized"})
+                mcp_rpc, mcp_reply = rpc, reply
                 before_calls = native_keys()
                 rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
                     "name": "phone_type", "arguments": {"text": "字" * 2000, "observe": False}}})
@@ -1375,6 +1381,41 @@ def main():
                 reports.append({"case":"focused-App-veto-"+key,"passed":True,
                     "app_receipts":{"before":before,"after":after,"positive":positive},"veto_callbacks":1})
 
+        if args.long_boundaries:
+            command("xcrun","simctl","terminate",udid,BUNDLE)
+            command("xcrun","simctl","launch",udid,BUNDLE,"--long-value-fixture")
+            settle_fixture()
+            seed="queue-deadline-"+"字"*6000
+            before=app_receipt(veto="a")
+            assert before["focus_a"] is True and before["fields"]["a"]["sha256"]==hashlib.sha256(seed.encode()).hexdigest(),before
+            assert before["selection_a"]=={"location":len(seed),"length":0},before
+            status,verdict=api("/agent/input",{"type":"text","text":"blocked"})
+            assert status==502 and verdict.get("outcome")=="unknown" and verdict.get("retry_safe") is False,verdict
+            after=app_receipt()
+            assert after["fields"]==before["fields"] and after["selection_a"]==before["selection_a"],after
+            assert after["veto_calls_a"]==before["veto_calls_a"]+1,after
+            assert after["events_a"]==before["events_a"] and after["returns"]==before["returns"],after
+            reports.append({"case":"long-field-focused-App-veto","passed":True,"app_receipts":{"before":before,"after":after}})
+            wait_for(lambda:api("/agent/status")[1].get("drivable") is True,"healthy Runner after long-field veto")
+            before=app_receipt(veto="off")
+            started=time.monotonic()
+            mcp_rpc({"jsonrpc":"2.0","id":30,"method":"tools/call","params":{"name":"phone_type","arguments":{"text":"字"*501,"observe":False}}})
+            answer=mcp_reply(30,timeout=45)
+            elapsed=round((time.monotonic()-started)*1000)
+            result=answer.get("result",{})
+            verdict=result.get("structuredContent")
+            if not isinstance(verdict,dict):
+                verdict=next((json.loads(item["text"]) for item in result.get("content",[]) if item.get("type")=="text" and item.get("text","").startswith("{")),{})
+            after=app_receipt()
+            # Record the independent receipt even when the public deadline fails.
+            (out/"long-mcp-receipt.json").write_text(json.dumps({"wall_ms":elapsed,"answer":answer,"before":before,"after":after},indent=2)+"\n")
+            assert verdict.get("ok") is True and result.get("isError") is not True,answer
+            app_trial(before,after)
+            assert after["fields"]["a"]["sha256"]==hashlib.sha256((seed+"字"*501).encode()).hexdigest(),after
+            assert after["events_a"]-before["events_a"]==501,after
+            assert after["selection_a"]=={"location":len(seed)+501,"length":0},after
+            reports.append({"case":"public-MCP-long-field-501-append","passed":True,"wall_ms":elapsed,"app_receipts":{"before":before,"after":after},"answer":answer})
+
     except Exception as error:
         reports.append({"case": "harness-or-current-case", "passed": False, "error": str(error),"error_type":type(error).__name__,"traceback":traceback.format_exc(limit=5)})
     finally:
@@ -1430,6 +1471,7 @@ def main():
     print(json.dumps({"cases": reports, "observations": observations, "cleanup_errors": cleanup_errors}))
     expected = (20 if mcp_binary else 19 if daemon_binary else 6) + ((3 if mcp_binary else 2) if args.recovery else 0) + 2 * int(args.hosts) + 3 * int(args.input_privacy) + 2 * int(args.observation_scope) + int(args.native_scope) + 4 * int(args.video) + 3 * int(args.list_recovery) + int(args.list_deadline)
     expected += 2 * int(args.expect_boundary_isolation)
+    expected += 2 * int(args.long_boundaries)
     return 0 if len(reports) == expected and all(r["passed"] for r in reports) and not cleanup_errors else 1
 
 
