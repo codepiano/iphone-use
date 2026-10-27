@@ -550,10 +550,8 @@ static BOOL IPURUseRequestCache(void)
   }
 }
 
-+ (nullable NSDictionary<NSString *, id> *)inputBoundaryForElement:(id)element
++ (nullable NSDictionary *)inputAttributesForElement:(id)element attributes:(NSArray *)attributes
 {
-  // Experimental only. Fetch fresh metadata and the complete AX value together;
-  // never synthesize a missing focus, trait, identity or geometry property.
   @try {
     id client = [self axClient];
     SEL selector = NSSelectorFromString(@"attributesForElement:attributes:error:");
@@ -562,17 +560,37 @@ static BOOL IPURUseRequestCache(void)
         [shape getArgumentTypeAtIndex:2][0] != '@' || [shape getArgumentTypeAtIndex:3][0] != '@' ||
         strcmp([shape getArgumentTypeAtIndex:4], "^@") != 0) return nil;
     NSError *error = nil;
-    id raw = ((id (*)(id,SEL,id,id,NSError **))objc_msgSend)(client,selector,element,@[
+    id raw = ((id (*)(id,SEL,id,id,NSError **))objc_msgSend)(client,selector,element,attributes,&error);
+    return error == nil && [raw isKindOfClass:NSDictionary.class] ? raw : nil;
+  } @catch (__unused NSException *exception) { return nil; }
+}
+
++ (nullable NSNumber *)inputVisibilityForElement:(id)element
+{
+  id raw = [self inputAttributesForElement:element attributes:@[@"XC_kAXXCAttributeIsVisible"]];
+  id visible = raw[@"XC_kAXXCAttributeIsVisible"];
+  return [visible isKindOfClass:NSNumber.class] && CFGetTypeID((__bridge CFTypeRef)visible) == CFBooleanGetTypeID()
+    ? visible : nil;
+}
+
++ (nullable NSDictionary<NSString *, id> *)inputBoundaryForElement:(id)element
+{
+  // Experimental only. Fetch fresh metadata and the complete AX value together;
+  // never synthesize a missing focus, trait, identity or geometry property.
+  @try {
+    id raw = [self inputAttributesForElement:element attributes:@[
       @"XC_kAXXCAttributeAutomationType",@"XC_kAXXCAttributeTraits",@"XC_kAXXCAttributeFrame",
       @"XC_kAXXCAttributeHasNativeFocus",@"XC_kAXXCAttributeIdentifier",@"XC_kAXXCAttributeLabel",
-      @"XC_kAXXCAttributeValue",@"XC_kAXXCAttributePlaceholderValue"],&error);
-    if (error != nil || ![raw isKindOfClass:NSDictionary.class]) return nil;
+      @"XC_kAXXCAttributeIsVisible",@"XC_kAXXCAttributeValue",@"XC_kAXXCAttributePlaceholderValue"]];
+    if (raw == nil) return nil;
     id type = raw[@"XC_kAXXCAttributeAutomationType"], traits = raw[@"XC_kAXXCAttributeTraits"];
     id frame = raw[@"XC_kAXXCAttributeFrame"], focus = raw[@"XC_kAXXCAttributeHasNativeFocus"];
     id identifier = raw[@"XC_kAXXCAttributeIdentifier"], label = raw[@"XC_kAXXCAttributeLabel"];
+    id visible = raw[@"XC_kAXXCAttributeIsVisible"];
     if (![type isKindOfClass:NSNumber.class] || ![traits isKindOfClass:NSNumber.class] ||
         ![frame isKindOfClass:NSDictionary.class] || ![focus isKindOfClass:NSNumber.class] ||
         CFGetTypeID((__bridge CFTypeRef)focus) != CFBooleanGetTypeID() ||
+        ![visible isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)visible) != CFBooleanGetTypeID() ||
         (identifier != NSNull.null && ![identifier isKindOfClass:NSString.class]) ||
         (label != NSNull.null && ![label isKindOfClass:NSString.class])) return nil;
     NSInteger number = [type integerValue];
@@ -608,6 +626,7 @@ static BOOL IPURUseRequestCache(void)
     BOOL keyboardFocus = (flags & *textEntry) != 0 && (flags & *editing) != 0;
     return @{@"type":typeName,@"rawIdentifier":identifier,@"label":label,
       @"rect":rect,@"isEnabled":enabled ? @"1" : @"0",
+      @"input_visible":visible,
       @"isSelected":selected ? @"1" : @"0",
       @"isFocused":([focus boolValue] || keyboardFocus) ? @"1" : @"0",
       @"value":secure ? (id)NSNull.null : value,

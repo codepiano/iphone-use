@@ -46,6 +46,8 @@ import CryptoKit
   private weak var metadataControl: UIButton?
   private var firstEvents = 0, secondEvents = 0, returnEvents = 0
   private var vetoMode = "off", vetoA = 0, vetoMulti = 0
+  private var stateFault = "off", stateFaultTriggered = false
+  private var faultScalars = 0, faultHash = ""
   func textField(_ field: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
     if vetoMode == "a" && field === firstField { vetoA += 1; return false }
     return true
@@ -65,6 +67,7 @@ import CryptoKit
           let command = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
           let nonce = command["nonce"] as? String, nonce != lastReceiptRequest else { return }
     if let veto = command["veto"] as? String, ["off","a","multi"].contains(veto) { vetoMode = veto }
+    if let fault = command["state_fault"] as? String, ["off","disable","hide","secure"].contains(fault) { stateFault = fault }
     func field(_ value: String?) -> [String: Any] {
       let text = value ?? ""
       return ["scalars":text.unicodeScalars.count,"utf16":text.utf16.count,
@@ -75,6 +78,9 @@ import CryptoKit
       "fields_present":firstField != nil && secondField != nil && multilineField != nil && secureField != nil,
       "fields":["a":field(firstField?.text),"b":field(secondField?.text),"multi":field(multilineField?.text),"secure":field(secureField?.text)],
       "metadata_enabled":metadataControl?.isEnabled ?? true, "metadata_selected":metadataControl?.isSelected ?? false,
+      "a_enabled":firstField?.isEnabled ?? false,"a_hidden":firstField?.isHidden ?? false,
+      "a_secure":firstField?.isSecureTextEntry ?? false,"state_fault":stateFault,
+      "state_fault_triggered":stateFaultTriggered,"fault_scalars":faultScalars,"fault_sha256":faultHash,
       "selection_a":firstField?.selectedTextRange.map { ["location":firstField!.offset(from:firstField!.beginningOfDocument,to:$0.start),"length":firstField!.offset(from:$0.start,to:$0.end)] } ?? [:],
       "events_a":firstEvents,"events_b":secondEvents,"returns":returnEvents,"shifted":shifted,
       "focus_a":firstField?.isFirstResponder ?? false,"focus_b":secondField?.isFirstResponder ?? false,
@@ -106,6 +112,18 @@ import CryptoKit
   }
   @objc private func shiftFocusIfRequested(_ field: UITextField) {
     firstEvents += 1
+    if !stateFaultTriggered, stateFault != "off", let text = field.text,
+        text.hasPrefix("state-guard-test-"), text.unicodeScalars.count >= 20 {
+      stateFaultTriggered = true
+      faultScalars = text.unicodeScalars.count
+      faultHash = SHA256.hash(data:Data(text.utf8)).map { String(format:"%02x",$0) }.joined()
+      switch stateFault {
+      case "disable": field.isEnabled = false
+      case "hide": field.isHidden = true
+      case "secure": field.isSecureTextEntry = true
+      default: break
+      }
+    }
     let marker = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("input-started.count")
     fieldReceiptGeneration += 1
     if field.text?.hasPrefix("queue-deadline-") == true || ProcessInfo.processInfo.arguments.contains("--continuous-value-receipt") {
@@ -318,6 +336,7 @@ def main():
     parser.add_argument("--expect-boundary-isolation", action="store_true", help="experimental Runner must stop at A20/B0 in reached focus-switch faults")
     parser.add_argument("--metadata-controls", action="store_true", help="compare disabled/selected UIKit control against independent App state")
     parser.add_argument("--long-boundaries", action="store_true", help="verify long-field App veto and public MCP append")
+    parser.add_argument("--state-boundaries", action="store_true", help="verify mid-input disable/hide/secure conversion on short and long routes")
     parser.add_argument("--runtime", default="com.apple.CoreSimulator.SimRuntime.iOS-27-0")
     parser.add_argument("--device-type", default="com.apple.CoreSimulator.SimDeviceType.iPhone-17")
     args = parser.parse_args()
@@ -330,6 +349,8 @@ def main():
     video_peers = []
     daemon_binary = args.daemon.resolve(strict=True) if args.daemon else None
     mcp_binary = args.mcp.resolve(strict=True) if args.mcp else None
+    if args.state_boundaries and not (args.expect_boundary_isolation and daemon_binary):
+        raise RuntimeError("--state-boundaries requires --expect-boundary-isolation and --daemon")
     if args.long_boundaries and not (args.expect_boundary_isolation and daemon_binary and mcp_binary):
         raise RuntimeError("--long-boundaries requires --expect-boundary-isolation, --daemon and --mcp")
     if args.list_deadline and not daemon_binary:
@@ -448,12 +469,13 @@ def main():
         def find(identifier):
             return call(prefix + "/element", {"using": "accessibility id", "value": identifier})["ELEMENT"]
 
-        def app_receipt(veto=None):
+        def app_receipt(veto=None, state_fault=None):
             documents = Path(command("xcrun","simctl","get_app_container",udid,BUNDLE,"data"))/"Documents"
             documents.mkdir(exist_ok=True)
             nonce = secrets.token_hex(16)
             request={"nonce":nonce}
             if veto is not None: request["veto"]=veto
+            if state_fault is not None: request["state_fault"]=state_fault
             (documents/"boundary-state-command.json").write_text(json.dumps(request))
             observed = {}
             def fresh():
@@ -1378,6 +1400,54 @@ def main():
                 finally:
                     pool.shutdown(wait=False,cancel_futures=True)
 
+        if args.state_boundaries:
+            previous_run=None
+            for fault in ["disable","hide","secure"]:
+                for length in [57,500]:
+                    command("xcrun","simctl","terminate",udid,BUNDLE)
+                    command("xcrun","simctl","launch",udid,BUNDLE)
+                    settle_fixture()
+                    before=app_receipt(state_fault=fault)
+                    assert before["run_id"]!=previous_run and before["focus_a"] is True,before
+                    previous_run=before["run_id"]
+                    assert before["a_enabled"] is True and before["a_hidden"] is False and before["a_secure"] is False,before
+                    assert before["fields"]["a"]["scalars"]==0 and before["state_fault_triggered"] is False,before
+                    text="state-guard-test-"+"字"*(length-len("state-guard-test-"))
+                    routes=["/ipu/text","/wda/keys"]
+                    counts={route:native_count("POST",route) for route in routes}
+                    status,verdict=api("/agent/input",{"type":"text","text":text})
+                    after=app_receipt()
+                    evidence={"before":before,"after":after,"verdict":verdict}
+                    (out/f"state-{fault}-{length}.json").write_text(json.dumps(evidence,indent=2)+"\n")
+                    assert status==502 and verdict.get("outcome")==("unknown" if length<=200 else "partial") and verdict.get("retry_safe") is False,verdict
+                    if length>200:
+                        assert verdict.get("error")=="text_partially_typed",verdict
+                        assert verdict.get("characters_confirmed")==0 and verdict.get("characters_uncertain")==200,verdict
+                        assert verdict.get("characters_total")==length,verdict
+                    assert "continue_token" not in verdict,verdict
+                    app_trial(before,after)
+                    prefix_hash=hashlib.sha256(text[:20].encode()).hexdigest()
+                    assert after["state_fault_triggered"] is True and after["fault_scalars"]==20,after
+                    assert after["fault_sha256"]==prefix_hash,after
+                    assert after["fields"]["a"]["scalars"]==20 and after["fields"]["a"]["sha256"]==prefix_hash,after
+                    assert after["events_a"]-before["events_a"]==20,after
+                    assert {"disable":not after["a_enabled"],"hide":after["a_hidden"],"secure":after["a_secure"]}[fault] is True,after
+                    wait_for(lambda:call("/status").get("busy") is not True,"Native quiet after state fault")
+                    time.sleep(.5)
+                    stable=app_receipt()
+                    app_trial(after,stable)
+                    assert stable["fields"]==after["fields"] and stable["events_a"]==after["events_a"],stable
+                    for route in routes:
+                        expected=1 if route==("/ipu/text" if length<=200 else "/wda/keys") else 0
+                        assert native_count("POST",route)-counts[route]==expected,"later input admitted after state fault"
+                    reports.append({"case":f"mid-input-{fault}-{length}","passed":True,"app_receipts":{"before":before,"after":after,"stable":stable},"verdict":verdict,"admitted_native_chunks":1})
+
+            # Faults alter the owned App. Give subsequent controls a new,
+            # normal fixture instead of reusing a hidden/secure/disabled field.
+            command("xcrun","simctl","terminate",udid,BUNDLE)
+            command("xcrun","simctl","launch",udid,BUNDLE)
+            settle_fixture()
+
         if args.expect_boundary_isolation:
             for identifier,key,focus,counter in [("field-a","a","focus_a","veto_calls_a"),
                                                  ("field-multiline","multi","focus_multi","veto_calls_multi")]:
@@ -1499,6 +1569,7 @@ def main():
     expected += 2 * int(args.expect_boundary_isolation)
     expected += 2 * int(args.long_boundaries)
     expected += int(args.metadata_controls)
+    expected += 6 * int(args.state_boundaries)
     return 0 if len(reports) == expected and all(r["passed"] for r in reports) and not cleanup_errors else 1
 
 

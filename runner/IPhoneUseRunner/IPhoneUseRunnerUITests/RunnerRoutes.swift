@@ -1314,7 +1314,17 @@ extension RunnerTests {
       guard let originalAX = current.axElement, IPURBridge.pid(forAXElement: originalAX) == original.pid else {
         throw RunnerError.failed("original AX process changed")
       }
-      let visible = timed("InputGeometry") { current.isVisible(screen: windowSizePoints()) }
+      let axVisible: Bool
+      if let value = current.attributes["input_visible"] as? Bool {
+        axVisible = value
+      } else {
+        guard let ax = current.axElement,
+            let value = timed("InputVisibility", { IPURBridge.inputVisibility(element: ax) }) else {
+          throw RunnerError.failed("original visibility unavailable")
+        }
+        axVisible = value.boolValue
+      }
+      let visible = timed("InputGeometry") { axVisible && current.isVisible(screen: windowSizePoints()) }
       // The final remote read comes after field metadata; everything following
       // it is a pure predicate or local binding check. Do not duplicate it.
       let foregroundPID = foreground().pid
@@ -1360,7 +1370,7 @@ extension RunnerTests {
       return (after, value)
     }
     defer {
-      let parts = ["InputMetadata","InputSnapshot","InputGeometry","InputFullValue","InputInsert","Foreground","ActiveApps","ViewService"].compactMap { name -> String? in
+      let parts = ["InputMetadata","InputSnapshot","InputVisibility","InputGeometry","InputFullValue","InputInsert","Foreground","ActiveApps","ViewService"].compactMap { name -> String? in
         guard let entry = requestTiming[name] else { return nil }
         return "\(name)=\(String(format: "%.1f", entry.ms))ms/\(entry.calls)"
       }.joined(separator: " ")
