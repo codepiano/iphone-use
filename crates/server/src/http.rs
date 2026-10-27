@@ -9467,6 +9467,10 @@ const AGENT_ACTIONS_MAX_STEPS: usize = 24;
 /// deadline ([`AGENT_ACTIONS_DEADLINE`]) are deliberately unchanged, so a
 /// longer single wait cannot lengthen a batch.
 const AGENT_ACTIONS_MAX_WAIT_MS: u64 = 30_000;
+/// Longest an OCR `wait_for` may be given: a game's splash screen loads for
+/// 20–40 s, and it is the only wait in its batch (the declared-wait cap and
+/// the batch deadline still bound the whole batch).
+const AGENT_ACTIONS_MAX_OCR_WAIT_MS: u64 = 60_000;
 const AGENT_ACTIONS_MAX_PAUSE_MS: u64 = 3_000;
 const AGENT_ACTIONS_MAX_DECLARED_WAIT_MS: u64 = 60_000;
 const AGENT_ACTIONS_DEADLINE: std::time::Duration = std::time::Duration::from_secs(75);
@@ -9797,6 +9801,9 @@ async fn in_input_context<T>(context:InputContext<'_>,work:impl std::future::Fut
 }
 
 fn batch_scope_refusal(state:&AppState,scope:Option<&crate::input_continuation::Scope>,index:usize,completed:usize,applied:usize,steps:&[serde_json::Value],observes_screen:bool)->Response {
+    if scope.is_some_and(|scope| batch_privacy_revoked(state, observes_screen, scope.privacy_epoch)) {
+        return private_batch_refusal_with_steps(index, completed, applied, steps);
+    }
     let (reason,_)=request_scope_refusal(state,scope).unwrap_or(("input_privacy_changed","observation permission changed"));
     let private_read=observes_screen&&screen_private_now(&state.private_until);
     let error=if private_read {"screen_private"}else{reason};
@@ -10837,6 +10844,20 @@ struct AgentUiExpectation {
     present: Vec<AgentElementLocator>,
     #[serde(default)]
     absent: Vec<AgentElementLocator>,
+    /// Text that must be on screen, read by OCR from screenshots: for canvas
+    /// screens (games, Flutter/Unity) whose element tree has no labels. Each
+    /// entry matches a recognized line containing it, ignoring case and spaces.
+    #[serde(default)]
+    ocr_present: Vec<String>,
+    /// Text that must NOT be on screen (a loading caption), read by OCR.
+    #[serde(default)]
+    ocr_absent: Vec<String>,
+}
+
+impl AgentUiExpectation {
+    fn uses_ocr(&self) -> bool {
+        !self.ocr_present.is_empty() || !self.ocr_absent.is_empty()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -11631,14 +11652,36 @@ fn validate_agent_actions(request: &AgentActionsRequest) -> Result<(), String> {
                 timeout_ms,
                 poll_ms,
             } => {
-                if expect.application.is_none()
-                    && expect.present.is_empty()
-                    && expect.absent.is_empty()
-                {
+                let tree = expect.application.is_some()
+                    || !expect.present.is_empty()
+                    || !expect.absent.is_empty();
+                if !tree && !expect.uses_ocr() {
                     return Err(format!(
-                        "steps[{index}].expect must include application, present, or absent"
+                        "steps[{index}].expect must include application, present, absent, ocr_present, or ocr_absent"
                     ));
                 }
+                if tree && expect.uses_ocr() {
+                    return Err(format!(
+                        "steps[{index}].expect mixes element locators with ocr_present/ocr_absent; use two wait_for steps"
+                    ));
+                }
+                if expect
+                    .ocr_present
+                    .iter()
+                    .chain(expect.ocr_absent.iter())
+                    .any(|text| {
+                        crate::app_lookup::normalize(text).is_empty() || text.chars().count() > 200
+                    })
+                {
+                    return Err(format!(
+                        "steps[{index}] ocr_present/ocr_absent entries must be 1 to 200 characters of visible text"
+                    ));
+                }
+                let max_wait = if expect.uses_ocr() {
+                    AGENT_ACTIONS_MAX_OCR_WAIT_MS
+                } else {
+                    AGENT_ACTIONS_MAX_WAIT_MS
+                };
                 if expect
                     .application
                     .as_ref()
@@ -11656,9 +11699,9 @@ fn validate_agent_actions(request: &AgentActionsRequest) -> Result<(), String> {
                 {
                     return Err(format!("steps[{index}] contains an empty element locator"));
                 }
-                if *timeout_ms == 0 || *timeout_ms > AGENT_ACTIONS_MAX_WAIT_MS {
+                if *timeout_ms == 0 || *timeout_ms > max_wait {
                     return Err(format!(
-                        "steps[{index}].timeout_ms must be between 1 and {AGENT_ACTIONS_MAX_WAIT_MS}"
+                        "steps[{index}].timeout_ms must be between 1 and {max_wait}"
                     ));
                 }
                 if !(50..=1_000).contains(poll_ms) {
@@ -11809,6 +11852,150 @@ fn agent_expectation_observation(
 ///   read failed, so this is the last valid observation, not the current one.
 ///   A late failure must never erase the reads that did succeed.
 /// * `read:true` — the screen was read and the condition simply was not met.
+enum OcrWait {
+    Matched(serde_json::Value),
+    TimedOut(serde_json::Value),
+    Private,
+}
+
+/// Lines of recognized text a timed-out OCR wait reports, so the agent sees
+/// what IS on screen without another screenshot.
+const OCR_WAIT_REPORTED_LINES: usize = 20;
+
+/// Whether `needle` is in some recognized line, ignoring case and spacing
+/// (Vision may split or join CJK words with spaces).
+fn ocr_text_present(lines: &[String], needle: &str) -> bool {
+    let needle = crate::app_lookup::normalize(needle);
+    !needle.is_empty() && lines.iter().any(|line| line.contains(&needle))
+}
+
+/// `(matches, observation)` for one OCR read of the screen.
+fn ocr_expectation_observation(
+    texts: &[String],
+    expect: &AgentUiExpectation,
+) -> (bool, serde_json::Value) {
+    let lines: Vec<String> = texts.iter().map(|t| crate::app_lookup::normalize(t)).collect();
+    let present: Vec<serde_json::Value> = expect
+        .ocr_present
+        .iter()
+        .map(|text| serde_json::json!({"text": text, "seen": ocr_text_present(&lines, text)}))
+        .collect();
+    let absent: Vec<serde_json::Value> = expect
+        .ocr_absent
+        .iter()
+        .map(|text| serde_json::json!({"text": text, "seen": ocr_text_present(&lines, text)}))
+        .collect();
+    let matches = present.iter().all(|row| row["seen"] == true)
+        && absent.iter().all(|row| row["seen"] == false);
+    (
+        matches,
+        serde_json::json!({
+            "read": true,
+            "ocr_present": present,
+            "ocr_absent": absent,
+            "lines": texts.iter().take(OCR_WAIT_REPORTED_LINES).collect::<Vec<_>>(),
+            "line_count": texts.len(),
+        }),
+    )
+}
+
+/// One screenshot through the held runner client, recognized by Vision.
+async fn agent_ocr_read(
+    w: &mut crate::runner::RunnerClient,
+    deadline: tokio::time::Instant,
+) -> Result<Vec<String>, String> {
+    let read = async {
+        let reservation = crate::ocr::reserve_background().map_err(|error| format!("{error:#}"))?;
+        let (width, _) = w
+            .window_size()
+            .await
+            .map_err(|error| format!("screen size: {error:#}"))?;
+        let png = w
+            .screenshot_png()
+            .await
+            .map_err(|error| format!("screenshot: {error:#}"))?;
+        let pixels = png_width(&png).ok_or("the screenshot is not a PNG")?;
+        if width <= 0.0 {
+            return Err("the screen size is unknown".to_string());
+        }
+        // Detached: when the wait window ends first, a cold recognizer keeps
+        // running to completion and warms Vision for the next read instead
+        // of being killed half-way.
+        let scale = f64::from(pixels) / width;
+        let rows = crate::ocr::recognize_background(reservation, png, scale)
+            .await.map_err(|error| format!("{error:#}"))?;
+        Ok(rows.into_iter().map(|row| row.text).collect())
+    };
+    tokio::time::timeout_at(deadline, read)
+        .await
+        .map_err(|_| "the OCR read did not finish inside the wait window".to_string())?
+}
+
+/// Poll screenshots + OCR until the expectation's text conditions hold.
+/// Read-only: nothing is sent to the phone but screenshot requests.
+async fn agent_wait_ocr(
+    state: &AppState,
+    w: &mut crate::runner::RunnerClient,
+    expect: &AgentUiExpectation,
+    generation: u64,
+    wait_deadline: tokio::time::Instant,
+    poll_ms: u64,
+) -> OcrWait {
+    let started = tokio::time::Instant::now();
+    let mut attempts = 0_u64;
+    let mut reads = 0_u64;
+    let mut last_observation = serde_json::Value::Null;
+    let mut last_error: Option<String>;
+    loop {
+        if private_read_refusal(state, generation).is_some() {
+            return OcrWait::Private;
+        }
+        attempts += 1;
+        let Some(read) = unless_private(&state.private_until, &state.privacy_epoch, generation,
+            agent_ocr_read(w, wait_deadline)).await else { return OcrWait::Private; };
+        match read {
+            Ok(texts) => {
+                if private_read_refusal(state, generation).is_some() {
+                    return OcrWait::Private;
+                }
+                reads += 1;
+                last_error = None;
+                let (matches, mut observation) = ocr_expectation_observation(&texts, expect);
+                observation["attempts"] = attempts.into();
+                observation["reads"] = reads.into();
+                observation["waited_ms"] =
+                    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX).into();
+                if matches {
+                    return OcrWait::Matched(observation);
+                }
+                last_observation = observation;
+            }
+            Err(error) => last_error = Some(error),
+        }
+        if private_read_refusal(state, generation).is_some() { return OcrWait::Private; }
+        if tokio::time::Instant::now() >= wait_deadline {
+            let mut observation = if last_observation.is_null() {
+                serde_json::json!({
+                    "read": false,
+                    "hint": "no screenshot was recognized; nothing here proves the text is absent"
+                })
+            } else {
+                last_observation
+            };
+            observation["source"] = "ocr".into();
+            observation["attempts"] = attempts.into();
+            observation["reads"] = reads.into();
+            if let Some(error) = last_error {
+                observation["read_error"] = error.into();
+            }
+            return OcrWait::TimedOut(observation);
+        }
+        let remaining = wait_deadline.saturating_duration_since(tokio::time::Instant::now());
+        tokio::time::sleep(std::cmp::min(std::time::Duration::from_millis(poll_ms), remaining))
+            .await;
+    }
+}
+
 fn agent_wait_observation(
     last_observation: serde_json::Value,
     attempts: u64,
@@ -12081,18 +12268,38 @@ async fn agent_actions(
 /// No screen text survives a privacy refusal, but prior dispatch counts and
 /// retry safety remain visible so an interrupted batch cannot be replayed.
 fn private_batch_refusal(index: usize, completed: usize, applied: usize) -> Response {
-    agent_actions_failure(
-        StatusCode::LOCKED, index, completed, applied, "screen_private",
-        "not_sent", applied == 0, &[], None,
-    )
+    private_batch_refusal_with_steps(index, completed, applied, &[])
+}
+fn private_batch_refusal_with_steps(index: usize, completed: usize, applied: usize, steps: &[serde_json::Value]) -> Response {
+    agent_actions_failure(StatusCode::LOCKED, index, completed, applied, "screen_private",
+        "not_sent", applied == 0, steps, None)
 }
 
 async fn agent_actions_inner(
-    State(state): State<Arc<AppState>>,
+    state: Arc<AppState>,
     headers: HeaderMap,
     body: String,
 ) -> Response {
-    let privacy_generation = state.privacy_epoch.load(std::sync::atomic::Ordering::Acquire);
+    let generation = state.privacy_epoch.load(std::sync::atomic::Ordering::Acquire);
+    let observes_screen = serde_json::from_str::<AgentActionsRequest>(&body).ok().is_some_and(|request|
+        request.observe || request.steps.iter().any(|step| matches!(step, AgentActionStep::WaitFor { .. })));
+    let mut response = agent_actions_generation(State(state.clone()), headers, body, generation).await;
+    if observes_screen && !refused_as_unauthenticated(&response) {
+        response.extensions_mut().insert(BatchPrivacyFence {
+            private_until: state.private_until.clone(), epoch: state.privacy_epoch.clone(), generation,
+        });
+    }
+    response
+}
+
+fn batch_privacy_revoked(state: &AppState, observes_screen: bool, generation: u64) -> bool {
+    observes_screen && (screen_private_now(&state.private_until)
+        || state.privacy_epoch.load(std::sync::atomic::Ordering::Acquire) != generation)
+}
+
+async fn agent_actions_generation(
+    State(state): State<Arc<AppState>>, headers: HeaderMap, body: String, privacy_generation: u64,
+) -> Response {
     match agent_auth(&state, &headers) {
         AgentAuth::Locked => {
             return with_security_headers(
@@ -12117,7 +12324,7 @@ async fn agent_actions_inner(
     let scope = capture_recovery_scope(&state, &headers);
     let text_scope = capture_input_scope(&state, &headers, privacy_generation, scope.as_ref());
     let fence=MutationObservationFence{state:state.clone(),scope:text_scope.clone()};
-    let mut response = agent_actions_claimed(State(state), headers, body, text_scope).await;
+    let mut response = agent_actions_claimed(State(state), headers, body, text_scope, privacy_generation).await;
     response.extensions_mut().insert(fence);
     if let Some(scope) = scope {
         response.extensions_mut().insert(scope);
@@ -12130,6 +12337,7 @@ async fn agent_actions_claimed(
     headers: HeaderMap,
     body: String,
     request_scope: Option<crate::input_continuation::Scope>,
+    privacy_generation: u64,
 ) -> Response {
     if body.len() > AGENT_ACTIONS_MAX_BODY_BYTES {
         return agent_actions_invalid(format!(
@@ -12150,16 +12358,19 @@ async fn agent_actions_claimed(
     let observes_screen = request.observe || request.steps.iter().any(|step| {
         matches!(step, AgentActionStep::WaitFor { .. })
     });
-    if observes_screen && state.screen_private_secs() > 0 {
+    if batch_privacy_revoked(&state, observes_screen, privacy_generation) {
         return private_batch_refusal(0, 0, 0);
     }
     // `launch_app {"app": …}` becomes a bundle before the first step runs, so
     // a name that does not resolve refuses the whole batch with nothing sent.
-    for step in &mut request.steps {
+    let mut launch_resolutions: Vec<(usize, serde_json::Value)> = Vec::new();
+    for (step_index, step) in request.steps.iter_mut().enumerate() {
         if let AgentActionStep::Action { action, .. } = step {
             fresh_launch_while_recording(&state, action);
-            if let Err(refusal) = resolve_launch_app_action(&state, action).await {
-                return refusal;
+            match resolve_launch_app_action(&state, action).await {
+                Ok(Some(resolved)) => launch_resolutions.push((step_index, resolved)),
+                Ok(None) => {}
+                Err(refusal) => return refusal,
             }
         }
     }
@@ -12259,9 +12470,11 @@ async fn agent_actions_claimed(
     let mut applied_actions = 0_usize;
     let mut step_results = Vec::with_capacity(request.steps.len());
     for (index, step) in request.steps.iter().enumerate() {
-        if request_scope_refusal(&state,request_scope.as_ref()).is_some(){return batch_scope_refusal(&state,request_scope.as_ref(),index,completed,applied_actions,&step_results,observes_screen);}
-        if observes_screen && state.screen_private_secs() > 0 {
-            return private_batch_refusal(index, completed, applied_actions);
+        if batch_privacy_revoked(&state, observes_screen, privacy_generation) {
+            return private_batch_refusal_with_steps(index, completed, applied_actions, &step_results);
+        }
+        if request_scope_refusal(&state,request_scope.as_ref()).is_some() {
+            return batch_scope_refusal(&state,request_scope.as_ref(),index,completed,applied_actions,&step_results,observes_screen);
         }
         if state.runner_lifecycle.is_transitioning()
             || state.released.load(std::sync::atomic::Ordering::Acquire)
@@ -12572,11 +12785,15 @@ async fn agent_actions_claimed(
                         Some(Err(_))=>return agent_actions_failure(StatusCode::GATEWAY_TIMEOUT,index,completed,applied_actions,"batch_deadline_after_action","applied",false,&step_results,None),
                     }
                 }
-                step_results.push(serde_json::json!({
+                let mut receipt = serde_json::json!({
                     "index": index,
                     "kind": "action",
                     "ok": true
-                }));
+                });
+                if let Some((_, resolved)) = launch_resolutions.iter().find(|(step, _)| *step == index) {
+                    receipt["resolved"] = resolved.clone();
+                }
+                step_results.push(receipt);
             }
             AgentActionStep::Pause { ms } => {
                 match in_request_scope(&state,request_scope.as_ref(),tokio::time::timeout_at(batch_deadline,
@@ -12601,6 +12818,40 @@ async fn agent_actions_claimed(
                     batch_deadline,
                     wait_started + std::time::Duration::from_millis(*timeout_ms),
                 );
+                if expect.uses_ocr() {
+                    let Some(ocr_wait) = in_request_scope(&state, request_scope.as_ref(),
+                        agent_wait_ocr(&state, &mut w, expect, privacy_generation, wait_deadline, *poll_ms)).await
+                        else { return batch_scope_refusal(&state, request_scope.as_ref(), index, completed, applied_actions, &step_results, observes_screen); };
+                    match ocr_wait {
+                        OcrWait::Matched(observation) => {
+                            step_results.push(serde_json::json!({
+                                "index": index,
+                                "kind": "wait_for",
+                                "ok": true,
+                                "source": "ocr",
+                                "observation": observation
+                            }));
+                            completed += 1;
+                            continue;
+                        }
+                        OcrWait::Private => {
+                            return private_batch_refusal_with_steps(index, completed, applied_actions, &step_results);
+                        }
+                        OcrWait::TimedOut(observation) => {
+                            return agent_actions_failure(
+                                StatusCode::CONFLICT,
+                                index,
+                                completed,
+                                applied_actions,
+                                "expectation_timeout",
+                                "not_sent",
+                                applied_actions == 0,
+                                &step_results,
+                                Some(observation),
+                            );
+                        }
+                    }
+                }
                 // Narrow probes are an optimization, not evidence. Reserve
                 // at least half the actual remaining window for full reads:
                 // a source read can take seconds, far longer than poll_ms.
@@ -12619,9 +12870,11 @@ async fn agent_actions_claimed(
                 let probes = if alert_only { None } else { wait_probe_predicates(expect) };
                 let mut probe_misses = 0_u64;
                 loop {
-                    if request_scope_refusal(&state,request_scope.as_ref()).is_some(){return batch_scope_refusal(&state,request_scope.as_ref(),index,completed,applied_actions,&step_results,observes_screen);}
-                    if state.screen_private_secs() > 0 {
-                        return private_batch_refusal(index, completed, applied_actions);
+                    if batch_privacy_revoked(&state, observes_screen, privacy_generation) {
+                        return private_batch_refusal_with_steps(index, completed, applied_actions, &step_results);
+                    }
+                    if request_scope_refusal(&state,request_scope.as_ref()).is_some() {
+                        return batch_scope_refusal(&state,request_scope.as_ref(),index,completed,applied_actions,&step_results,observes_screen);
                     }
                     attempts += 1;
                     // While the targets are not there yet, ask runner for just
@@ -12646,8 +12899,8 @@ async fn agent_actions_claimed(
                     let Some(read)=in_request_scope(&state,request_scope.as_ref(),async {
                         if alert_only {agent_wait_alert(&mut w,wait_deadline).await} else {agent_wait_elements(&mut w,wait_deadline).await}
                     }).await else {return batch_scope_refusal(&state,request_scope.as_ref(),index,completed,applied_actions,&step_results,observes_screen);};
-                    if state.screen_private_secs() > 0 {
-                        return private_batch_refusal(index, completed, applied_actions);
+                    if batch_privacy_revoked(&state, observes_screen, privacy_generation) {
+                        return private_batch_refusal_with_steps(index, completed, applied_actions, &step_results);
                     }
                     let rows = match read {
                         Ok(rows) => rows,
@@ -12780,7 +13033,9 @@ async fn agent_actions_claimed(
         completed += 1;
     }
 
-
+    if batch_privacy_revoked(&state, observes_screen, privacy_generation) {
+        return private_batch_refusal_with_steps(completed, completed, applied_actions, &step_results);
+    }
     state.touch_activity();
     // A read-only wait (including /alert/text) proves no input capability.
     if applied_actions > 0 {
@@ -12802,6 +13057,9 @@ async fn agent_actions_claimed(
             let observed_alert=probe_alert(&mut w).await;
             (data,observed_alert)
         }).await {
+        if batch_privacy_revoked(&state, observes_screen, privacy_generation) {
+            return private_batch_refusal_with_steps(completed, completed, applied_actions, &step_results);
+        }
         if let Some((snapshot, rows)) = observed {
             let rows = Arc::new(rows);
             remember_element_snapshot(&state, &snapshot, &rows);
@@ -12844,17 +13102,57 @@ async fn agent_actions_claimed(
     }
     // A person can start a private hold while a read is in flight. Discard
     // every observation, including earlier step text, before returning it.
-
+    if batch_privacy_revoked(&state, observes_screen, privacy_generation) {
+        return private_batch_refusal_with_steps(completed, completed, applied_actions, &step_results);
+    }
     agent_actions_json(StatusCode::OK, result)
 }
 
-fn value_predicate_literal(value: &str) -> String {
-    format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'"))
+#[derive(Clone)]
+struct ValueReadScope { epoch: u64, privacy_epoch: u64, owner: Option<String> }
+impl ValueReadScope {
+    fn capture(state: &AppState) -> Self {
+        let owner = recover(state.owner.lock());
+        let now = Instant::now();
+        let lease = std::time::Duration::from_secs(state.owner_lease_secs);
+        Self {
+            epoch: state.owner_epoch.load(std::sync::atomic::Ordering::Acquire),
+            privacy_epoch: state.privacy_epoch.load(std::sync::atomic::Ordering::Acquire),
+            owner: owner.as_ref().filter(|owner| now.saturating_duration_since(owner.last_seen) < lease)
+                .map(|owner| owner.name.clone()),
+        }
+    }
+    fn current(&self, state: &AppState) -> bool {
+        let owner_matches = {
+            let owner = recover(state.owner.lock());
+            let now = Instant::now();
+            let lease = std::time::Duration::from_secs(state.owner_lease_secs);
+            self.epoch == state.owner_epoch.load(std::sync::atomic::Ordering::Acquire)
+                && self.owner.as_deref() == owner.as_ref()
+                    .filter(|owner| now.saturating_duration_since(owner.last_seen) < lease)
+                    .map(|owner| owner.name.as_str())
+        };
+        owner_matches
+            && self.privacy_epoch == state.privacy_epoch.load(std::sync::atomic::Ordering::Acquire)
+            && !screen_private_now(&state.private_until)
+            && !state.released.load(std::sync::atomic::Ordering::Acquire)
+            && !state.runner_lifecycle.is_transitioning()
+    }
 }
+async fn scoped_value_read<T>(state: &AppState, scope: &ValueReadScope, work: impl std::future::Future<Output=T>) -> Option<T> {
+    tokio::pin!(work);
+    loop {
+        if !scope.current(state) { return None; }
+        if let Ok(value) = tokio::time::timeout(std::time::Duration::from_millis(250), &mut work).await {
+            return scope.current(state).then_some(value);
+        }
+    }
+}
+
 #[derive(Clone)]
 struct ValueReadFence {
     state: Arc<AppState>,
-    scope: crate::input_continuation::Scope,
+    scope: ValueReadScope,
 }
 fn value_scope_failure() -> serde_json::Value {
     serde_json::json!({"ok":false,"error":"value_read_scope_changed","value_omitted":true,"hint":"The value was withheld after owner/privacy changed; check current status before a fresh read"})
@@ -12867,40 +13165,12 @@ struct ValueReadRequest {
     kind: Option<String>,
     max_utf16: Option<u32>,
 }
-fn valid_value_contract(value: &serde_json::Value, limit: u32) -> bool {
-    let Some(text) = value.get("value") else {
-        return false;
-    };
-    if !text.is_null() && !text.is_string() {
-        return false;
-    }
-    let returned = text.as_str().map_or(0, |v| v.encode_utf16().count()) as u64;
-    let Some(total) = value
-        .get("utf16_length")
-        .and_then(serde_json::Value::as_u64)
-    else {
-        return false;
-    };
-    returned <= limit as u64
-        && total >= returned
-        && value["source"] == "ax_value_attribute"
-        && value["limit_utf16"] == limit
-        && value["returned_utf16_length"] == returned
-        && value["complete"] == (returned == total)
-        && value["truncated"] == (returned < total)
-}
 async fn agent_value(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     body: String,
 ) -> Response {
-    let scope = crate::input_continuation::Scope {
-        owner: String::new(),
-        epoch: state.owner_epoch.load(std::sync::atomic::Ordering::Acquire),
-        privacy_epoch: state
-            .privacy_epoch
-            .load(std::sync::atomic::Ordering::Acquire),
-    };
+    let scope = ValueReadScope::capture(&state);
     match agent_auth(&state, &headers) {
         AgentAuth::Ok => {}
         AgentAuth::Denied => {
@@ -12931,10 +13201,10 @@ async fn agent_value(
     };
     let selector = match (request.identifier.as_deref(), request.label.as_deref()) {
         (Some(id), None) if !id.is_empty() && id.chars().count() <= 512 => {
-            format!("identifier == {}", value_predicate_literal(id))
+            format!("identifier == {}", runner_predicate_literal(id))
         }
         (None, Some(label)) if !label.is_empty() && label.chars().count() <= 512 => {
-            format!("label == {}", value_predicate_literal(label))
+            format!("label == {}", runner_predicate_literal(label))
         }
         _ => {
             return invalid_list_request(
@@ -12950,9 +13220,13 @@ async fn agent_value(
         if kind.is_empty() || kind.len() > 80 {
             return invalid_list_request("invalid kind".into());
         }
+        if kind.trim_start_matches("XCUIElementType") == "SecureTextField" {
+            return json_response(StatusCode::FORBIDDEN,
+                serde_json::json!({"ok":false,"error":"secure_value_read_requires_human"}));
+        }
         format!(
             "({selector}) AND type == {}",
-            value_predicate_literal(&format!(
+            runner_predicate_literal(&format!(
                 "XCUIElementType{}",
                 kind.trim_start_matches("XCUIElementType")
             ))
@@ -12964,8 +13238,7 @@ async fn agent_value(
         return ControlRefusal::runner_not_configured().into_response();
     };
     state.touch_activity();
-    let guard = native_guard(&state, &scope);
-    let work = guard.run(async {
+    let work = scoped_value_read(&state, &scope, async {
         let _priority = state.begin_runner_control();
         let mut client = runner.lock().await;
         let ids = client.find_elements("predicate string", &selector).await?;
@@ -12979,12 +13252,12 @@ async fn agent_value(
         client.read_element_value(&ids[0], limit).await.map(Ok)
     });
     let outcome = tokio::time::timeout(std::time::Duration::from_secs(15), work).await;
-    let current = || request_scope_refusal(&state, Some(&scope)).is_none();
+    let current = || scope.current(&state);
     let mut response = if !current() {
         json_response(StatusCode::CONFLICT, value_scope_failure())
     } else {
         match outcome {
-            Ok(Some(Ok(Ok(mut value)))) if valid_value_contract(&value, limit) => {
+            Ok(Some(Ok(Ok(mut value)))) if core::value_read::valid_contract(&value, limit) => {
                 value["ok"] = true.into();
                 json_response(StatusCode::OK, value)
             }
@@ -13008,6 +13281,11 @@ async fn agent_value(
                     serde_json::json!({"ok":false,"error":"secure_value_read_requires_human"}),
                 )
             }
+            Ok(None) => json_response(StatusCode::CONFLICT, value_scope_failure()),
+            Ok(Some(Err(ref error))) if !crate::runner::runner_http_error(error).is_some_and(|e|
+                e.status.as_u16() == 501 || matches!(e.code.as_deref(), Some("unknown command" | "unsupported operation"))) =>
+                json_response(StatusCode::BAD_GATEWAY,
+                    serde_json::json!({"ok":false,"error":"value_read_failed","retry_safe":true})),
             _ => json_response(
                 StatusCode::NOT_IMPLEMENTED,
                 serde_json::json!({"ok":false,"error":"full_value_unavailable","hint":"The runner did not supply a complete-value contract; upgrade it or use a permitted alternative read. No preview was promoted to a full value"}),
@@ -14550,6 +14828,31 @@ async fn agent_input(
     headers: HeaderMap,
     body: String,
 ) -> Response {
+    INPUT_LAUNCH_RESOLUTION
+        .scope(std::cell::RefCell::new(None), async move {
+            let response = agent_input_owned(state, Query(query), headers, body).await;
+            let Some(resolved) = INPUT_LAUNCH_RESOLUTION.with(|slot| slot.borrow_mut().take())
+            else {
+                return response;
+            };
+            let (response, json) = read_json_response(response).await;
+            let Some(mut json) = json.filter(serde_json::Value::is_object) else {
+                return response;
+            };
+            json["resolved"] = resolved;
+            let (mut parts, _) = response.into_parts();
+            parts.headers.remove(header::CONTENT_LENGTH);
+            Response::from_parts(parts, Body::from(json.to_string()))
+        })
+        .await
+}
+
+async fn agent_input_owned(
+    state: State<Arc<AppState>>,
+    Query(query): Query<AgentInputQuery>,
+    headers: HeaderMap,
+    body: String,
+) -> Response {
     let Some(owner) = trusted_bearer_owner(&state, &headers) else {
         let response = agent_input_inner(state.clone(), Query(query), headers.clone(), body).await;
         return attach_failure_recovery(&state, &headers, response).await;
@@ -14806,8 +15109,12 @@ async fn agent_input_claimed(
     }
     let mut value = value;
     fresh_launch_while_recording(&state, &mut value);
-    if let Err(refusal) = resolve_launch_app_action(&state, &mut value).await {
-        return refusal;
+    match resolve_launch_app_action(&state, &mut value).await {
+        Ok(Some(resolved)) => {
+            let _ = INPUT_LAUNCH_RESOLUTION.try_with(|slot| *slot.borrow_mut() = Some(resolved));
+        }
+        Ok(None) => {}
+        Err(refusal) => return refusal,
     }
     // A blocked app, or a link scheme the owner has not allowed, is refused
     // before anything else runs (`crate::guard`).
@@ -16737,6 +17044,13 @@ fn finish_private_read(state: &AppState, generation: u64, response: Response) ->
 }
 
 #[derive(Clone)]
+struct BatchPrivacyFence {
+    private_until: Arc<Mutex<Option<Instant>>>,
+    epoch: Arc<std::sync::atomic::AtomicU64>,
+    generation: u64,
+}
+
+#[derive(Clone)]
 struct ReadPrivacyFence {
     private_until: Arc<Mutex<Option<Instant>>>,
     privacy_epoch: Arc<std::sync::atomic::AtomicU64>,
@@ -16747,34 +17061,50 @@ struct ReadPrivacyFence {
 /// fence or lose its fixed-size timing/metrics enrichment before it is installed.
 async fn privacy_read_body_layer(request: axum::extract::Request, next: axum::middleware::Next) -> Response {
     let response = next.run(request).await;
-    if let Some(fence)=response.extensions().get::<ValueReadFence>().cloned(){
-        let (mut parts,body)=response.into_parts();
-        let bytes=match axum::body::to_bytes(body,1<<20).await{Ok(bytes)=>bytes,Err(_)=>return json_response(StatusCode::BAD_GATEWAY,value_scope_failure())};
+    if let Some(fence) = response.extensions().get::<ValueReadFence>().cloned() {
+        let (mut parts, body) = response.into_parts();
+        let bytes = match axum::body::to_bytes(body, 1 << 20).await {
+            Ok(bytes) => bytes,
+            Err(_) => return json_response(StatusCode::BAD_GATEWAY, value_scope_failure()),
+        };
         parts.headers.remove(header::CONTENT_LENGTH);
-        let stream=futures_util::stream::once(async move{
-            let bytes=if request_scope_refusal(&fence.state,Some(&fence.scope)).is_some(){bytes::Bytes::from(value_scope_failure().to_string())}else{bytes};
-            Ok::<_,std::io::Error>(bytes)
+        let stream = futures_util::stream::once(async move {
+            let bytes = if fence.scope.current(&fence.state) { bytes }
+                else { bytes::Bytes::from(value_scope_failure().to_string()) };
+            Ok::<_, std::io::Error>(bytes)
         });
-        return Response::from_parts(parts,Body::from_stream(stream));
+        return Response::from_parts(parts, Body::from_stream(stream));
     }
-    if let Some(fence)=response.extensions().get::<MutationObservationFence>().cloned(){
-        let is_json=response.headers().get(header::CONTENT_TYPE).and_then(|v|v.to_str().ok()).is_some_and(|v|v.starts_with("application/json"));
-        if is_json && axum::body::HttpBody::size_hint(response.body()).exact().is_some(){
-            let (mut parts,body)=response.into_parts();
-            let bytes=match axum::body::to_bytes(body,usize::MAX).await{Ok(bytes)=>bytes,Err(_)=>return Response::from_parts(parts,Body::from(crate::timing::UNKNOWN_BODY))};
-            parts.headers.remove(header::CONTENT_LENGTH);
-            let deferred=futures_util::stream::once(async move {
-                let output=if let Some((reason,_))=request_scope_refusal(&fence.state,fence.scope.as_ref()){
+    let mutation = response.extensions().get::<MutationObservationFence>().cloned();
+    let batch = response.extensions().get::<BatchPrivacyFence>().cloned();
+    if mutation.is_some() || batch.is_some() {
+        let is_json = response.headers().get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).is_some_and(|v| v.starts_with("application/json"));
+        if !is_json { return response; }
+        let (mut parts, body) = response.into_parts();
+        let limit = if batch.is_some() { 2 << 20 } else { usize::MAX };
+        let bytes = match axum::body::to_bytes(body, limit).await {
+            Ok(bytes) => bytes,
+            Err(_) => return Response::from_parts(parts, Body::from(crate::timing::UNKNOWN_BODY)),
+        };
+        parts.headers.remove(header::CONTENT_LENGTH);
+        let stream = futures_util::stream::once(async move {
+            let privacy_changed = batch.as_ref().is_some_and(|fence|
+                fence.epoch.load(std::sync::atomic::Ordering::Acquire) != fence.generation
+                    || screen_private_now(&fence.private_until));
+            let mutation_reason = mutation.as_ref().and_then(|fence| request_scope_refusal(&fence.state, fence.scope.as_ref()));
+            let bytes = if privacy_changed || mutation_reason.is_some() {
+                if let Some(fence) = &mutation {
                     recover(fence.state.element_snapshots.lock()).clear();
                     recover(fence.state.owner_snapshots.lock()).clear();
-                    let value=serde_json::from_slice::<serde_json::Value>(&bytes).unwrap_or(serde_json::Value::Null);
-                    bytes::Bytes::from(serde_json::to_vec(&crate::observation::redact(value,reason)).unwrap_or_else(|_|crate::timing::UNKNOWN_BODY.as_bytes().to_vec()))
-                }else{bytes};
-                Ok::<_,std::io::Error>(output)
-            });
-            return Response::from_parts(parts,Body::from_stream(deferred));
-        }
-        return response;
+                }
+                let value = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
+                let safe = if privacy_changed { crate::observation::redact_batch(value) }
+                    else { crate::observation::redact(value, mutation_reason.map(|v| v.0).unwrap_or("input_owner_changed")) };
+                bytes::Bytes::from(safe.to_string())
+            } else { bytes };
+            Ok::<_, std::io::Error>(bytes)
+        });
+        return Response::from_parts(parts, Body::from_stream(stream));
     }
     let Some(fence) = response.extensions().get::<ReadPrivacyFence>().cloned() else { return response; };
     // The response can sit queued before the HTTP writer first polls its body.
@@ -19098,16 +19428,19 @@ async fn resolve_launch_app_name(
 /// Rewrite a `launch_app {"app": …}` action to the bundle it names, before
 /// any device lock is taken (a cold inventory read can take seconds). Other
 /// actions pass through untouched.
+///
+/// Returns what the name resolved to (`{app, name, bundle_id, match}`), so the
+/// result can say which app a loose name launched; `None` for other actions.
 async fn resolve_launch_app_action(
     state: &AppState,
     action: &mut serde_json::Value,
-) -> Result<(), Response> {
+) -> Result<Option<serde_json::Value>, Response> {
     if action.get("type").and_then(serde_json::Value::as_str) != Some("launch_app") {
-        return Ok(());
+        return Ok(None);
     }
     let Some(name) = action.get("app").and_then(serde_json::Value::as_str).map(str::to_string)
     else {
-        return Ok(());
+        return Ok(None);
     };
     let found = resolve_launch_app_name(state, &name).await?;
     if let Some(object) = action.as_object_mut() {
@@ -19117,7 +19450,22 @@ async fn resolve_launch_app_action(
             serde_json::Value::String(found.candidate.bundle_id.clone()),
         );
     }
-    Ok(())
+    Ok(Some(launch_resolution_json(&name, &found)))
+}
+
+fn launch_resolution_json(app: &str, found: &crate::app_lookup::Ranked) -> serde_json::Value {
+    serde_json::json!({
+        "app": app,
+        "name": found.candidate.name,
+        "bundle_id": found.candidate.bundle_id,
+        "match": if found.exact { "exact" } else { "partial" },
+    })
+}
+
+tokio::task_local! {
+    /// What `/agent/input`'s `launch_app {"app": …}` resolved to, read back by
+    /// [`agent_input`] to add `resolved` to the response.
+    static INPUT_LAUNCH_RESOLUTION: std::cell::RefCell<Option<serde_json::Value>>;
 }
 
 /// While recording, an app launch starts the app fresh (on its first screen),
@@ -21023,6 +21371,7 @@ async fn elements_ocr(
         .and_then(serde_json::Value::as_f64)
         .filter(|width| *width > 0.0)
         .ok_or("the screen size is unknown, so recognized text cannot be placed")?;
+    let reservation = crate::ocr::reserve_background().map_err(|error| format!("{error:#}"))?;
     let shot = agent_screenshot_capture(
         State(state.clone()),
         headers.clone(),
@@ -21049,9 +21398,17 @@ async fn elements_ocr(
         .map_err(|error| format!("read the screenshot: {error}"))?;
     let pixels = png_width(&png).ok_or("the screenshot is not a PNG")?;
     let scale = f64::from(pixels) / width;
-    let rows = tokio::time::timeout(ELEMENTS_OCR_TIMEOUT, crate::ocr::recognize(&png, scale))
+    // Detached, like the OCR wait: a cold run that outlives this read still
+    // finishes and warms Vision for the next one.
+    let task = crate::ocr::recognize_background(reservation, png.to_vec(), scale);
+    let rows = tokio::time::timeout(ELEMENTS_OCR_TIMEOUT, task)
         .await
-        .map_err(|_| format!("OCR did not finish in {} s", ELEMENTS_OCR_TIMEOUT.as_secs()))?
+        .map_err(|_| {
+            format!(
+                "OCR did not finish in {} s (the first run after Vision was idle can be slow; retry)",
+                ELEMENTS_OCR_TIMEOUT.as_secs()
+            )
+        })?
         .map_err(|error| format!("{error:#}"))?;
     Ok(crate::ocr::rows_for_elements(&rows))
 }
@@ -23891,6 +24248,8 @@ mod tests {
                 enabled: None,
                 visible: None,
             }],
+            ocr_present: vec![],
+            ocr_absent: vec![],
         };
 
         let (matches, observation) = agent_expectation_observation(&rows, &expect);
@@ -23903,8 +24262,55 @@ mod tests {
             application: Some("聚焦".to_string()),
             present: vec![],
             absent: vec![],
+            ocr_present: vec![],
+            ocr_absent: vec![],
         };
         assert!(!agent_expectation_observation(&rows, &wrong_app).0);
+    }
+
+    #[test]
+    fn an_ocr_wait_matches_recognized_text_ignoring_case_and_spaces() {
+        let expect: AgentUiExpectation = serde_json::from_value(serde_json::json!({
+            "ocr_present": ["长按自动", "lv 3"],
+            "ocr_absent": ["Loading"]
+        }))
+        .unwrap();
+        assert!(expect.uses_ocr());
+        let loading = ["LOADING 42%".to_string(), "Lv3".to_string()];
+        let (matches, observation) = ocr_expectation_observation(&loading, &expect);
+        assert!(!matches);
+        assert_eq!(observation["ocr_present"][0]["seen"], false);
+        assert_eq!(observation["ocr_present"][1]["seen"], true);
+        assert_eq!(observation["ocr_absent"][0]["seen"], true);
+        assert_eq!(observation["lines"][0], "LOADING 42%");
+        // Vision split the CJK caption with a space; it still counts.
+        let board = ["长按 自动".to_string(), "LV 3".to_string(), "1,200".to_string()];
+        assert!(ocr_expectation_observation(&board, &expect).0);
+    }
+
+    #[test]
+    fn ocr_waits_are_validated() {
+        let check = |expect: serde_json::Value, timeout_ms: u64| {
+            let request: AgentActionsRequest = serde_json::from_value(serde_json::json!({
+                "steps": [{"kind": "wait_for", "expect": expect, "timeout_ms": timeout_ms}]
+            }))
+            .unwrap();
+            validate_agent_actions(&request)
+        };
+        // OCR text alone may wait longer than an element wait.
+        assert!(check(serde_json::json!({"ocr_present": ["长按自动"]}), 45_000).is_ok());
+        assert!(check(serde_json::json!({"ocr_absent": ["Loading"]}), 60_000).is_ok());
+        assert!(check(serde_json::json!({"ocr_present": ["x"]}), 60_001).is_err());
+        assert!(check(serde_json::json!({"present": [{"label": "OK"}]}), 45_000).is_err());
+        // Never mixed with element locators, never blank.
+        let mixed = check(
+            serde_json::json!({"ocr_present": ["a"], "present": [{"label": "OK"}]}),
+            5_000,
+        )
+        .unwrap_err();
+        assert!(mixed.contains("two wait_for steps"), "{mixed}");
+        assert!(check(serde_json::json!({"ocr_present": ["  "]}), 5_000).is_err());
+        assert!(check(serde_json::json!({}), 5_000).is_err());
     }
 
     #[test]
@@ -26464,7 +26870,7 @@ mod tests {
                     agent_actions_claimed(State(state), HeaderMap::new(), serde_json::json!({"steps":[
                         {"kind":"action","action":{"type":"text","text":"x"}},
                         {"kind":"action","action":{"type":"launch_app","bundle":"com.example.fixture"}}
-                    ]}).to_string(), scope).await
+                    ]}).to_string(), scope, 0).await
                 };
                 let calls = calls.lock().unwrap();
                 assert!(!calls.iter().any(|r| r.contains("/unlock") || r.contains("/openurl")), "{calls:?}");
@@ -26804,7 +27210,16 @@ mod tests {
         block(async {
             let state = readiness_test_state();
             let mut action = serde_json::json!({"type":"launch_app","app":"设置"});
-            resolve_launch_app_action(&state, &mut action).await.unwrap();
+            let resolved = resolve_launch_app_action(&state, &mut action).await.unwrap();
+            assert_eq!(
+                resolved,
+                Some(serde_json::json!({
+                    "app": "设置",
+                    "name": resolved.as_ref().unwrap()["name"],
+                    "bundle_id": "com.apple.Preferences",
+                    "match": "exact",
+                }))
+            );
             assert_eq!(
                 action,
                 serde_json::json!({"type":"launch_app","bundle":"com.apple.Preferences"})

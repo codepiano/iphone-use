@@ -33,7 +33,8 @@ curl -s -H "$AUTH" "$HOST/agent/status"             # probe first; on failure st
    Paired metadata reads (`phone_home_layout`, `phone_apps`) and cached capability
    discovery do not require a running Runner. Use them without reconnecting or
    opening Home, and respect any private-hold refusal. Reconnect once
-   (`phone_reconnect` / `POST /agent/mode {"mode":"agent"}`) only when the
+   (`phone_reconnect`, with `wait_secs` to block until drivable or a blocker /
+   `POST /agent/mode {"mode":"agent"}`) only when the
    user's current task needs the phone, never for a health check: each runner
    launch can make the operator type the passcode. If `owner` is another
    session, do not drive. → reference: *Phone states and recovery*
@@ -91,9 +92,9 @@ it off again.
 | What | HTTP `/agent/input` `type` | MCP | Flow / batch step `kind` |
 |---|---|---|---|
 | Find an app's bundle id | `GET /agent/apps?query=微信` | `phone_apps` | — |
-| Open an app | `launch_app` `bundle` (or `name` for built-ins, or `app`: any app's exact name — refused with candidates if ambiguous) | `phone_run_steps` step | `launch_app` (`bundle` or `app`) |
+| Open an app | `launch_app` `bundle` (or `name` for built-ins, or `app`: any app's exact name, or a loose name matching exactly one installed app — `resolved` says which; refused with candidates if ambiguous) | `phone_run_steps` step | `launch_app` (`bundle` or `app`) |
 | Read home pages, Dock and folders | `GET /agent/home-layout?page=0` (omit page for all) | `phone_home_layout` (`page?`) | — |
-| Read the screen | `GET /agent/elements` | `phone_elements` | `wait_for` (`application`, `present`, `absent`) |
+| Read the screen | `GET /agent/elements` | `phone_elements` | `wait_for` (`application`, `present`, `absent`; on canvas/game screens `ocr_present` / `ocr_absent`, up to 60 s) |
 | Tap an element | `tap` + `element` + `snapshot` | `phone_tap_element` | `tap_locator` (durable) |
 | Tap a unique label | `tap` + `label` | `phone_tap_label` | `tap_label` |
 | Tap by locator | `tap_locator` + `locator` | `phone_run_steps` step | `tap_locator` |
@@ -148,7 +149,7 @@ curl -s -H "$AUTH" -H "$MUTATION" -H "$OWNER" -X POST "$HOST/agent/actions" -d '
 | Tap coordinates guessed from a screenshot | Read `phone_elements`, tap by element + snapshot or by label |
 | Take a screenshot after every step | `observe:true` / `?return=delta` returns the change |
 | One tap per call when the next steps are visible | One `phone_run_steps` / `/agent/actions` batch with `wait_for` |
-| `sleep` a fixed number of seconds | `wait_for` with `present` / `absent` / `application` |
+| `sleep` a fixed number of seconds | `wait_for` with `present` / `absent` / `application` (`ocr_present` when the screen is a canvas) |
 | Tap a system alert's button | The `alert` action (`button` or `action`) |
 | Tap a switch or slider | `perform` `toggle` / `adjust` |
 | Resend after `outcome_unknown` or `retry_safe:false` | Read the screen first; the phone may already have acted |
@@ -310,3 +311,10 @@ instance falls back to another phone. Do not read tokens or hand-write HTTP just
 to switch instances. Discovery never reconnects; ordinary ownership, privacy,
 lock and phone-ended/human-handoff rules still apply. Runtime selection supports
 installed local LaunchAgents; simulator-only records remain separate.
+
+
+When a task needs the complete value of one non-secure field, use
+`phone_read_value` with its fresh identifier or exact label. Check the returned
+completeness and UTF-16 limit. A truncated preview is not a full value; secure or
+unsupported fields require a permitted alternative. Ownership/privacy changes
+withhold results. This read does not focus, unlock, or claim control.

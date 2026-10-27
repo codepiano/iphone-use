@@ -485,8 +485,16 @@ static BOOL IPURUseRequestCache(void)
   }
   NSMethodSignature *signature = [client methodSignatureForSelector:selector];
   if (signature.numberOfArguments != 5 || signature.methodReturnType[0] != '@' ||
-      [signature getArgumentTypeAtIndex:4][0] != '^') {
-    if (errorMessage) *errorMessage = @"full AX value selector shape unavailable";
+      [signature getArgumentTypeAtIndex:2][0] != '@' ||
+      [signature getArgumentTypeAtIndex:3][0] != '@' ||
+      [signature getArgumentTypeAtIndex:4][0] != '^' || [signature getArgumentTypeAtIndex:4][1] != '@') {
+    if (errorMessage) {
+      *errorMessage = signature.numberOfArguments == 5
+        ? [NSString stringWithFormat:@"full AX value selector shape unavailable (return=%s, arg2=%s, arg3=%s, arg4=%s)",
+           signature.methodReturnType, [signature getArgumentTypeAtIndex:2],
+           [signature getArgumentTypeAtIndex:3], [signature getArgumentTypeAtIndex:4]]
+        : @"full AX value selector argument count unavailable";
+    }
     return nil;
   }
   NSError *error = nil;
@@ -497,6 +505,10 @@ static BOOL IPURUseRequestCache(void)
       @[@"XC_kAXXCAttributeValue"], &error);
   } @catch (__unused NSException *exception) {
     if (errorMessage) *errorMessage = @"full AX value read raised an exception";
+    return nil;
+  }
+  if (error != nil) {
+    if (errorMessage) *errorMessage = @"full AX value read failed";
     return nil;
   }
   if (![attributes isKindOfClass:NSDictionary.class] || attributes[@"XC_kAXXCAttributeValue"] == nil) {
@@ -885,7 +897,7 @@ static NSMutableDictionary *IPURSerialize(
   node[@"name"] = identifier ?: label ?: (id)NSNull.null;
   node[@"value"] = value ?: (id)NSNull.null;
   id valueTruncated = IPURKVC(snapshot, @"isTruncatedValue");
-  if ([valueTruncated isKindOfClass:NSNumber.class]) node[@"value_truncated"] = @([valueTruncated boolValue]);
+  if (![node[@"type"] isEqual:@"XCUIElementTypeSecureTextField"] && [valueTruncated isKindOfClass:NSNumber.class]) node[@"value_truncated"] = @([valueTruncated boolValue]);
   node[@"rawIdentifier"] = identifier ?: (id)NSNull.null;
   node[@"placeholderValue"] = placeholder ?: (id)NSNull.null;
   node[@"rect"] = IPURRect(snapshot);

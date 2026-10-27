@@ -38,6 +38,15 @@ impl ScriptedDaemon {
     }
 
     fn routed(status: &'static str, body: Vec<u8>, delay: Duration, status_body: Option<Vec<u8>>) -> Self {
+        Self::routed_with_delays(status, body, delay, status_body, Duration::ZERO)
+    }
+    fn routed_status(status: &'static str, body: Vec<u8>, status_body: Option<Vec<u8>>) -> Self {
+        Self::routed(status, body, Duration::ZERO, status_body)
+    }
+    fn status_delayed(status: &'static str, body: Vec<u8>, status_body: Option<Vec<u8>>, delay: Duration) -> Self {
+        Self::routed_with_delays(status, body, Duration::ZERO, status_body, delay)
+    }
+    fn routed_with_delays(status: &'static str, body: Vec<u8>, delay: Duration, status_body: Option<Vec<u8>>, status_delay: Duration) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         listener.set_nonblocking(true).unwrap();
@@ -75,7 +84,8 @@ impl ScriptedDaemon {
                             }
                         }
                         seen.lock().unwrap().push(String::from_utf8_lossy(&request).to_string());
-                        let until = Instant::now() + delay;
+                        let status_read = request.starts_with(b"GET /agent/status ");
+                        let until = Instant::now() + delay + if status_read { status_delay } else { Duration::ZERO };
                         while Instant::now() < until && !thread_stop.load(Ordering::Acquire) {
                             stream.set_read_timeout(Some(Duration::from_millis(20))).ok();
                             if matches!(stream.peek(&mut [0u8;1]), Ok(0)) {
@@ -83,7 +93,7 @@ impl ScriptedDaemon {
                                 break;
                             }
                         }
-                        let status_read = request.starts_with(b"GET /agent/status ");
+
                         let truncated = status == "200 Truncated" && !status_read;
                         let body = if status_read { status_body.as_ref().unwrap_or(&body) } else { &body };
                         let response_status = if status_read && status_body.is_some() || truncated { "200 OK" } else { status };
@@ -1073,5 +1083,108 @@ fn failed_capture_clears_old_pixels_despite_racing_open_status() {
         assert!(body["private_secs"].is_null());
         assert!(body["frame"].is_null());
         assert_eq!(body["clear_frame"], true, "{body}");
+    }
+}
+
+#[test]
+fn registry_without_flows_does_not_query_phone_inventory() {
+    for (registry, needs_inventory) in [
+        (None, false),
+        (Some(serde_json::json!({"installed":0,"next":"No saved flows"})), false),
+        (Some(serde_json::json!({"flows":[]})), false),
+        (Some(serde_json::json!({"flows":null})), false),
+        (Some(serde_json::json!({"flows":[{"id":"fixture/flow"}]})), true),
+    ] {
+        let mut body = serde_json::json!({"ok":true,"snapshot":"S","elements":[{"kind":"TextField","identifier":"field-a","label":"registry"}]});
+        if let Some(registry) = registry { body["registry"] = registry; }
+        let daemon = ScriptedDaemon::start("200 OK", body.to_string().into_bytes());
+        let home = tempfile::tempdir().unwrap();
+        let mut child = McpChild::start_options(&daemon.url,"off",&[
+            ("HOME",home.path().to_str().unwrap()),("IPHONE_USE_FLOWS_DIR",home.path().to_str().unwrap()),
+            ("IPHONE_USE_FLOWS_NO_AUTO_UPDATE","1"),
+            ("IPHONE_USE_MCP_PREWARM","0")]);
+        let reply = child.call_tool(2,"phone_elements",serde_json::json!({}));
+        assert!(reply.get("result").is_some() && reply["result"]["isError"] != true,"{reply}");
+        let requests = daemon.requests.lock().unwrap();
+        assert_eq!(requests.iter().any(|line|line.starts_with("GET /agent/apps ")),needs_inventory,"{requests:?}");
+        if !needs_inventory {
+            assert_eq!(requests.len(),1,"a screen with no flows must only read its elements: {requests:?}");
+        }
+    }
+}
+
+#[test]
+fn reconnect_wait_budget_bounds_slow_status_and_sends_only_one_reconnect() {
+    let daemon=ScriptedDaemon::status_delayed("200 OK",br#"{"ok":true,"starting":true,"reconnecting":true}"#.to_vec(),
+        Some(br#"{"ok":true,"drivable":true,"reconnecting":false}"#.to_vec()),Duration::from_secs(3));
+    let mut child=McpChild::start_with(&daemon.url,"off");
+    let start=Instant::now();let reply=child.call_tool(2,"phone_reconnect",serde_json::json!({"wait_secs":1}));
+    let elapsed=start.elapsed();
+    let text=reply["result"]["content"][0]["text"].as_str().unwrap();
+    let body:serde_json::Value=serde_json::from_str(text).unwrap();
+    assert_eq!(body["wait"]["outcome"],"timeout","{body}");
+    assert!(elapsed<Duration::from_secs(2),"wait_secs=1 exceeded budget: {elapsed:?}");
+    let requests=daemon.requests.lock().unwrap();
+    assert_eq!(requests.iter().filter(|request|request.starts_with("POST /agent/mode ")).count(),1);
+}
+#[test]
+fn reconnect_wait_stops_on_a_phone_exit_even_if_ready_was_stale() {
+    let daemon=ScriptedDaemon::routed_status("200 OK",br#"{"ok":true,"starting":true}"#.to_vec(),
+        Some(br#"{"ok":true,"drivable":true,"reconnecting":true,"runner_parked":true,"ended_on_phone":true,"setup_blocked_on":"usb"}"#.to_vec()));
+    let mut child=McpChild::start_with(&daemon.url,"off");
+    let reply=child.call_tool(2,"phone_reconnect",serde_json::json!({"wait_secs":1}));
+    let body:serde_json::Value=serde_json::from_str(reply["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(body["wait"]["outcome"],"stopped","{body}");
+    assert_eq!(daemon.requests.lock().unwrap().iter().filter(|request|request.starts_with("POST /agent/mode ")).count(),1);
+}
+
+#[test]
+fn reconnect_wait_transient_blocker_does_not_end_a_short_budget_early() {
+    let daemon = ScriptedDaemon::routed_status("200 OK", br#"{"ok":true,"starting":true}"#.to_vec(),
+        Some(br#"{"ok":true,"drivable":false,"reconnecting":true,"setup_blocked_on":"usb","setup_phase":"ddi-wait"}"#.to_vec()));
+    let mut child = McpChild::start_with(&daemon.url,"off");
+    let started = Instant::now();
+    let reply = child.call_tool(2,"phone_reconnect",serde_json::json!({"wait_secs":1}));
+    let body: serde_json::Value = serde_json::from_str(reply["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(body["wait"]["outcome"], "timeout", "{body}");
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert_eq!(daemon.requests.lock().unwrap().iter().filter(|r| r.starts_with("POST /agent/mode ")).count(), 1);
+}
+
+#[test]
+fn full_value_is_single_copy_and_never_requests_control_in_all_output_modes() {
+    let value = "value-root-".to_string() + &"字".repeat(6015);
+    for mode in ["full", "slim", "off"] {
+        let body = serde_json::json!({"ok":true,"value":value,"source":"ax_value_attribute","complete":true,"truncated":false,
+            "utf16_length":6026,"returned_utf16_length":6026,"limit_utf16":8192});
+        let daemon = ScriptedDaemon::start("200 OK",body.to_string().into_bytes());
+        let home = tempfile::tempdir().unwrap();
+        let mut child = McpChild::start_options(&daemon.url,mode,&[("HOME",home.path().to_str().unwrap()),
+            ("IPHONE_USE_MCP_TOOLS","readonly"),("IPHONE_USE_MCP_PREWARM","0"),("IPHONE_USE_FLOWS_NO_AUTO_UPDATE","1")]);
+        let reply = child.call_tool(2,"phone_read_value",serde_json::json!({"identifier":"field-a"}));
+        let result = &reply["result"];
+        assert_ne!(result["isError"],true,"{reply}");
+        let text = result["content"][0]["text"].as_str().unwrap();
+        assert_eq!(serde_json::from_str::<serde_json::Value>(text).unwrap()["value"],value);
+        assert_eq!(reply.to_string().matches(&value).count(),1);
+        assert!(result.get("structuredContent").is_none() || result["structuredContent"].is_null(), "a metadata-only structured result hides the text in some hosts: {reply}");
+        let requests = daemon.requests.lock().unwrap();
+        assert_eq!(requests.len(),1);
+        assert!(requests[0].starts_with("POST /agent/value "));
+        assert!(!requests[0].to_ascii_lowercase().contains("x-phone-control:"));
+    }
+}
+#[test]
+fn missing_contract_and_revoked_scope_never_publish_a_value() {
+    for body in [serde_json::json!({"ok":true,"value":"UNTRUSTED_PREVIEW"}),
+        serde_json::json!({"ok":false,"error":"value_read_scope_changed","value_omitted":true,"value":"WITHHELD_SECRET"})] {
+        for mode in ["full","slim","off"] {
+            let daemon = ScriptedDaemon::start("200 OK",body.to_string().into_bytes());
+            let mut child = McpChild::start_with(&daemon.url,mode);
+            let reply = child.call_tool(2,"phone_read_value",serde_json::json!({"identifier":"field-a"}));
+            assert_eq!(reply["result"]["isError"],true,"{reply}");
+            let wire=reply.to_string();
+            assert!(!wire.contains("UNTRUSTED_PREVIEW") && !wire.contains("WITHHELD_SECRET"));
+        }
     }
 }

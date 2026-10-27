@@ -78,10 +78,12 @@ extension RunnerTests {
       if match(parts, "element/active") != nil { return try activeElement() }
       if match(parts, "alert/text") != nil { return try alertText() }
       if match(parts, "wda/alert/buttons") != nil { return try alertButtons() }
-      if let id = match(parts, "element/:id/value")?.first { return try elementValue(id, request: request) }
       if let id = match(parts, "element/:id/rect")?.first { return try elementRect(id) }
       if let captures = match(parts, "element/:id/attribute/:name") {
         return try elementAttribute(captures[0], captures[1])
+      }
+      if request.query["complete"] == "1", let id = match(parts, "element/:id/value")?.first {
+        return try elementValue(id, request: request)
       }
       if let id = match(parts, "element/:id/text")?.first {
         let node = try freshNode(id)
@@ -362,7 +364,7 @@ extension RunnerTests {
     }
     var error: NSString?
     guard let result = IPURBridge.readValue(for: ax, maxUTF16: UInt(limit), placeholder: node.placeholder, error: &error) else {
-      throw RunnerError.unsupported("full AX value read unavailable")
+      throw RunnerError.unsupported(error.map { String($0) } ?? "full AX value read unavailable")
     }
     IPURBridge.invalidateRequestCache()
     let after = try freshNode(id)

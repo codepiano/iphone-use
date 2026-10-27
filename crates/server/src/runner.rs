@@ -87,7 +87,6 @@ pub struct RunnerClient {
     guarded_input: bool,
     continuation_input: bool,
     atomic_text: bool,
-    value_read: bool,
     element_replace: bool,
     replace_focus_recovery: bool,
     input_continuation: crate::input_continuation::Store,
@@ -107,6 +106,7 @@ pub struct RunnerClient {
     /// `None` until asked, `Some(false)` after a 404 (WebDriverAgent, an older
     /// runner). Asked again whenever a new session starts (a new runner).
     device_settle: Option<bool>,
+    value_read: bool,
     /// The last tree read and when: snapshot-bound actions reuse it instead
     /// of reading the whole tree again (see [`Self::recent_tree`]).
     last_tree: Option<(std::sync::Arc<Vec<ElementRow>>, std::time::Instant)>,
@@ -351,7 +351,6 @@ impl RunnerClient {
             guarded_input: false,
             continuation_input: false,
             atomic_text: false,
-            value_read: false,
             element_replace: false,
             replace_focus_recovery: false,
             input_continuation: Default::default(),
@@ -359,6 +358,7 @@ impl RunnerClient {
             posted_at: None,
             no_alert_at: None,
             device_settle: None,
+            value_read: false,
             last_tree: None,
             lite_source: false,
             probe: ProbeMemory::default(),
@@ -726,9 +726,10 @@ impl RunnerClient {
                 .and_then(|v| v.pointer("/value/capabilities/ipu:atomicText").and_then(serde_json::Value::as_bool)) == Some(true);
             self.element_replace = serde_json::from_str::<serde_json::Value>(&text).ok().and_then(|v|v.pointer("/value/capabilities/ipu:elementReplace").and_then(serde_json::Value::as_bool))==Some(true);
             self.replace_focus_recovery = serde_json::from_str::<serde_json::Value>(&text).ok().and_then(|v|v.pointer("/value/capabilities/ipu:replaceFocusRecovery").and_then(serde_json::Value::as_bool))==Some(true);
-            self.value_read = serde_json::from_str::<serde_json::Value>(&text).ok().and_then(|v|v.pointer("/value/capabilities/ipu:valueRead").and_then(serde_json::Value::as_bool))==Some(true);
             self.window = None;
             self.no_alert_at = None;
+            self.value_read = serde_json::from_str::<serde_json::Value>(&text).ok()
+                .and_then(|value| value.pointer("/value/capabilities/ipu:valueRead").and_then(serde_json::Value::as_bool)) == Some(true);
             self.device_settle = None;
             {
                 let sid = self.session.as_deref().unwrap().to_string();
@@ -983,8 +984,13 @@ impl RunnerClient {
     /// their bounded snapshot string is never promoted to a complete value.
     pub async fn read_element_value(&mut self, id: &str, max_utf16: u32) -> Result<serde_json::Value> {
         let sid=self.ensure_session().await?.to_string();
-        if !self.value_read {anyhow::bail!("runner lacks ipu:valueRead");}
-        let response=self.http.get(format!("{}/session/{}/element/{}/value",self.base,sid,id))
+        if !self.value_read {
+            return Err(RunnerHttpError {
+                operation: "GET element value".into(), status: reqwest::StatusCode::NOT_IMPLEMENTED,
+                code: Some("unsupported operation".into()), message: Some("runner lacks ipu:valueRead".into()),
+            }.into());
+        }
+        let response=self.http.get(format!("{}/session/{}/element/{}/value?complete=1",self.base,sid,id))
             .query(&[("max_utf16",max_utf16)]).send_signed(&self.auth).await?;
         ensure_runner_success(response,"GET element value").await
     }

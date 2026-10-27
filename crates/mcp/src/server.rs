@@ -239,6 +239,7 @@ pub struct ReadValueParams {
     pub max_utf16:Option<u32>,
 }
 
+
 /// Parameters for [`phone_key`].
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -421,9 +422,11 @@ pub enum PhoneStep {
         after_ms: u64,
     },
     /// Launch or foreground an installed app: give exactly one of `bundle`
-    /// (its exact bundle identifier) or `app` (its exact name — 微信, WeChat,
-    /// 招商银行, Settings — which the daemon resolves through phone_apps; an
-    /// ambiguous or unknown name is refused with candidates, nothing sent).
+    /// (its exact bundle identifier) or `app` (its name — 微信, WeChat,
+    /// 招商银行, Settings — which the daemon resolves through phone_apps; a
+    /// loose name that starts a word of exactly one installed app's name also
+    /// launches it, and the step's `resolved` says which; an ambiguous or
+    /// unknown name is refused with candidates, nothing sent).
     LaunchApp {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         bundle: Option<String>,
@@ -518,6 +521,16 @@ pub struct PhoneUiExpectation {
     /// Every locator in this list must match no current element.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub absent: Vec<PhoneElementLocator>,
+    /// Text that must be visible, read by OCR from screenshots — for canvas
+    /// screens (games, Flutter/Unity) whose element tree has no labels, e.g.
+    /// waiting out a game's loading screen. Case and spaces are ignored.
+    /// Cannot be combined with application/present/absent in one wait_for;
+    /// such a wait may take timeout_ms up to 60000.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ocr_present: Vec<String>,
+    /// Text that must not be visible (a loading caption), read by OCR.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ocr_absent: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -721,6 +734,75 @@ pub struct LoginParams {
     /// Sender, brand or subject fragment of the message with the code.
     #[serde(default)]
     pub code_from: Option<String>,
+}
+
+/// Parameters for [`PhoneHandler::phone_reconnect`].
+#[derive(Debug, Default, serde::Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReconnectParams {
+    /// Wait up to this many seconds (1–300) for the outcome instead of
+    /// returning at once: the call returns when the phone is drivable, a
+    /// blocker appears (setup_blocked_on, e.g. the passcode), or the time is
+    /// up — with the compact final state (a blocker other than the passcode
+    /// must hold for 20 s first). A runner rebuild after an upgrade
+    /// takes 1–2 min, so 180 covers it. Omit to return immediately.
+    #[serde(default)]
+    pub wait_secs: Option<u64>,
+}
+
+/// Longest `phone_reconnect` may wait.
+const RECONNECT_MAX_WAIT_SECS: u64 = 300;
+/// How often a waiting `phone_reconnect` reads the status.
+const RECONNECT_POLL: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// What a waiting reconnect reports: the fields that decide the next step.
+fn reconnect_brief(status: &crate::types::StatusResponse) -> serde_json::Value {
+    serde_json::json!({
+        "drivable": status.drivable,
+        "reconnecting": status.reconnecting,
+        "released": status.released,
+        "runner": status.runner,
+        "locked": status.locked,
+        "owner": status.owner,
+        "setup_phase": status.setup_phase,
+        "setup_message": status.setup_message,
+        "setup_blocked_on": status.setup_blocked_on,
+        "hint": status.hint,
+    })
+}
+
+/// Whether a waiting reconnect is finished, and why.
+fn reconnect_wait_outcome(status: &crate::types::StatusResponse) -> Option<&'static str> {
+    if ["ended_on_phone", "runner_parked", "human_handoff"].iter()
+        .any(|key| status.extra.get(*key).and_then(serde_json::Value::as_bool) == Some(true)) {
+        return Some("stopped");
+    }
+
+    if status
+        .setup_blocked_on
+        .as_deref()
+        .is_some_and(|blocker| !blocker.trim().is_empty())
+    {
+        return Some("blocked");
+    }
+    (status.drivable == Some(true) && status.reconnecting != Some(true)).then_some("drivable")
+}
+
+/// How long a blocker other than the passcode must persist, while the daemon
+/// is still reconnecting, before a waiting reconnect reports it. Early phases
+/// report transient ones: on a Wi-Fi phone `ddi-wait` says `usb` for a moment
+/// before the tunnel comes up and the runner build starts.
+const RECONNECT_BLOCKER_SETTLE: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// Whether a blocker seen for `held` should end the wait now.
+fn reconnect_blocker_final(
+    status: &crate::types::StatusResponse,
+    held: std::time::Duration,
+) -> bool {
+    let blocker = status.setup_blocked_on.as_deref().unwrap_or_default();
+    status.reconnecting != Some(true)
+        || blocker.starts_with("needs_passcode")
+        || held >= RECONNECT_BLOCKER_SETTLE
 }
 
 /// Parameters for [`PhoneHandler::phone_run_start`].
@@ -1589,17 +1671,28 @@ impl PhoneHandler {
         annotations(read_only_hint=true,open_world_hint=true),
         description="Read one current element's AX value without tapping, focusing, waking or taking an owner lease. Give exactly one identifier or exact label from a fresh screen, optionally kind; ambiguity refuses. Use this when phone_elements marks value_truncated or the task needs full field text. Returns one bounded value in text with source/completeness metadata; complete means the AX attribute was not cut by this API, not that the app exposes its full document. A smaller max_utf16 returns truncated:true. Secure fields refuse; old runners without ipu:valueRead refuse rather than promote a preview. Owner/privacy changes withhold the value."
     )]
-    async fn phone_read_value(&self,Parameters(params):Parameters<ReadValueParams>)->CallToolResult {
-        let body=serde_json::to_value(params).unwrap_or_else(|_|serde_json::json!({}));
-        match self.daemon.read_value(&body).await {
-            Ok(response)=>{
-                let Some(body)=response.json.as_ref().filter(|body|response.ok()&&body.get("value").is_some()) else{return daemon_read_result(&response);};
-                // One copy of the potentially long value in text; structured output is metadata only.
-                let mut metadata=body.clone();metadata.as_object_mut().unwrap().remove("value");
-                let mut result=CallToolResult::success(vec![Content::text(body.to_string())]);
-                result.structured_content=Some(metadata);result
+    async fn phone_read_value(&self, Parameters(params): Parameters<ReadValueParams>) -> CallToolResult {
+        let limit = params.max_utf16.unwrap_or(8192);
+        let request = serde_json::to_value(params).unwrap_or_else(|_| serde_json::json!({}));
+        match self.daemon.read_value(&request).await {
+            Ok(response) => {
+                if let Some(body) = response.json.as_ref().filter(|body| response.ok() && body["ok"] == true
+                    && iu_core::value_read::valid_contract(body, limit)) {
+                    // Hosts may show only structuredContent when it exists.
+                    // A content-only result keeps the full value visible once
+                    // in every output mode, without a competing metadata copy.
+                    return CallToolResult::success(vec![Content::text(body.to_string())]);
+                }
+                if let Some(body) = response.json.as_ref().filter(|body| body["ok"] == false) {
+                    let mut safe = body.clone();
+                    if let Some(object) = safe.as_object_mut() { object.remove("value"); }
+                    let mut result = CallToolResult::error(vec![Content::text(safe.to_string())]);
+                    result.structured_content = Some(safe);
+                    return result;
+                }
+                CallToolResult::error(vec![Content::text("full value contract unavailable; no preview was promoted to a complete value")])
             }
-            Err(_)=>CallToolResult::error(vec![Content::text("value read failed; no input was sent and no preview was promoted to a complete value")]),
+            Err(_) => CallToolResult::error(vec![Content::text("value read failed; no input was sent and no preview was promoted to a complete value")]),
         }
     }
 
@@ -1623,7 +1716,7 @@ impl PhoneHandler {
         block means a system alert is up: answer it with an `alert` step, taps on alerts do not act. \
         ocr=auto adds text read from pixels when the tree has no interactive rows (games, \
         canvases), ocr=force always; such rows have no element, tap their x/y with phone_tap. \
-        value_truncated marks an incomplete field preview; use phone_read_value for its bounded full AX value. Requires phone_status drivable=true."
+        value_truncated marks an incomplete preview; use phone_read_value for the bounded full AX value. Requires phone_status drivable=true."
     )]
     async fn phone_elements(
         &self,
@@ -1860,19 +1953,97 @@ impl PhoneHandler {
         Require phone_status released/offline and recovery_owner=daemon; inspect \
         hint/setup_blocked_on first. Do not reconnect while releasing/reconnecting \
         or a blocker remains. Once these conditions are met, call once, \
-        then poll phone_status until reconnecting=false and drivable=true; while it is \
-        reconnecting, report setup_phase/setup_message and obey setup_blocked_on. This tool \
+        then wait for the outcome: pass wait_secs (e.g. 180) to block until drivable=true, \
+        a blocker (setup_blocked_on), or the timeout, instead of polling phone_status; \
+        `wait.outcome` is drivable, blocked, stopped or timeout. While it is reconnecting, report \
+        setup_phase/setup_message and obey setup_blocked_on. This tool \
         never accepts a UDID and cannot switch devices. \
         An externally managed runner returns an operator-owned recovery error."
     )]
-    async fn phone_reconnect(&self) -> CallToolResult {
+    async fn phone_reconnect(
+        &self,
+        Parameters(params): Parameters<ReconnectParams>,
+    ) -> CallToolResult {
         self.progress_reset();
-        match self.daemon.reconnect().await {
-            Ok(body) => CallToolResult::success(vec![Content::text(body)]),
-            Err(e) => {
-                CallToolResult::error(vec![Content::text(format!("reconnect failed: {e:#}"))])
+        let wait_secs = match params.wait_secs {
+            None | Some(0) => None,
+            Some(secs) if secs > RECONNECT_MAX_WAIT_SECS => {
+                return CallToolResult::error(vec![Content::text(format!(
+                    "wait_secs must be between 1 and {RECONNECT_MAX_WAIT_SECS}; nothing was sent"
+                ))]);
             }
+            Some(secs) => Some(secs),
+        };
+        let body = match self.daemon.reconnect().await {
+            Ok(body) => body,
+            Err(e) => {
+                return CallToolResult::error(vec![Content::text(format!(
+                    "reconnect failed: {e:#}"
+                ))])
+            }
+        };
+        let Some(wait_secs) = wait_secs else {
+            return CallToolResult::success(vec![Content::text(body)]);
+        };
+        let started = tokio::time::Instant::now();
+        let deadline = started + std::time::Duration::from_secs(wait_secs);
+        let mut last_status = None;
+        let mut last_error: Option<String> = None;
+        let mut blocked_since: Option<(String, tokio::time::Instant)> = None;
+        let outcome = loop {
+            if tokio::time::Instant::now() >= deadline { break "timeout"; }
+            let status = match tokio::time::timeout_at(deadline, self.daemon.status()).await {
+                Ok(status) => status,
+                Err(_) => {
+                    last_error = Some("status read exceeded the remaining wait budget".to_string());
+                    break "timeout";
+                }
+            };
+            match status {
+                Ok(status) => {
+                    let done = reconnect_wait_outcome(&status);
+                    let finished = match done {
+                        Some("blocked") => {
+                            let blocker = status.setup_blocked_on.clone().unwrap_or_default();
+                            let since = match &blocked_since {
+                                Some((seen, at)) if *seen == blocker => *at,
+                                _ => tokio::time::Instant::now(),
+                            };
+                            blocked_since = Some((blocker, since));
+                            reconnect_blocker_final(&status, since.elapsed())
+                        }
+                        Some(_) => true,
+                        None => {
+                            blocked_since = None;
+                            false
+                        }
+                    };
+                    last_status = Some(status);
+                    last_error = None;
+                    if finished {
+                        break done.unwrap_or("drivable");
+                    }
+                }
+                Err(e) => last_error = Some(format!("{e:#}")),
+            }
+            let now = tokio::time::Instant::now();
+            if now >= deadline {
+                break "timeout";
+            }
+            tokio::time::sleep(std::cmp::min(RECONNECT_POLL, deadline - now)).await;
+        };
+        let reconnect = serde_json::from_str::<serde_json::Value>(&body)
+            .unwrap_or(serde_json::Value::String(body));
+        let mut wait = serde_json::json!({
+            "outcome": outcome,
+            "waited_secs": started.elapsed().as_secs(),
+            "status": last_status.as_ref().map(reconnect_brief),
+        });
+        if let Some(error) = last_error {
+            wait["status_error"] = error.into();
         }
+        let text = serde_json::json!({"reconnect": reconnect, "wait": wait}).to_string();
+        CallToolResult::success(vec![Content::text(text)])
     }
 
     #[tool(
@@ -3367,6 +3538,8 @@ pub(crate) fn phone_steps_request(steps: Vec<PhoneStep>) -> Result<serde_json::V
     const MAX_STEPS: usize = 24;
     const MAX_AFTER_MS: u64 = 3_000;
     const MAX_WAIT_MS: u64 = 30_000;
+    // An OCR wait (a game's loading screen) may run longer; the daemon checks the same.
+    const MAX_OCR_WAIT_MS: u64 = 60_000;
     const MAX_DECLARED_WAIT_MS: u64 = 60_000;
 
     if steps.is_empty() {
@@ -3831,14 +4004,31 @@ pub(crate) fn phone_steps_request(steps: Vec<PhoneStep>) -> Result<serde_json::V
                 timeout_ms,
                 poll_ms,
             } => {
-                if expect.application.is_none()
-                    && expect.present.is_empty()
-                    && expect.absent.is_empty()
-                {
+                let tree = expect.application.is_some()
+                    || !expect.present.is_empty()
+                    || !expect.absent.is_empty();
+                let ocr = !expect.ocr_present.is_empty() || !expect.ocr_absent.is_empty();
+                if !tree && !ocr {
                     return Err(format!(
-                        "steps[{index}].expect must include application, present, or absent; no action was sent"
+                        "steps[{index}].expect must include application, present, absent, ocr_present, or ocr_absent; no action was sent"
                     ));
                 }
+                if tree && ocr {
+                    return Err(format!(
+                        "steps[{index}].expect mixes element locators with ocr_present/ocr_absent; use two wait_for steps; no action was sent"
+                    ));
+                }
+                if expect
+                    .ocr_present
+                    .iter()
+                    .chain(expect.ocr_absent.iter())
+                    .any(|text| text.trim().is_empty() || text.chars().count() > 200)
+                {
+                    return Err(format!(
+                        "steps[{index}] ocr_present/ocr_absent entries must be 1 to 200 characters of visible text; no action was sent"
+                    ));
+                }
+                let max_wait = if ocr { MAX_OCR_WAIT_MS } else { MAX_WAIT_MS };
                 if expect
                     .application
                     .as_ref()
@@ -3858,9 +4048,9 @@ pub(crate) fn phone_steps_request(steps: Vec<PhoneStep>) -> Result<serde_json::V
                         "steps[{index}] contains an empty element locator; no action was sent"
                     ));
                 }
-                if timeout_ms == 0 || timeout_ms > MAX_WAIT_MS {
+                if timeout_ms == 0 || timeout_ms > max_wait {
                     return Err(format!(
-                        "steps[{index}].timeout_ms must be between 1 and {MAX_WAIT_MS}; no action was sent"
+                        "steps[{index}].timeout_ms must be between 1 and {max_wait}; no action was sent"
                     ));
                 }
                 if !(50..=1_000).contains(&poll_ms) {
@@ -4110,6 +4300,11 @@ async fn with_flow_compat(daemon: &DaemonClient, body: String) -> String {
     if !body.contains("\"registry\"") {
         return body;
     }
+    let has_flows = serde_json::from_str::<serde_json::Value>(&body).ok().is_some_and(|value| {
+        value.get("registry").and_then(|registry| registry.get("flows"))
+            .and_then(serde_json::Value::as_array).is_some_and(|flows| !flows.is_empty())
+    });
+    if !has_flows { return body; }
     let installed = crate::compat::installed_apps(daemon).await;
     crate::registry::enrich_registry(body, installed.as_ref())
 }
@@ -5103,6 +5298,8 @@ mod tests {
                         visible: None,
                     }],
                     absent: vec![],
+                    ocr_present: vec![],
+                    ocr_absent: vec![],
                 },
                 timeout_ms: 2_000,
                 poll_ms: 100,
@@ -5384,6 +5581,8 @@ mod tests {
                 application: Some("设置".to_string()),
                 present: vec![],
                 absent: vec![],
+                ocr_present: vec![],
+                ocr_absent: vec![],
             },
             timeout_ms: 30_001,
             poll_ms: 100,
@@ -5398,6 +5597,8 @@ mod tests {
                 application: Some("设置".to_string()),
                 present: vec![],
                 absent: vec![],
+                ocr_present: vec![],
+                ocr_absent: vec![],
             },
             timeout_ms: 30_000,
             poll_ms: 100,
@@ -5417,12 +5618,74 @@ mod tests {
                     visible: None,
                 }],
                 absent: vec![],
+                ocr_present: vec![],
+                ocr_absent: vec![],
             },
             timeout_ms: 1_000,
             poll_ms: 100,
         }])
         .unwrap_err();
         assert!(empty_locator.contains("empty element locator"));
+    }
+
+    #[test]
+    fn a_waiting_reconnect_stops_on_drivable_or_a_blocker() {
+        let status = |value: serde_json::Value| -> crate::types::StatusResponse {
+            serde_json::from_value(value).unwrap()
+        };
+        let building = status(serde_json::json!({"ok": true, "drivable": false,
+            "reconnecting": true, "setup_phase": "building"}));
+        assert_eq!(reconnect_wait_outcome(&building), None);
+        // drivable is reported only once the reconnect itself has finished.
+        let racing = status(serde_json::json!({"ok": true, "drivable": true, "reconnecting": true}));
+        assert_eq!(reconnect_wait_outcome(&racing), None);
+        let ready = status(serde_json::json!({"ok": true, "drivable": true, "reconnecting": false}));
+        assert_eq!(reconnect_wait_outcome(&ready), Some("drivable"));
+        let blocked = status(serde_json::json!({"ok": true, "drivable": false,
+            "reconnecting": true, "setup_blocked_on": "needs_passcode_on_phone"}));
+        assert_eq!(reconnect_wait_outcome(&blocked), Some("blocked"));
+        // The passcode ends the wait at once; a transient early blocker only
+        // once it has held, or once the daemon stopped reconnecting.
+        let zero = std::time::Duration::ZERO;
+        assert!(reconnect_blocker_final(&blocked, zero));
+        let ddi = status(serde_json::json!({"ok": true, "drivable": false,
+            "reconnecting": true, "setup_blocked_on": "usb", "setup_phase": "ddi-wait"}));
+        assert_eq!(reconnect_wait_outcome(&ddi), Some("blocked"));
+        assert!(!reconnect_blocker_final(&ddi, zero));
+        assert!(reconnect_blocker_final(&ddi, RECONNECT_BLOCKER_SETTLE));
+        let gave_up = status(serde_json::json!({"ok": true, "drivable": false,
+            "reconnecting": false, "setup_blocked_on": "usb"}));
+        assert!(reconnect_blocker_final(&gave_up, zero));
+        let brief = reconnect_brief(&blocked);
+        assert_eq!(brief["setup_blocked_on"], "needs_passcode_on_phone");
+        assert_eq!(brief["drivable"], false);
+    }
+
+    #[test]
+    fn an_ocr_wait_reaches_the_daemon_and_may_wait_a_minute() {
+        let ocr = |present: Vec<&str>, application: Option<&str>, timeout_ms| {
+            phone_steps_request(vec![PhoneStep::WaitFor {
+                expect: PhoneUiExpectation {
+                    application: application.map(str::to_string),
+                    present: vec![],
+                    absent: vec![],
+                    ocr_present: present.into_iter().map(str::to_string).collect(),
+                    ocr_absent: vec![],
+                },
+                timeout_ms,
+                poll_ms: 500,
+            }])
+        };
+        let request = ocr(vec!["长按自动"], None, 60_000).expect("an OCR wait up to 60 s");
+        assert_eq!(
+            request["steps"][0]["expect"],
+            serde_json::json!({"ocr_present": ["长按自动"]})
+        );
+        assert!(ocr(vec!["长按自动"], None, 60_001).unwrap_err().contains("timeout_ms"));
+        assert!(ocr(vec!["长按自动"], Some("设置"), 5_000)
+            .unwrap_err()
+            .contains("two wait_for steps"));
+        assert!(ocr(vec![" "], None, 5_000).is_err());
     }
 
     #[test]
@@ -5433,6 +5696,8 @@ mod tests {
                     application: Some("设置".to_string()),
                     present: vec![],
                     absent: vec![],
+                    ocr_present: vec![],
+                    ocr_absent: vec![],
                 },
                 timeout_ms: 10_000,
                 poll_ms: 100,

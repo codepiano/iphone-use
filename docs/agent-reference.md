@@ -102,7 +102,9 @@ simulator start` again.
 
 **Reconnect** only when the current task needs the phone, `recovery_owner` is
 `daemon`, blockers are resolved, and no release/reconnect is in progress. Send
-it once, then poll status until `drivable:true`:
+it once, then poll status until `drivable:true` (MCP: `phone_reconnect` with
+`wait_secs`, e.g. 180, does the polling and returns `wait.outcome`
+`drivable` / `blocked` / `timeout` with the compact final status):
 
 ```bash
 curl -s -H "$AUTH" -H "$MUTATION" -H 'Content-Type: application/json' \
@@ -375,7 +377,7 @@ Coordinates are normalized `[0,1]` (`0,0` top-left).
 
 ```jsonc
 {"type":"launch_app","bundle":"com.apple.Health"}       // or "name":"健康" for built-in apps
-{"type":"launch_app","app":"微信"}                       // any app's exact name; 422 ambiguous_app|app_not_found|app_not_installed (+candidates), nothing sent
+{"type":"launch_app","app":"微信"}                       // any app's exact name, or a loose name that starts a word of exactly ONE installed app ("idol ludo" → Idol Ludo Board); the step result's `resolved` {app,name,bundle_id,match} says which; 422 ambiguous_app|app_not_found|app_not_installed (+candidates), nothing sent
 {"type":"open_url","url":"https://example.com/page"}    // http/https always; other schemes only if the owner allows them (403 url_scheme_not_allowed)
 {"type":"tap","element":3,"snapshot":"…"}               // from the SAME elements read
 {"type":"tap","label":"新备忘录"}                         // exact, unique; add "kind":"Button" if a StaticText shares it
@@ -653,6 +655,13 @@ is no longer cached). The action result and the observation are separate facts:
 - Keep `pause` for short animation gaps (maximum 3000 ms). For a slow page such
   as iPhone Storage, use a semantic `wait_for` with `timeout_ms:30000` on the
   expected result instead of chaining pauses.
+- Canvas screens (games, Flutter/Unity) have no labels to wait on. Wait for
+  their text by OCR instead: `{"kind":"wait_for","expect":{"ocr_present":["长按自动"]},"timeout_ms":60000}`
+  (`ocr_absent` for a caption that must disappear, e.g. `Loading`). Each entry
+  matches a recognized line containing it, ignoring case and spaces; each poll
+  is a screenshot plus Vision OCR (about 1 s). An OCR wait may run up to
+  60000 ms, cannot be mixed with `application`/`present`/`absent` in the same
+  step, and on timeout its `observation` lists the `lines` it did read.
 - A failed `wait_for` carries `observation`: `read:false` proves nothing;
   `read:true, stale:true` is the last valid view; plain `read:true` means the
   condition really was not met. Locators an empty tree would have "satisfied" are
@@ -939,7 +948,7 @@ worked example below.
 
 ## MCP specifics
 
-41 tools (one, `phone_screen_frame`, is hidden from the model and used only by the live screen panel): `phone_status`, `phone_screen`, `phone_capabilities`, `phone_reconnect`, `phone_hold`,
+41 tools (one, `phone_screen_frame`, is hidden from the model and used only by the live screen panel): `phone_status`, `phone_screen`, `phone_capabilities`, `phone_read_value`, `phone_reconnect`, `phone_hold`,
 `phone_release_owner`, `phone_login`, `phone_apps`, `phone_screenshot`, `phone_elements`, `phone_home_layout`, `phone_instances`, `phone_tap`,
 `phone_tap_element`, `phone_tap_label`, `phone_scroll`, `phone_scroll_find`, `phone_collect_list`, `phone_type`,
 `phone_key`, `phone_shortcut`, `phone_run_steps`, `phone_jev_run`,
@@ -1612,3 +1621,31 @@ The live panel waits for its opening tool's selection and uses it for frames
 and Home; a host that does not deliver tool input/result leaves the panel
 waiting, rather than guessing another target. This selects an installed daemon;
 it never changes a daemon's phone configuration or bypasses handoff/privacy/owner gates.
+
+
+All observing batches retain the privacy generation from request entry. A private
+on/off transition cancels that observation and later steps; queued response
+bodies withhold screen observations and wait verdicts while preserving known action delivery receipts.
+`phone_reconnect(wait_secs=N)` bounds each status read by the remaining wait
+budget and returns `stopped` for recorded phone exit, parking or human handoff.
+Only the initial reconnect request can start recovery; waiting never sends a
+second reconnect.
+
+### Complete selected AX values
+
+`POST /agent/value` (MCP `phone_read_value`) reads one current AX value selected
+by exactly one `identifier` or exact `label`, optionally `kind`. It never taps,
+focuses, unlocks, or takes a control lease. Ambiguous selectors refuse. Secure
+fields require a person; an older Runner without `ipu:valueRead` refuses rather
+than passing off a snapshot preview as full text.
+
+`max_utf16` is 1–65536 (default 8192). The reply carries `source`, `complete`,
+`truncated`, `utf16_length`, `returned_utf16_length` and `limit_utf16`. Clipping
+preserves surrogate pairs. Complete means this API did not clip the AX attribute;
+it does not prove that an app exposes its entire document. Owner changes, lease
+expiry, privacy changes or a control transition withhold an in-flight or queued
+value. Same-owner renewal and cleanup of an already expired owner preserve fresh
+permitted reads. Plan a fresh read only after checking current status.
+
+The Native complete-value route is explicitly opted into with `complete=1`;
+existing attribute/value snapshot reads and POST value writes keep their contracts.
