@@ -43,6 +43,7 @@ import CryptoKit
   private weak var firstField: UITextField?
   private weak var multilineField: UITextView?
   private weak var secureField: UITextField?
+  private weak var metadataControl: UIButton?
   private var firstEvents = 0, secondEvents = 0, returnEvents = 0
   private var vetoMode = "off", vetoA = 0, vetoMulti = 0
   func textField(_ field: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
@@ -73,6 +74,7 @@ import CryptoKit
       "foreground":window?.windowScene?.activationState == .foregroundActive,
       "fields_present":firstField != nil && secondField != nil && multilineField != nil && secureField != nil,
       "fields":["a":field(firstField?.text),"b":field(secondField?.text),"multi":field(multilineField?.text),"secure":field(secureField?.text)],
+      "metadata_enabled":metadataControl?.isEnabled ?? true, "metadata_selected":metadataControl?.isSelected ?? false,
       "selection_a":firstField?.selectedTextRange.map { ["location":firstField!.offset(from:firstField!.beginningOfDocument,to:$0.start),"length":firstField!.offset(from:$0.start,to:$0.end)] } ?? [:],
       "events_a":firstEvents,"events_b":secondEvents,"returns":returnEvents,"shifted":shifted,
       "focus_a":firstField?.isFirstResponder ?? false,"focus_b":secondField?.isFirstResponder ?? false,
@@ -173,7 +175,15 @@ import CryptoKit
     secure.accessibilityLabel = "Secure draft"
     secure.isSecureTextEntry = true
     secure.borderStyle = .roundedRect
-    let stack = UIStackView(arrangedSubviews: [first, second, multiline, secure])
+    var fields: [UIView] = [first, second, multiline, secure]
+    if ProcessInfo.processInfo.arguments.contains("--metadata-controls") {
+      let control = UIButton(type:.system)
+      control.setTitle("Metadata control",for:.normal)
+      control.accessibilityIdentifier = "metadata-control"
+      control.isEnabled = false; control.isSelected = true
+      metadataControl = control; fields.append(control)
+    }
+    let stack = UIStackView(arrangedSubviews: fields)
     stack.axis = .vertical; stack.spacing = 30
     stack.translatesAutoresizingMaskIntoConstraints = false
     controller.view.addSubview(stack)
@@ -306,6 +316,7 @@ def main():
     parser.add_argument("--list-recovery", action="store_true", help="verify scoped list diagnostics and interruption after native swipe ACK")
     parser.add_argument("--video", action="store_true", help="verify native H.264 via WorkBuddy resources and independent ffmpeg decode (requires --hosts)")
     parser.add_argument("--expect-boundary-isolation", action="store_true", help="experimental Runner must stop at A20/B0 in reached focus-switch faults")
+    parser.add_argument("--metadata-controls", action="store_true", help="compare disabled/selected UIKit control against independent App state")
     parser.add_argument("--long-boundaries", action="store_true", help="verify long-field App veto and public MCP append")
     parser.add_argument("--runtime", default="com.apple.CoreSimulator.SimRuntime.iOS-27-0")
     parser.add_argument("--device-type", default="com.apple.CoreSimulator.SimDeviceType.iPhone-17")
@@ -418,7 +429,7 @@ def main():
 
         # The fixture is test setup, not a launch benchmark. Start it once through simctl;
         # cold XCTest app activation can otherwise exhaust the guard test's request budget.
-        command("xcrun", "simctl", "launch", udid, BUNDLE)
+        command("xcrun", "simctl", "launch", udid, BUNDLE, *(["--metadata-controls"] if args.metadata_controls else []))
         wait_for(lambda: call(prefix + "/wda/activeAppInfo").get("bundleId") == BUNDLE, "fixture foreground")
 
         def settle_fixture():
@@ -436,6 +447,38 @@ def main():
 
         def find(identifier):
             return call(prefix + "/element", {"using": "accessibility id", "value": identifier})["ELEMENT"]
+
+        def app_receipt(veto=None):
+            documents = Path(command("xcrun","simctl","get_app_container",udid,BUNDLE,"data"))/"Documents"
+            documents.mkdir(exist_ok=True)
+            nonce = secrets.token_hex(16)
+            request={"nonce":nonce}
+            if veto is not None: request["veto"]=veto
+            (documents/"boundary-state-command.json").write_text(json.dumps(request))
+            observed = {}
+            def fresh():
+                nonlocal observed
+                try: observed=json.loads((documents/"boundary-state.json").read_text())
+                except (OSError,ValueError): return False
+                return observed.get("nonce")==nonce
+            wait_for(fresh,"fresh App-owned receipt")
+            assert observed.get("foreground") is True and observed.get("fields_present") is True,observed
+            return observed
+
+
+        if args.metadata_controls:
+            control=find("metadata-control")
+            receipt=app_receipt()
+            enabled=call(prefix+f"/element/{control}/attribute/enabled")
+            selected=call(prefix+f"/element/{control}/attribute/selected")
+            evidence={"enabled":enabled,"selected":selected,"app_receipt":receipt}
+            (out/"metadata-control.json").write_text(json.dumps(evidence,indent=2)+"\n")
+            assert receipt["metadata_enabled"] is False and receipt["metadata_selected"] is True,receipt
+            assert enabled is False and selected is True,evidence
+            secure=find("field-secure")
+            assert call(prefix+f"/element/{secure}/attribute/enabled") is True
+            assert call(prefix+f"/element/{secure}/attribute/type")=="XCUIElementTypeSecureTextField"
+            reports.append({"case":"disabled-selected-control-matches-App-state","passed":True,"evidence":evidence})
 
         first, second = find("field-a"), find("field-b")
         call(prefix + f"/element/{first}/click", {})
@@ -551,23 +594,6 @@ def main():
                 call(prefix + f"/element/{target}/clear", {"inputTarget": target})
                 assert call(prefix + f"/element/{first}/attribute/value") in (None, "")
                 return len(before)
-
-            def app_receipt(veto=None):
-                documents = Path(command("xcrun","simctl","get_app_container",udid,BUNDLE,"data"))/"Documents"
-                documents.mkdir(exist_ok=True)
-                nonce = secrets.token_hex(16)
-                request={"nonce":nonce}
-                if veto is not None: request["veto"]=veto
-                (documents/"boundary-state-command.json").write_text(json.dumps(request))
-                observed = {}
-                def fresh():
-                    nonlocal observed
-                    try: observed=json.loads((documents/"boundary-state.json").read_text())
-                    except (OSError,ValueError): return False
-                    return observed.get("nonce")==nonce
-                wait_for(fresh,"fresh App-owned receipt")
-                assert observed.get("foreground") is True and observed.get("fields_present") is True,observed
-                return observed
 
             def app_trial(before, after):
                 assert before["run_id"]==after["run_id"] and before["pid"]==after["pid"],"App process/trial changed"
@@ -1472,6 +1498,7 @@ def main():
     expected = (20 if mcp_binary else 19 if daemon_binary else 6) + ((3 if mcp_binary else 2) if args.recovery else 0) + 2 * int(args.hosts) + 3 * int(args.input_privacy) + 2 * int(args.observation_scope) + int(args.native_scope) + 4 * int(args.video) + 3 * int(args.list_recovery) + int(args.list_deadline)
     expected += 2 * int(args.expect_boundary_isolation)
     expected += 2 * int(args.long_boundaries)
+    expected += int(args.metadata_controls)
     return 0 if len(reports) == expected and all(r["passed"] for r in reports) and not cleanup_errors else 1
 
 

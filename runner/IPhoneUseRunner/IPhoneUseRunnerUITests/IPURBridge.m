@@ -485,11 +485,11 @@ static BOOL IPURUseRequestCache(void)
 
 + (void)probeBoundaryMetadataForElement:(id)element
 {
-  // One read-only calibration per experimental Runner. Values, labels and
+  // Bounded read-only calibration per experimental Runner. Values, labels and
   // identifiers never enter the log, and no probe result admits an action.
-  static BOOL reported = NO;
-  if (reported) return;
-  reported = YES;
+  static NSUInteger reports = 0;
+  if (reports >= 3) return;
+  reports += 1;
   CFAbsoluteTime started = CFAbsoluteTimeGetCurrent();
   @try {
     id client = [self axClient];
@@ -501,6 +501,28 @@ static BOOL IPURUseRequestCache(void)
     NSMutableArray *wanted = [NSMutableArray array];
     for (id key in [self snapshotAttributes]) {
       if (![[key description] hasSuffix:@"Value"]) [wanted addObject:key];
+    }
+    // Snapshot boolean properties can use is-prefixed key paths even when
+    // their Objective-C accessors omit the prefix. Probe both mappings here;
+    // this calibration still never participates in an input decision.
+    Class snapshotClass = NSClassFromString(@"XCElementSnapshot");
+    SEL mapper = NSSelectorFromString(@"axAttributesForElementSnapshotKeyPaths:isMacOS:");
+    if ([snapshotClass respondsToSelector:mapper]) {
+      NSMutableDictionary *booleanMappings = [NSMutableDictionary dictionary];
+      for (NSString *path in @[@"enabled",@"isEnabled",@"selected",@"isSelected",@"hasKeyboardFocus"]) {
+        id mapped = ((IPURMsgSendMapAttributes)objc_msgSend)(snapshotClass,mapper,@[path],NO);
+        booleanMappings[path] = [mapped description] ?: @"nil";
+      }
+      NSLog(@"ipu-boundary-boolean-mappings %@",booleanMappings);
+      id extra = ((IPURMsgSendMapAttributes)objc_msgSend)(snapshotClass,mapper,
+        @[@"elementType",@"isEnabled",@"isSelected"],NO);
+      if ([extra isKindOfClass:NSSet.class]) extra = [extra allObjects];
+      if ([extra isKindOfClass:NSArray.class]) {
+        for (id key in extra) {
+          if (![wanted containsObject:key])
+            [wanted addObject:key];
+        }
+      }
     }
     NSError *error = nil;
     id raw = ((id (*)(id,SEL,id,id,NSError **))objc_msgSend)(client,selector,element,wanted,&error);
@@ -514,9 +536,84 @@ static BOOL IPURUseRequestCache(void)
     NSLog(@"ipu-boundary-metadata-probe ms=%.1f ok=%d count=%lu types=%@",
       (CFAbsoluteTimeGetCurrent()-started)*1000, error == nil && [raw isKindOfClass:NSDictionary.class],
       (unsigned long)types.count,types);
+    if ([raw isKindOfClass:NSDictionary.class]) {
+      id traits = raw[@"XC_kAXXCAttributeTraits"], frame = raw[@"XC_kAXXCAttributeFrame"];
+      NSLog(@"ipu-boundary-metadata-shape type=%@ automationType=%@ baseType=%@ frameKeys=%@ enabled=%@ selected=%@",
+        raw[@"XC_kAXXCAttributeElementType"],
+        raw[@"XC_kAXXCAttributeAutomationType"],raw[@"XC_kAXXCAttributeElementBaseType"],
+        [frame isKindOfClass:NSDictionary.class] ? [[frame allKeys] sortedArrayUsingSelector:@selector(compare:)] : @[],
+        [traits isKindOfClass:NSNumber.class] ? @(([traits unsignedLongLongValue] & UIAccessibilityTraitNotEnabled) == 0) : @"unavailable",
+        [traits isKindOfClass:NSNumber.class] ? @(([traits unsignedLongLongValue] & UIAccessibilityTraitSelected) != 0) : @"unavailable");
+    }
   } @catch (__unused NSException *exception) {
     NSLog(@"ipu-boundary-metadata-probe unavailable; input guards unchanged");
   }
+}
+
++ (nullable NSDictionary<NSString *, id> *)inputBoundaryForElement:(id)element
+{
+  // Experimental only. Fetch fresh metadata and the complete AX value together;
+  // never synthesize a missing focus, trait, identity or geometry property.
+  @try {
+    id client = [self axClient];
+    SEL selector = NSSelectorFromString(@"attributesForElement:attributes:error:");
+    NSMethodSignature *shape = [client methodSignatureForSelector:selector];
+    if (shape == nil || shape.numberOfArguments != 5 || shape.methodReturnType[0] != '@' ||
+        [shape getArgumentTypeAtIndex:2][0] != '@' || [shape getArgumentTypeAtIndex:3][0] != '@' ||
+        strcmp([shape getArgumentTypeAtIndex:4], "^@") != 0) return nil;
+    NSError *error = nil;
+    id raw = ((id (*)(id,SEL,id,id,NSError **))objc_msgSend)(client,selector,element,@[
+      @"XC_kAXXCAttributeAutomationType",@"XC_kAXXCAttributeTraits",@"XC_kAXXCAttributeFrame",
+      @"XC_kAXXCAttributeHasNativeFocus",@"XC_kAXXCAttributeIdentifier",@"XC_kAXXCAttributeLabel",
+      @"XC_kAXXCAttributeValue",@"XC_kAXXCAttributePlaceholderValue"],&error);
+    if (error != nil || ![raw isKindOfClass:NSDictionary.class]) return nil;
+    id type = raw[@"XC_kAXXCAttributeAutomationType"], traits = raw[@"XC_kAXXCAttributeTraits"];
+    id frame = raw[@"XC_kAXXCAttributeFrame"], focus = raw[@"XC_kAXXCAttributeHasNativeFocus"];
+    id identifier = raw[@"XC_kAXXCAttributeIdentifier"], label = raw[@"XC_kAXXCAttributeLabel"];
+    if (![type isKindOfClass:NSNumber.class] || ![traits isKindOfClass:NSNumber.class] ||
+        ![frame isKindOfClass:NSDictionary.class] || ![focus isKindOfClass:NSNumber.class] ||
+        CFGetTypeID((__bridge CFTypeRef)focus) != CFBooleanGetTypeID() ||
+        (identifier != NSNull.null && ![identifier isKindOfClass:NSString.class]) ||
+        (label != NSNull.null && ![label isKindOfClass:NSString.class])) return nil;
+    NSInteger number = [type integerValue];
+    if (number < 1 || number > 82 || [type doubleValue] != (double)number) return nil;
+    NSMutableDictionary *rect = [NSMutableDictionary dictionary];
+    for (NSString *key in @[@"X",@"Y",@"Width",@"Height"]) {
+      id value = frame[key];
+      if (![value isKindOfClass:NSNumber.class] || !isfinite([value doubleValue])) return nil;
+      rect[[key lowercaseString]] = value;
+    }
+    if ([rect[@"width"] doubleValue] < 0 || [rect[@"height"] doubleValue] < 0) return nil;
+    NSString *typeName = [self elementTypeName:number];
+    id value = raw[@"XC_kAXXCAttributeValue"], placeholder = raw[@"XC_kAXXCAttributePlaceholderValue"];
+    if (placeholder != nil && placeholder != NSNull.null && ![placeholder isKindOfClass:NSString.class]) return nil;
+    BOOL secure = [typeName isEqualToString:@"XCUIElementTypeSecureTextField"];
+    if (!secure && value != NSNull.null && ![value isKindOfClass:NSString.class]) return nil;
+    if (!secure && [value isKindOfClass:NSString.class] && [value length] > 65536) return nil;
+    // AX may return a placeholder as its value. Preserve the existing complete
+    // snapshot disambiguation, including text deliberately equal to a placeholder.
+    if (!secure && [placeholder isKindOfClass:NSString.class] && [placeholder length] > 0 &&
+        [value isKindOfClass:NSString.class] && [value isEqualToString:placeholder]) return nil;
+    // Use the trait constants exported by the loaded Accessibility runtime,
+    // the same symbols XCTest imports. No SDK-specific numeric bit positions.
+    const unsigned long long *notEnabled = dlsym(RTLD_DEFAULT,"kAXNotEnabledTrait");
+    const unsigned long long *selectedTrait = dlsym(RTLD_DEFAULT,"kAXSelectedTrait");
+    const unsigned long long *textEntry = dlsym(RTLD_DEFAULT,"kAXTextEntryTrait");
+    const unsigned long long *editing = dlsym(RTLD_DEFAULT,"kAXIsEditingTrait");
+    if (notEnabled == NULL || selectedTrait == NULL || textEntry == NULL || editing == NULL ||
+        *notEnabled == 0 || *selectedTrait == 0 || *textEntry == 0 || *editing == 0) return nil;
+    unsigned long long flags = [traits unsignedLongLongValue];
+    BOOL enabled = (flags & *notEnabled) == 0;
+    BOOL selected = (flags & *selectedTrait) != 0;
+    BOOL keyboardFocus = (flags & *textEntry) != 0 && (flags & *editing) != 0;
+    return @{@"type":typeName,@"rawIdentifier":identifier,@"label":label,
+      @"rect":rect,@"isEnabled":enabled ? @"1" : @"0",
+      @"isSelected":selected ? @"1" : @"0",
+      @"isFocused":([focus boolValue] || keyboardFocus) ? @"1" : @"0",
+      @"value":secure ? (id)NSNull.null : value,
+      @"value_truncated":@(secure),@"placeholderValue":placeholder ?: NSNull.null,
+      IPURNodeAXElementKey:element};
+  } @catch (__unused NSException *exception) { return nil; }
 }
 
 + (NSDictionary *)probeAXInsertForElement:(id)element value:(NSString *)value

@@ -401,6 +401,7 @@ extension RunnerTests {
 
   private func elementAttribute(_ id: String, _ name: String) throws -> HTTPResponse {
     let node = try freshNode(id)
+    if name == "enabled", let ax = node.axElement { IPURBridge.probeBoundaryMetadata(element: ax) }
     let screen = windowSizePoints()
     func orNull(_ value: Any?) -> Any { value ?? NSNull() }
     switch name {
@@ -1302,7 +1303,14 @@ extension RunnerTests {
       guardReads += 1
       IPURBridge.invalidateRequestCache()
       elements.prune()
-      let current = try timed("InputSnapshot") { try freshNode(token) }
+      guard let stored = elements.node(token) else { throw RunnerError.staleElement(token) }
+      let current: UINode
+      if let ax = stored.axElement,
+          let raw = timed("InputMetadata", { IPURBridge.inputBoundary(element: ax) }) {
+        current = UINode(raw: raw, parent: nil, pid: stored.pid)
+      } else {
+        current = try timed("InputSnapshot") { try freshNode(token) }
+      }
       guard let originalAX = current.axElement, IPURBridge.pid(forAXElement: originalAX) == original.pid else {
         throw RunnerError.failed("original AX process changed")
       }
@@ -1352,7 +1360,7 @@ extension RunnerTests {
       return (after, value)
     }
     defer {
-      let parts = ["InputSnapshot","InputGeometry","InputFullValue","InputInsert","Foreground","ActiveApps","ViewService"].compactMap { name -> String? in
+      let parts = ["InputMetadata","InputSnapshot","InputGeometry","InputFullValue","InputInsert","Foreground","ActiveApps","ViewService"].compactMap { name -> String? in
         guard let entry = requestTiming[name] else { return nil }
         return "\(name)=\(String(format: "%.1f", entry.ms))ms/\(entry.calls)"
       }.joined(separator: " ")
@@ -1380,6 +1388,7 @@ extension RunnerTests {
       }
       return .value(NSNull(), headers:["X-IPU-Gesture":"target-bound-ax-characters", "X-IPU-Input-Boundary-Checks":String(guardReads),"X-IPU-Full-Value-Reads":String(fullValueReads)])
     } catch {
+      NSLog("ipu-character-stop reason=%@", String(describing: error))
       throw RunnerError.failed("experimental original-field input stopped; outcome unknown; no fallback or replay")
     }
   }
