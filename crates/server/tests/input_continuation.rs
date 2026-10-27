@@ -645,16 +645,19 @@ fn completing_input_only_renews_its_existing_lease_and_never_reclaims_ownership(
                         epoch,
                         "in-flight renewal must not start a new ownership incarnation"
                     );
-                    let (status, result) = f
-                        .call(
-                            "/agent/input",
-                            Some("a"),
-                            Some(json!({"type":"text","continue_token":body["continue_token"]})),
-                            false,
-                        )
-                        .await;
+                    assert!(body.get("continue_token").is_none(), "expired input cannot issue resumable work: {body}");
+                    assert!(std::time::Instant::now().saturating_duration_since(
+                        f.state.owner.lock().unwrap().as_ref().unwrap().last_seen) >= Duration::from_secs(f.state.owner_lease_secs),
+                        "completion must not revive the expired owner");
+                    assert_eq!(f.count("/wda/keys"), 1);
+                    assert_eq!(*f.text.lock().unwrap(), "字".repeat(200));
+                    // A deliberate new request may claim a new incarnation;
+                    // it must not silently finish the expired request's tail.
+                    let (status, result) = f.call("/agent/input", Some("a"),
+                        Some(json!({"type":"text","text":"fresh","budget_ms":6000})), false).await;
                     assert_eq!(status, StatusCode::OK, "{result}");
-                    assert_eq!(*f.text.lock().unwrap(), "字".repeat(500));
+                    assert!(f.state.owner_epoch.load(std::sync::atomic::Ordering::Acquire) > epoch);
+                    assert_eq!(*f.text.lock().unwrap(), "字".repeat(200)+"fresh");
                 }
                 _ => unreachable!(),
             }

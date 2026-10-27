@@ -9783,12 +9783,12 @@ fn capture_input_scope(state: &AppState, headers: &HeaderMap, privacy_epoch: u64
 
 fn request_scope_refusal(state: &AppState, scope: Option<&crate::input_continuation::Scope>) -> Option<(&'static str,&'static str)> {
     let Some(scope)=scope else{return Some(("input_owner_changed","ownership changed before dispatch; no further input was sent"));};
-    InputContext{scope,owner_epoch:&state.owner_epoch,privacy_epoch:&state.privacy_epoch,private_until:&state.private_until}.refusal()
+    InputContext::new(state,scope).refusal()
 }
 
 async fn in_request_scope<T>(state:&AppState, scope:Option<&crate::input_continuation::Scope>, work:impl std::future::Future<Output=T>)->Option<T>{
     let scope=scope?;
-    in_input_context(InputContext{scope,owner_epoch:&state.owner_epoch,privacy_epoch:&state.privacy_epoch,private_until:&state.private_until},work).await
+    in_input_context(InputContext::new(state,scope),work).await
 }
 async fn in_input_context<T>(context:InputContext<'_>,work:impl std::future::Future<Output=T>)->Option<T>{
     tokio::pin!(work);
@@ -9822,13 +9822,29 @@ struct InputContext<'a> {
     owner_epoch: &'a std::sync::atomic::AtomicU64,
     privacy_epoch: &'a std::sync::atomic::AtomicU64,
     private_until: &'a Mutex<Option<Instant>>,
+    owner: &'a Mutex<Option<PhoneOwner>>,
+    owner_lease: std::time::Duration,
 }
 
-impl InputContext<'_> {
+impl<'a> InputContext<'a> {
+    fn new(state: &'a AppState, scope: &'a crate::input_continuation::Scope) -> Self {
+        Self { scope, owner_epoch: &state.owner_epoch, privacy_epoch: &state.privacy_epoch,
+            private_until: &state.private_until, owner: &state.owner,
+            owner_lease: std::time::Duration::from_secs(state.owner_lease_secs) }
+    }
     fn refusal(self) -> Option<(&'static str, &'static str)> {
         use std::sync::atomic::Ordering;
-        if self.scope.epoch != self.owner_epoch.load(Ordering::Acquire) {
-            return Some(("input_owner_changed", "phone ownership changed; inspect the original field before continuing"));
+        let owner_matches = {
+            let owner = recover(self.owner.lock());
+            let now = Instant::now();
+            let expected = (!self.scope.owner.is_empty()).then_some(self.scope.owner.as_str());
+            let active = owner.as_ref()
+                .filter(|owner| now.saturating_duration_since(owner.last_seen) < self.owner_lease)
+                .map(|owner| owner.name.as_str());
+            self.scope.epoch == self.owner_epoch.load(Ordering::Acquire) && expected == active
+        };
+        if !owner_matches {
+            return Some(("input_owner_changed", "phone ownership changed or its lease expired; inspect the original field before continuing"));
         }
         if self.scope.privacy_epoch != self.privacy_epoch.load(Ordering::Acquire) || screen_private_now(self.private_until) {
             return Some(("input_privacy_changed", "screen privacy changed or is active; no further input was sent. Check status and inspect the original field before starting new work"));
@@ -10062,6 +10078,8 @@ fn native_guard_until(
 ) -> Arc<crate::native_scope::Guard> {
     let scope = scope.clone();
     let owner = state.owner_epoch.clone();
+    let owner_slot = state.owner.clone();
+    let owner_lease = std::time::Duration::from_secs(state.owner_lease_secs);
     let privacy = state.privacy_epoch.clone();
     let until = state.private_until.clone();
     crate::native_scope::Guard::new(move || {
@@ -10070,6 +10088,8 @@ fn native_guard_until(
             owner_epoch: &owner,
             privacy_epoch: &privacy,
             private_until: &until,
+            owner: &owner_slot,
+            owner_lease,
         }
         .refusal()
         .map(|v| v.0)
@@ -10109,8 +10129,7 @@ async fn owned_agent_action(
     if scope.is_none() {
         return (RunnerControlOutcome::Refused("input_owner_changed", "phone ownership changed while this input waited; no text was sent"), None);
     }
-    let context = InputContext { scope:scope.unwrap(), owner_epoch:&state.owner_epoch,
-        privacy_epoch:&state.privacy_epoch, private_until:&state.private_until };
+    let context = InputContext::new(state,scope.unwrap());
     if let Some((error,hint)) = context.refusal() { return (RunnerControlOutcome::Refused(error,hint),None); }
     if action.get("type").and_then(serde_json::Value::as_str)!=Some("text") {
         let guard=native_guard(state,context.scope);
@@ -10208,17 +10227,19 @@ fn renew_after_long_text(state: &AppState, headers: &HeaderMap, action: &serde_j
         return;
     }
     let Some(scope) = scope else { return; };
-    if scope.epoch != state.owner_epoch.load(std::sync::atomic::Ordering::Acquire)
-        || scope.privacy_epoch != state.privacy_epoch.load(std::sync::atomic::Ordering::Acquire) { return; }
-    state.touch_activity();
-    // This is a renewal of an in-flight request, never a fresh claim. Reusing its takeover
-    // header could steal the phone back after another owner (or a human release) won meanwhile.
+    if request_scope_refusal(state, Some(scope)).is_some() { return; }
+    // Completion may renew a live incarnation, never revive an expired lease.
+    // Recheck under the owner lock so expiry/takeover cannot race the renewal.
     if let Some(name) = named_owner(headers) {
+        let now = Instant::now();
+        let lease = std::time::Duration::from_secs(state.owner_lease_secs);
         let mut slot = recover(state.owner.lock());
-        if let Some(owner) = slot.as_mut().filter(|owner| owner.name == name) {
-            owner.last_seen = owner.last_seen.max(Instant::now());
-        }
+        if scope.epoch != state.owner_epoch.load(std::sync::atomic::Ordering::Acquire) { return; }
+        let Some(owner) = slot.as_mut().filter(|owner| owner.name == name
+            && now.saturating_duration_since(owner.last_seen) < lease) else { return; };
+        owner.last_seen = owner.last_seen.max(now);
     }
+    state.touch_activity();
 }
 
 /// A `text` action longer than the daemon types, refused before anything is
@@ -14338,6 +14359,8 @@ fn capture_settled_frame_later(
     let Some(scope)=scope.cloned() else{return;};
     if request_scope_refusal(state,Some(&scope)).is_some(){return;}
     let owner_epoch=state.owner_epoch.clone();
+    let owner_slot=state.owner.clone();
+    let owner_lease=std::time::Duration::from_secs(state.owner_lease_secs);
     let mut slot = recover(state.settled_frame_prefetch.lock());
     if let Some(previous) = slot.take() {
         previous.abort();
@@ -14347,7 +14370,7 @@ fn capture_settled_frame_later(
     let private_until = state.private_until.clone();
     let generation = scope.privacy_epoch;
     let task = tokio::spawn(async move {
-        let context=InputContext{scope:&scope,owner_epoch:&owner_epoch,privacy_epoch:&privacy_epoch,private_until:&private_until};
+        let context=InputContext{scope:&scope,owner_epoch:&owner_epoch,privacy_epoch:&privacy_epoch,private_until:&private_until,owner:&owner_slot,owner_lease};
         let mut w = runner.lock().await;
         if context.refusal().is_some(){return;}
         if privacy_epoch.load(std::sync::atomic::Ordering::Acquire) != generation || screen_private_now(&private_until) { return; }

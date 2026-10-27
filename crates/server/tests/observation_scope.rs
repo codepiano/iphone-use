@@ -108,3 +108,35 @@ fn queued_nontext_input_is_refused_before_unlock_or_native_lookup_after_scope_ch
   assert_eq!(status,StatusCode::CONFLICT,"{value}");assert_eq!(value["outcome"],"not_sent");assert_eq!(f.calls.load(Ordering::Acquire),0);
  }
 });}
+
+#[test]
+fn expired_owner_without_epoch_cleanup_cannot_publish_queued_observations() {block(async {
+ for batch in [false,true] {
+  let f=Fixture::new(false,false);let (path,payload)=observed(batch);
+  let response=f.response(path,payload,"a",false).await;
+  let epoch=f.state.owner_epoch.load(Ordering::Acquire);
+  f.state.owner.lock().unwrap().as_mut().unwrap().last_seen=std::time::Instant::now()-Duration::from_secs(f.state.owner_lease_secs+1);
+  let (_,value)=body(response).await;
+  assert_eq!(f.state.owner_epoch.load(Ordering::Acquire),epoch,"no background cleanup participates");
+  assert!(!value.to_string().contains(SECRET),"expired owner received queued UI: {value}");
+  assert_eq!(value["observation_omitted"],true);assert_eq!(value["scope_changed"],"input_owner_changed");
+  assert_eq!(f.homes.load(Ordering::Acquire),1,"the action must not be replayed");
+  if batch {assert_eq!(value["applied_actions"],1);assert_eq!(value["steps"][0]["ok"],true);}
+ }
+});}
+
+#[test]
+fn expired_owner_without_epoch_cleanup_cannot_dispatch_queued_input() {block(async {
+ let f=Arc::new(Fixture::new(false,false));let guard=f.state.runner.as_ref().unwrap().lock().await;let caller=f.clone();
+ let pending=tokio::spawn(async move {body(caller.response("/agent/input",json!({"type":"home"}),"a",false).await).await});
+ tokio::time::timeout(Duration::from_secs(3),async {loop {
+  if f.state.owner.lock().unwrap().as_ref().is_some_and(|o|o.name=="a"){break;}
+  tokio::task::yield_now().await;
+ }}).await.unwrap();
+ let epoch=f.state.owner_epoch.load(Ordering::Acquire);
+ f.state.owner.lock().unwrap().as_mut().unwrap().last_seen=std::time::Instant::now()-Duration::from_secs(f.state.owner_lease_secs+1);
+ drop(guard);let (status,value)=pending.await.unwrap();
+ assert_eq!(f.state.owner_epoch.load(Ordering::Acquire),epoch);
+ assert_eq!(status,StatusCode::CONFLICT,"{value}");assert_eq!(value["outcome"],"not_sent");
+ assert_eq!(f.calls.load(Ordering::Acquire),0,"expired input reached the Native runner");
+});}
