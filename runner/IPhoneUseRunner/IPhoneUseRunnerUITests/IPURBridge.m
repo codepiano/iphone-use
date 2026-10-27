@@ -202,10 +202,31 @@ static BOOL IPURRequestCacheEnabled = NO;
 static NSArray *IPURCachedActive = nil;
 static id IPURCachedSystem = nil;
 static NSValue *IPURCachedScreenSize = nil;
+// Experimental bound-input scope only. The reference is stable across app
+// switches; its FocusedApplications value is deliberately never retained here.
+static BOOL IPURInputForegroundLookupEnabled = NO;
+static id IPURInputSystemElement = nil;
+static NSUInteger IPURInputRootReads = 0, IPURInputFocusedReads = 0, IPURInputLookupFallbacks = 0;
+
++ (void)setInputForegroundLookupEnabled:(BOOL)enabled
+{
+  if (!NSThread.isMainThread) return;
+  IPURInputForegroundLookupEnabled = enabled;
+  IPURInputSystemElement = nil;
+  if (enabled) IPURInputRootReads = IPURInputFocusedReads = IPURInputLookupFallbacks = 0;
+}
+
++ (NSDictionary<NSString *, NSNumber *> *)inputForegroundLookupStats
+{
+  return @{@"root_reads":@(IPURInputRootReads),@"focused_reads":@(IPURInputFocusedReads),
+    @"fallbacks":@(IPURInputLookupFallbacks)};
+}
 
 + (void)setRequestCacheEnabled:(BOOL)enabled
 {
   if (!NSThread.isMainThread) return;
+  IPURInputForegroundLookupEnabled = NO;
+  IPURInputSystemElement = nil;
   IPURRequestCacheEnabled = enabled;
   IPURCachedActive = nil;
   IPURCachedSystem = nil;
@@ -228,8 +249,35 @@ static BOOL IPURUseRequestCache(void)
 + (NSArray *)activeApplicationElements
 {
   if (IPURUseRequestCache() && IPURCachedActive != nil) return IPURCachedActive;
-  id active = IPURObject([self axClient], @"activeApplications");
-  NSArray *result = [active isKindOfClass:NSArray.class] ? active : @[];
+  NSArray *result = nil;
+  if (IPURInputForegroundLookupEnabled && NSThread.isMainThread) {
+    for (NSUInteger attempt = 0; attempt < 2; attempt++) {
+      if (IPURInputSystemElement == nil) {
+        IPURInputRootReads += 1;
+        IPURInputSystemElement = IPURObject([self axClient],@"systemApplication");
+      }
+      if (IPURInputSystemElement == nil || [self pidForAXElement:IPURInputSystemElement] <= 0) break;
+      IPURInputFocusedReads += 1;
+      id raw = [self inputAttributesForElement:IPURInputSystemElement attributes:@[@"XC_kAXXCAttributeFocusedApplications"]];
+      id active = raw[@"XC_kAXXCAttributeFocusedApplications"];
+      Class elementClass = NSClassFromString(@"XCAccessibilityElement");
+      BOOL valid = elementClass != Nil && [active isKindOfClass:NSArray.class];
+      if (valid) for (id item in active) {
+        if (![item isKindOfClass:elementClass] || [self pidForAXElement:item] <= 0) { valid = NO; break; }
+      }
+      if (valid) { result = active; break; }
+      // An unavailable/stale system reference cannot establish foreground.
+      IPURInputSystemElement = nil;
+    }
+    if (result == nil) {
+      IPURInputSystemElement = nil;
+      IPURInputLookupFallbacks += 1;
+    }
+  }
+  if (result == nil) {
+    id active = IPURObject([self axClient], @"activeApplications");
+    result = [active isKindOfClass:NSArray.class] ? active : @[];
+  }
   if (IPURUseRequestCache()) IPURCachedActive = result;
   return result;
 }
@@ -498,6 +546,24 @@ static BOOL IPURUseRequestCache(void)
     if (shape == nil || shape.numberOfArguments != 5 || shape.methodReturnType[0] != '@' ||
         [shape getArgumentTypeAtIndex:2][0] != '@' || [shape getArgumentTypeAtIndex:3][0] != '@' ||
         strcmp([shape getArgumentTypeAtIndex:4], "^@") != 0) return;
+    // Determine whether the global focused-app attribute can accompany a
+    // field read. This is diagnostic only: never cache it or admit input.
+    for (NSString *scope in @[@"field",@"system"]) {
+      id target = [scope isEqualToString:@"field"] ? element : IPURObject(client,@"systemApplication");
+      NSError *focusError = nil;
+      CFAbsoluteTime focusStarted = CFAbsoluteTimeGetCurrent();
+      id focusRaw = ((id (*)(id,SEL,id,id,NSError **))objc_msgSend)(client,selector,target,
+        @[@"XC_kAXXCAttributeFocusedApplications"],&focusError);
+      id focused = [focusRaw isKindOfClass:NSDictionary.class] ? focusRaw[@"XC_kAXXCAttributeFocusedApplications"] : nil;
+      NSMutableSet *classes = [NSMutableSet set];
+      if ([focused isKindOfClass:NSArray.class]) {
+        for (id item in focused) [classes addObject:NSStringFromClass([item class])];
+      }
+      NSLog(@"ipu-focused-apps-probe scope=%@ ms=%.1f error=%ld type=%@ count=%lu itemTypes=%@",
+        scope,(CFAbsoluteTimeGetCurrent()-focusStarted)*1000,(long)focusError.code,
+        focused == nil ? @"missing" : NSStringFromClass([focused class]),
+        (unsigned long)([focused isKindOfClass:NSArray.class] ? [focused count] : 0),classes);
+    }
     NSMutableArray *wanted = [NSMutableArray array];
     for (id key in [self snapshotAttributes]) {
       if (![[key description] hasSuffix:@"Value"]) [wanted addObject:key];
@@ -565,12 +631,15 @@ static BOOL IPURUseRequestCache(void)
   } @catch (__unused NSException *exception) { return nil; }
 }
 
-+ (nullable NSNumber *)inputVisibilityForElement:(id)element
++ (nullable NSDictionary<NSString *, NSNumber *> *)inputReadinessForElement:(id)element
 {
-  id raw = [self inputAttributesForElement:element attributes:@[@"XC_kAXXCAttributeIsVisible"]];
+  id raw = [self inputAttributesForElement:element attributes:@[@"XC_kAXXCAttributeIsVisible",@"XC_kAXXCAttributeIsUserInteractionEnabled"]];
   id visible = raw[@"XC_kAXXCAttributeIsVisible"];
-  return [visible isKindOfClass:NSNumber.class] && CFGetTypeID((__bridge CFTypeRef)visible) == CFBooleanGetTypeID()
-    ? visible : nil;
+  id interactive = raw[@"XC_kAXXCAttributeIsUserInteractionEnabled"];
+  for (id flag in @[visible ?: NSNull.null,interactive ?: NSNull.null]) {
+    if (![flag isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)flag) != CFBooleanGetTypeID()) return nil;
+  }
+  return @{@"visible":visible,@"interactive":interactive};
 }
 
 + (nullable NSDictionary<NSString *, id> *)inputBoundaryForElement:(id)element
@@ -581,16 +650,18 @@ static BOOL IPURUseRequestCache(void)
     id raw = [self inputAttributesForElement:element attributes:@[
       @"XC_kAXXCAttributeAutomationType",@"XC_kAXXCAttributeTraits",@"XC_kAXXCAttributeFrame",
       @"XC_kAXXCAttributeHasNativeFocus",@"XC_kAXXCAttributeIdentifier",@"XC_kAXXCAttributeLabel",
-      @"XC_kAXXCAttributeIsVisible",@"XC_kAXXCAttributeValue",@"XC_kAXXCAttributePlaceholderValue"]];
+      @"XC_kAXXCAttributeIsVisible",@"XC_kAXXCAttributeIsUserInteractionEnabled",@"XC_kAXXCAttributeValue",@"XC_kAXXCAttributePlaceholderValue"]];
     if (raw == nil) return nil;
     id type = raw[@"XC_kAXXCAttributeAutomationType"], traits = raw[@"XC_kAXXCAttributeTraits"];
     id frame = raw[@"XC_kAXXCAttributeFrame"], focus = raw[@"XC_kAXXCAttributeHasNativeFocus"];
     id identifier = raw[@"XC_kAXXCAttributeIdentifier"], label = raw[@"XC_kAXXCAttributeLabel"];
     id visible = raw[@"XC_kAXXCAttributeIsVisible"];
+    id interactive = raw[@"XC_kAXXCAttributeIsUserInteractionEnabled"];
     if (![type isKindOfClass:NSNumber.class] || ![traits isKindOfClass:NSNumber.class] ||
         ![frame isKindOfClass:NSDictionary.class] || ![focus isKindOfClass:NSNumber.class] ||
         CFGetTypeID((__bridge CFTypeRef)focus) != CFBooleanGetTypeID() ||
         ![visible isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)visible) != CFBooleanGetTypeID() ||
+        ![interactive isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)interactive) != CFBooleanGetTypeID() ||
         (identifier != NSNull.null && ![identifier isKindOfClass:NSString.class]) ||
         (label != NSNull.null && ![label isKindOfClass:NSString.class])) return nil;
     NSInteger number = [type integerValue];
@@ -627,6 +698,7 @@ static BOOL IPURUseRequestCache(void)
     return @{@"type":typeName,@"rawIdentifier":identifier,@"label":label,
       @"rect":rect,@"isEnabled":enabled ? @"1" : @"0",
       @"input_visible":visible,
+      @"input_interactive":interactive,
       @"isSelected":selected ? @"1" : @"0",
       @"isFocused":([focus boolValue] || keyboardFocus) ? @"1" : @"0",
       @"value":secure ? (id)NSNull.null : value,
@@ -1594,6 +1666,8 @@ static NSString *IPURSynthesize(id record, id path)
     if (record == nil || path == nil) return @"private XCTest text synthesis failed: could not create text event";
     SEL targetSelector = NSSelectorFromString(@"setTargetProcessID:");
     if (pid > 0) {
+      // Routing metadata is not a text-binding guarantee: current XCTest's
+      // text branch forwards string/display but does not consume this PID.
       if (![record respondsToSelector:targetSelector]) return @"targeted text synthesis unavailable; nothing was sent";
       ((IPURMsgSendSetLongLong)objc_msgSend)(record, targetSelector, (long long)pid);
     }

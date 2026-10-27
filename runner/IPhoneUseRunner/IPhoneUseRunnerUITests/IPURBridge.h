@@ -32,7 +32,9 @@ FOUNDATION_EXPORT NSString *const IPURNodeAXElementKey;
 + (NSDictionary *)probeAXInsertForElement:(id)element value:(NSString *)value NS_SWIFT_NAME(probeAXInsert(element:value:));
 + (void)probeBoundaryMetadataForElement:(id)element NS_SWIFT_NAME(probeBoundaryMetadata(element:));
 + (nullable NSDictionary<NSString *, id> *)inputBoundaryForElement:(id)element NS_SWIFT_NAME(inputBoundary(element:));
-+ (nullable NSNumber *)inputVisibilityForElement:(id)element NS_SWIFT_NAME(inputVisibility(element:));
++ (nullable NSDictionary<NSString *, NSNumber *> *)inputReadinessForElement:(id)element NS_SWIFT_NAME(inputReadiness(element:));
++ (void)setInputForegroundLookupEnabled:(BOOL)enabled NS_SWIFT_NAME(setInputForegroundLookupEnabled(_:));
++ (NSDictionary<NSString *, NSNumber *> *)inputForegroundLookupStats;
 
 /// Turns every XCTest quiescence / idle wait into a no-op for the whole process
 /// (XCUIApplicationProcess waitForQuiescence…, XCAXClient_iOS

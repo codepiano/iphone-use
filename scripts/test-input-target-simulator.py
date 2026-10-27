@@ -48,6 +48,26 @@ import CryptoKit
   private var vetoMode = "off", vetoA = 0, vetoMulti = 0
   private var stateFault = "off", stateFaultTriggered = false
   private var faultScalars = 0, faultHash = ""
+  private var inactiveEvents = -1, inactiveScalars = -1, inactiveHash = ""
+  func sceneWillResignActive(_ scene: UIScene) { recordLifecycle("inactive") }
+  func sceneDidEnterBackground(_ scene: UIScene) { recordLifecycle("background") }
+  private func recordLifecycle(_ phase: String) {
+    guard stateFault == "background", stateFaultTriggered else { return }
+    let text = firstField?.text ?? ""
+    let hash = SHA256.hash(data:Data(text.utf8)).map { String(format:"%02x",$0) }.joined()
+    if phase == "inactive", inactiveEvents < 0 {
+      inactiveEvents = firstEvents; inactiveScalars = text.unicodeScalars.count; inactiveHash = hash
+    }
+    if phase == "background" {
+      let documents = FileManager.default.urls(for:.documentDirectory,in:.userDomainMask)[0]
+      let state: [String:Any] = ["phase":phase,"run_id":receiptRun,"pid":ProcessInfo.processInfo.processIdentifier,
+        "events_a":firstEvents,"events_b":secondEvents,"returns":returnEvents,
+        "scalars":text.unicodeScalars.count,"sha256":hash]
+      if let data = try? JSONSerialization.data(withJSONObject:state,options:[.sortedKeys]) {
+        try? data.write(to:documents.appendingPathComponent("background-boundary.json"),options:.atomic)
+      }
+    }
+  }
   func textField(_ field: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
     if vetoMode == "a" && field === firstField { vetoA += 1; return false }
     return true
@@ -67,7 +87,7 @@ import CryptoKit
           let command = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
           let nonce = command["nonce"] as? String, nonce != lastReceiptRequest else { return }
     if let veto = command["veto"] as? String, ["off","a","multi"].contains(veto) { vetoMode = veto }
-    if let fault = command["state_fault"] as? String, ["off","disable","hide","secure"].contains(fault) { stateFault = fault }
+    if let fault = command["state_fault"] as? String, ["off","disable","hide","secure","interaction","background"].contains(fault) { stateFault = fault }
     func field(_ value: String?) -> [String: Any] {
       let text = value ?? ""
       return ["scalars":text.unicodeScalars.count,"utf16":text.utf16.count,
@@ -78,9 +98,12 @@ import CryptoKit
       "fields_present":firstField != nil && secondField != nil && multilineField != nil && secureField != nil,
       "fields":["a":field(firstField?.text),"b":field(secondField?.text),"multi":field(multilineField?.text),"secure":field(secureField?.text)],
       "metadata_enabled":metadataControl?.isEnabled ?? true, "metadata_selected":metadataControl?.isSelected ?? false,
+      "a_interactive":firstField?.isUserInteractionEnabled ?? false,
       "a_enabled":firstField?.isEnabled ?? false,"a_hidden":firstField?.isHidden ?? false,
       "a_secure":firstField?.isSecureTextEntry ?? false,"state_fault":stateFault,
       "state_fault_triggered":stateFaultTriggered,"fault_scalars":faultScalars,"fault_sha256":faultHash,
+      "suspend_supported":UIApplication.shared.responds(to:NSSelectorFromString("suspend")),
+      "inactive_events_a":inactiveEvents,"inactive_scalars":inactiveScalars,"inactive_sha256":inactiveHash,
       "selection_a":firstField?.selectedTextRange.map { ["location":firstField!.offset(from:firstField!.beginningOfDocument,to:$0.start),"length":firstField!.offset(from:$0.start,to:$0.end)] } ?? [:],
       "events_a":firstEvents,"events_b":secondEvents,"returns":returnEvents,"shifted":shifted,
       "focus_a":firstField?.isFirstResponder ?? false,"focus_b":secondField?.isFirstResponder ?? false,
@@ -121,6 +144,10 @@ import CryptoKit
       case "disable": field.isEnabled = false
       case "hide": field.isHidden = true
       case "secure": field.isSecureTextEntry = true
+      case "interaction": field.isUserInteractionEnabled = false
+      case "background":
+        let suspend = NSSelectorFromString("suspend")
+        if UIApplication.shared.responds(to:suspend) { UIApplication.shared.perform(suspend) }
       default: break
       }
     }
@@ -336,10 +363,15 @@ def main():
     parser.add_argument("--expect-boundary-isolation", action="store_true", help="experimental Runner must stop at A20/B0 in reached focus-switch faults")
     parser.add_argument("--metadata-controls", action="store_true", help="compare disabled/selected UIKit control against independent App state")
     parser.add_argument("--long-boundaries", action="store_true", help="verify long-field App veto and public MCP append")
-    parser.add_argument("--state-boundaries", action="store_true", help="verify mid-input disable/hide/secure conversion on short and long routes")
+    parser.add_argument("--state-fault", action="append", choices=["disable","hide","secure","interaction","background"], help="select state faults explicitly; repeat to select more than one")
+    parser.add_argument("--only-state-boundaries", action="store_true", help="run only the independent state-fault cohort; not full acceptance")
+    parser.add_argument("--boundary-backend", choices=["ax","hid"], default="ax", help="isolated experimental Native input backend")
+    parser.add_argument("--state-boundaries", action="store_true", help="verify mid-input disable/hide/secure/background changes on short and long routes")
     parser.add_argument("--runtime", default="com.apple.CoreSimulator.SimRuntime.iOS-27-0")
     parser.add_argument("--device-type", default="com.apple.CoreSimulator.SimDeviceType.iPhone-17")
     args = parser.parse_args()
+    selected_state_faults=list(dict.fromkeys(args.state_fault or ["disable","hide","secure","interaction","background"]))
+    if args.state_fault and not args.state_boundaries: parser.error("--state-fault requires --state-boundaries")
     xctestrun = args.xctestrun.resolve(strict=True)
     out = args.out.resolve()
     out.mkdir(mode=0o700, parents=True, exist_ok=False)
@@ -349,6 +381,8 @@ def main():
     video_peers = []
     daemon_binary = args.daemon.resolve(strict=True) if args.daemon else None
     mcp_binary = args.mcp.resolve(strict=True) if args.mcp else None
+    if args.only_state_boundaries and (not args.state_boundaries or mcp_binary or args.metadata_controls or args.long_boundaries or args.input_privacy or args.observation_scope or args.native_scope or args.hosts or args.video or args.recovery or args.list_recovery or args.list_deadline):
+        raise RuntimeError("--only-state-boundaries requires a standalone --state-boundaries cohort")
     if args.state_boundaries and not (args.expect_boundary_isolation and daemon_binary):
         raise RuntimeError("--state-boundaries requires --expect-boundary-isolation and --daemon")
     if args.long_boundaries and not (args.expect_boundary_isolation and daemon_binary and mcp_binary):
@@ -388,6 +422,7 @@ def main():
                    if not k.startswith(("IPHONE_USE_", "PHONE_REMOTE_", "IPU_", "TEST_RUNNER_IPU_", "SIMCTL_CHILD_"))}
     environment.update(TEST_RUNNER_IPU_RUNNER_PORT=str(port), TEST_RUNNER_IPU_RUNNER_MJPEG_PORT=str(video_port),
                        TEST_RUNNER_IPU_RUNNER_TOKEN=tok, TEST_RUNNER_IPU_DAEMON_PORT="0")
+    environment["TEST_RUNNER_IPU_BOUNDARY_BACKEND"] = args.boundary_backend
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
     def call(path, body=None, expected=200):
@@ -503,54 +538,55 @@ def main():
             reports.append({"case":"disabled-selected-control-matches-App-state","passed":True,"evidence":evidence})
 
         first, second = find("field-a"), find("field-b")
-        call(prefix + f"/element/{first}/click", {})
-        wait_for(lambda: call(prefix + f"/element/{first}/attribute/focused") is True, "first field focus")
-        target = call(prefix + "/wda/input-target")["token"]
-        call(prefix + "/wda/keys", {"value": ["alpha"], "inputTarget": target})
-        assert call(prefix + f"/element/{first}/attribute/value") == "alpha"
-        reports.append({"case": "bound-input-readback", "passed": True})
-        call(prefix + f"/element/{target}/clear", {"inputTarget": target})
-        assert call(prefix + f"/element/{first}/attribute/value") in (None, "")
-        call(prefix + "/wda/keys", {"value": ["beta"], "inputTarget": target})
-        assert call(prefix + f"/element/{first}/attribute/value") == "beta"
-        reports.append({"case": "bound-clear-and-append", "passed": True})
+        if not args.only_state_boundaries:
+            call(prefix + f"/element/{first}/click", {})
+            wait_for(lambda: call(prefix + f"/element/{first}/attribute/focused") is True, "first field focus")
+            target = call(prefix + "/wda/input-target")["token"]
+            call(prefix + "/wda/keys", {"value": ["alpha"], "inputTarget": target})
+            assert call(prefix + f"/element/{first}/attribute/value") == "alpha"
+            reports.append({"case": "bound-input-readback", "passed": True})
+            call(prefix + f"/element/{target}/clear", {"inputTarget": target})
+            assert call(prefix + f"/element/{first}/attribute/value") in (None, "")
+            call(prefix + "/wda/keys", {"value": ["beta"], "inputTarget": target})
+            assert call(prefix + f"/element/{first}/attribute/value") == "beta"
+            reports.append({"case": "bound-clear-and-append", "passed": True})
 
-        call(prefix + f"/element/{second}/click", {})
-        wait_for(lambda: call(prefix + f"/element/{second}/attribute/focused") is True, "second field focus")
-        refusal = call(prefix + "/wda/keys", {"value": ["WRONG"], "inputTarget": target}, expected=400)
-        assert "input_target_focus_changed" in refusal["message"]
-        assert call(prefix + f"/element/{second}/attribute/value") in (None, "")
-        assert call(prefix + f"/element/{first}/attribute/value") == "beta"
-        reports.append({"case": "same-label-field-switch-refused", "passed": True, "refusal": refusal})
+            call(prefix + f"/element/{second}/click", {})
+            wait_for(lambda: call(prefix + f"/element/{second}/attribute/focused") is True, "second field focus")
+            refusal = call(prefix + "/wda/keys", {"value": ["WRONG"], "inputTarget": target}, expected=400)
+            assert "input_target_focus_changed" in refusal["message"]
+            assert call(prefix + f"/element/{second}/attribute/value") in (None, "")
+            assert call(prefix + f"/element/{first}/attribute/value") == "beta"
+            reports.append({"case": "same-label-field-switch-refused", "passed": True, "refusal": refusal})
 
-        target = call(prefix + "/wda/input-target")["token"]
-        call(prefix + "/wda/homescreen", {})
-        refusal = call(prefix + "/wda/keys", {"value": ["WRONG"], "inputTarget": target}, expected=400)
-        assert refusal["message"].endswith("nothing was sent")
-        call(prefix + "/wda/apps/launch", {"bundleId": BUNDLE})
-        wait_for(lambda: call(prefix + "/wda/activeAppInfo").get("bundleId") == BUNDLE, "fixture resumed")
-        settle_fixture()
-        # App transitions invalidate assumptions about the old element handles. Resolve the
-        # fields from the fresh hierarchy before choosing the next focus target.
-        first, second = find("field-a"), find("field-b")
-        assert call(prefix + f"/element/{second}/attribute/value") in (None, "")
-        reports.append({"case": "foreground-app-switch-refused", "passed": True, "refusal": refusal})
+            target = call(prefix + "/wda/input-target")["token"]
+            call(prefix + "/wda/homescreen", {})
+            refusal = call(prefix + "/wda/keys", {"value": ["WRONG"], "inputTarget": target}, expected=400)
+            assert refusal["message"].endswith("nothing was sent")
+            call(prefix + "/wda/apps/launch", {"bundleId": BUNDLE})
+            wait_for(lambda: call(prefix + "/wda/activeAppInfo").get("bundleId") == BUNDLE, "fixture resumed")
+            settle_fixture()
+            # App transitions invalidate assumptions about the old element handles. Resolve the
+            # fields from the fresh hierarchy before choosing the next focus target.
+            first, second = find("field-a"), find("field-b")
+            assert call(prefix + f"/element/{second}/attribute/value") in (None, "")
+            reports.append({"case": "foreground-app-switch-refused", "passed": True, "refusal": refusal})
 
-        call(prefix + f"/element/{first}/click", {})
-        wait_for(lambda: call(prefix + f"/element/{first}/attribute/focused") is True, "first field focus")
-        target = call(prefix + "/wda/input-target")["token"]
-        call("/session", {})
-        refusal = call(prefix + "/wda/keys", {"value": ["WRONG"], "inputTarget": target}, expected=400)
-        assert "input_target_expired_or_unreadable" in refusal["message"]
-        reports.append({"case": "session-replacement-refused", "passed": True, "refusal": refusal})
-        # A command from a different native controller must invalidate a binding even when
-        # it leaves focus on the same field. This is stronger than checking current focus alone.
-        first, second = find("field-a"), find("field-b")
-        target = call(prefix + "/wda/input-target")["token"]
-        call(prefix + "/wda/keys", {"value": ["x"]})
-        refusal = call(prefix + "/wda/keys", {"value": ["WRONG"], "inputTarget": target}, expected=400)
-        assert "input_target_invalidated_by_another_command" in refusal["message"]
-        reports.append({"case": "external-native-command-invalidates-binding", "passed": True, "refusal": refusal})
+            call(prefix + f"/element/{first}/click", {})
+            wait_for(lambda: call(prefix + f"/element/{first}/attribute/focused") is True, "first field focus")
+            target = call(prefix + "/wda/input-target")["token"]
+            call("/session", {})
+            refusal = call(prefix + "/wda/keys", {"value": ["WRONG"], "inputTarget": target}, expected=400)
+            assert "input_target_expired_or_unreadable" in refusal["message"]
+            reports.append({"case": "session-replacement-refused", "passed": True, "refusal": refusal})
+            # A command from a different native controller must invalidate a binding even when
+            # it leaves focus on the same field. This is stronger than checking current focus alone.
+            first, second = find("field-a"), find("field-b")
+            target = call(prefix + "/wda/input-target")["token"]
+            call(prefix + "/wda/keys", {"value": ["x"]})
+            refusal = call(prefix + "/wda/keys", {"value": ["WRONG"], "inputTarget": target}, expected=400)
+            assert "input_target_invalidated_by_another_command" in refusal["message"]
+            reports.append({"case": "external-native-command-invalidates-binding", "passed": True, "refusal": refusal})
 
         if daemon_binary:
             with socket.socket() as listener:
@@ -633,70 +669,6 @@ def main():
                 assert after["fields"]["a"]["scalars"]==20,after
                 assert after["fields"]["a"]["sha256"]==hashlib.sha256(draft[:20].encode()).hexdigest(),after
 
-            def begin():
-                status, result = api("/agent/input", {"type": "text", "text": "字" * 500, "budget_ms": 6000})
-                assert status == 502 and result.get("characters_uncertain") == 0, result
-                assert result.get("characters_confirmed", 0) > 0 and result.get("continuation_safe") is True, result
-                return result
-
-            prepare()
-            app_before = app_receipt() if args.expect_boundary_isolation else None
-            result = begin()
-            portions = [result["characters_confirmed"]]
-            for _ in range(5):
-                token = result["continue_token"]
-                status, result = api("/agent/input", {"type": "text", "continue_token": token})
-                if status == 200 and result.get("ok") is True:
-                    break
-                assert status == 502 and result.get("continuation_safe") is True, result
-                portions.append(result["characters_confirmed"])
-            else:
-                raise RuntimeError("continuation did not finish within five calls")
-            assert call(prefix + f"/element/{first}/attribute/value") == "字" * 500
-            app_after = app_receipt() if app_before else None
-            if app_after:
-                app_trial(app_before,app_after)
-                assert app_after["fields"]["a"]["sha256"]==hashlib.sha256(("字"*500).encode()).hexdigest(),app_after
-                assert app_after["events_a"]-app_before["events_a"]==500,app_after
-            reports.append({"case": "daemon-continuation-500-character-readback", "passed": True,
-                            "confirmed_partial_portions": portions, "final_length": 500,
-                            "app_receipts":{"before":app_before,"after":app_after}})
-
-            assert prepare() == 500
-            reports.append({"case": "native-clear-after-mid-field-click", "passed": True,
-                            "before_length": 500, "after_length": 0})
-            result = begin()
-            before = call(prefix + f"/element/{first}/attribute/value")
-            status, released = api("/agent/owner", {"release": True})
-            assert status == 200, released
-            status, result = api("/agent/input", {"type": "text", "continue_token": result["continue_token"]})
-            assert status == 409 and result.get("error") == "input_continuation_expired", result
-            assert call(prefix + f"/element/{first}/attribute/value") == before
-            reports.append({"case": "daemon-owner-release-invalidates-continuation", "passed": True})
-
-            prepare()
-            result = begin()
-            before = call(prefix + f"/element/{first}/attribute/value")
-            call(prefix + f"/element/{second}/click", {})
-            wait_for(lambda: call(prefix + f"/element/{second}/attribute/focused") is True, "second field focus")
-            status, result = api("/agent/input", {"type": "text", "continue_token": result["continue_token"]})
-            assert status == 422 and result.get("error") == "runner_rejected", result
-            assert call(prefix + f"/element/{first}/attribute/value") == before
-            assert call(prefix + f"/element/{second}/attribute/value") in (None, "")
-            reports.append({"case": "daemon-native-focus-change-refuses-continuation", "passed": True})
-
-            prepare()
-            result = begin()
-            before = call(prefix + f"/element/{first}/attribute/value")
-            call("/session", {})
-            status, result = api("/agent/input", {"type": "text", "continue_token": result["continue_token"]})
-            assert status == 422 and result.get("error") == "runner_rejected", result
-            first = find("field-a")
-            assert call(prefix + f"/element/{first}/attribute/value") == before
-            reports.append({"case": "daemon-native-session-change-refuses-continuation", "passed": True})
-
-            prepare()
-            log_path = out / "runner.log"
             counter_session = call("/status")["sessionId"]
             def native_count(method, route):
                 state=call("/status")
@@ -705,719 +677,822 @@ def main():
                 assert isinstance(counts,dict),"this experiment requires authenticated Native admission counters"
                 return counts.get(method+" "+route,0)
             native_keys = lambda: native_count("POST","/wda/keys")
-            before_calls = native_keys()
-            app_before = app_receipt() if args.expect_boundary_isolation else None
-            draft = "shift-focus-test-" + "字" * (500 - len("shift-focus-test-"))
-            status, result = api("/agent/input", {"type": "text", "text": draft, "budget_ms": 15000})
-            assert status == 502 and result.get("error") == "text_partially_typed", result
-            assert result.get("characters_confirmed") == 0 and result.get("characters_uncertain") == 200, result
-            assert "continue_token" not in result, result
-            assert native_keys() - before_calls == 1, "mid-chunk focus change must stop before another chunk"
-            first, second = find("field-a"), find("field-b")
-            lengths = {"a": len(call(prefix + f"/element/{first}/attribute/value") or ""),
-                       "b": len(call(prefix + f"/element/{second}/attribute/value") or "")}
-            if args.expect_boundary_isolation:
-                assert lengths == {"a":20,"b":0}, lengths
-                app_after=app_receipt();app_fault(app_before,app_after,draft)
-            reports.append({"case": "daemon-mid-chunk-focus-change-is-unknown-without-continuation",
-                            "passed": True, "native_key_requests": 1, "field_lengths": lengths,
-                            "app_receipts":{"before":app_before,"after":app_after if app_before else None}})
 
-            prepare()
-            before_calls = native_keys()
-            with ThreadPoolExecutor(max_workers=1) as pool:
-                running = pool.submit(api, "/agent/input", {"type": "text", "text": "字" * 500, "budget_ms": 15000},
-                                      "input-continuation-fixture", True)
-                until = time.monotonic() + 10
-                while True:
-                    status = call("/status")
-                    if status.get("busy") is True and status.get("busyMs", 0) >= 200:
+            if not args.only_state_boundaries:
+                def begin():
+                    status, result = api("/agent/input", {"type": "text", "text": "字" * 500, "budget_ms": 6000})
+                    assert status == 502 and result.get("characters_uncertain") == 0, result
+                    assert result.get("characters_confirmed", 0) > 0 and result.get("continuation_safe") is True, result
+                    return result
+
+                prepare()
+                app_before = app_receipt() if args.expect_boundary_isolation else None
+                result = begin()
+                portions = [result["characters_confirmed"]]
+                for _ in range(5):
+                    token = result["continue_token"]
+                    status, result = api("/agent/input", {"type": "text", "continue_token": token})
+                    if status == 200 and result.get("ok") is True:
                         break
-                    if running.done() or time.monotonic() >= until:
-                        raise RuntimeError("input did not enter a live native chunk before takeover")
-                    time.sleep(0.02)
-                status, rejected = api("/agent/input", {"type": "text", "text": "x", "budget_ms": 1},
-                                       owner="other-fixture-owner", takeover=True)
-                assert status == 400, rejected
-                status, result = running.result(timeout=60)
-            assert status == 502 and result.get("characters_confirmed") == 200, result
-            assert "continue_token" not in result, result
-            _, observed = api("/agent/status", owner="other-fixture-owner")
-            assert observed.get("owner") == "other-fixture-owner", observed
-            assert native_keys() - before_calls == 1
-            first = find("field-a")  # An earlier unknown result can force a fresh runner session.
-            assert call(prefix + f"/element/{first}/attribute/value") == "字" * 200
-            reports.append({"case": "daemon-takeover-during-chunk-is-not-stolen-back-on-completion",
-                            "passed": True, "confirmed": 200, "native_key_requests": 1})
+                    assert status == 502 and result.get("continuation_safe") is True, result
+                    portions.append(result["characters_confirmed"])
+                else:
+                    raise RuntimeError("continuation did not finish within five calls")
+                assert call(prefix + f"/element/{first}/attribute/value") == "字" * 500
+                app_after = app_receipt() if app_before else None
+                if app_after:
+                    app_trial(app_before,app_after)
+                    assert app_after["fields"]["a"]["sha256"]==hashlib.sha256(("字"*500).encode()).hexdigest(),app_after
+                    assert app_after["events_a"]-app_before["events_a"]==500,app_after
+                reports.append({"case": "daemon-continuation-500-character-readback", "passed": True,
+                                "confirmed_partial_portions": portions, "final_length": 500,
+                                "app_receipts":{"before":app_before,"after":app_after}})
 
-            status, released = api("/agent/owner", {"release": True}, owner="other-fixture-owner")
-            assert status == 200, released
-            first, second = find("field-a"), find("field-b")
-            call(prefix + f"/element/{first}/click", {})
-            wait_for(lambda: call(prefix + f"/element/{first}/attribute/focused") is True, "short input focus")
-            route_count = lambda route: native_count("POST",route)
-            before_atomic, before_keys = route_count("/ipu/text"), native_keys()
-            before_targets = native_count("GET","/wda/input-target")
-            status, result = api("/agent/input", {"type": "text", "text": "short replacement", "clear": True})
-            assert status == 200 and result.get("ok") is True, result
-            assert call(prefix + f"/element/{first}/attribute/value") == "short replacement"
-            assert route_count("/ipu/text") - before_atomic == 1
-            assert native_keys() == before_keys
-            assert native_count("GET","/wda/input-target") == before_targets
-            reports.append({"case": "daemon-short-clear-is-one-bound-native-request", "passed": True, "native_requests": 1})
+                assert prepare() == 500
+                reports.append({"case": "native-clear-after-mid-field-click", "passed": True,
+                                "before_length": 500, "after_length": 0})
+                result = begin()
+                before = call(prefix + f"/element/{first}/attribute/value")
+                status, released = api("/agent/owner", {"release": True})
+                assert status == 200, released
+                status, result = api("/agent/input", {"type": "text", "continue_token": result["continue_token"]})
+                assert status == 409 and result.get("error") == "input_continuation_expired", result
+                assert call(prefix + f"/element/{first}/attribute/value") == before
+                reports.append({"case": "daemon-owner-release-invalidates-continuation", "passed": True})
 
-            status, result = api("/agent/input", {"type": "text", "text": "Draft placeholder", "clear": True})
-            assert status == 200 and result.get("ok") is True, result
-            assert call(prefix + f"/element/{first}/attribute/value") == "Draft placeholder"
-            status, result = api("/agent/input", {"type": "text", "text": "short replacement", "clear": True})
-            assert status == 200 and result.get("ok") is True, result
-            assert call(prefix + f"/element/{first}/attribute/value") == "short replacement"
-            reports.append({"case": "daemon-short-clear-does-not-mistake-typed-placeholder-text-for-empty", "passed": True})
+                prepare()
+                result = begin()
+                before = call(prefix + f"/element/{first}/attribute/value")
+                call(prefix + f"/element/{second}/click", {})
+                wait_for(lambda: call(prefix + f"/element/{second}/attribute/focused") is True, "second field focus")
+                status, result = api("/agent/input", {"type": "text", "continue_token": result["continue_token"]})
+                assert status == 422 and result.get("error") == "runner_rejected", result
+                assert call(prefix + f"/element/{first}/attribute/value") == before
+                assert call(prefix + f"/element/{second}/attribute/value") in (None, "")
+                reports.append({"case": "daemon-native-focus-change-refuses-continuation", "passed": True})
 
-            status, result = api("/agent/input", {"type": "text", "text": "must not\nsubmit", "clear": True})
-            assert status == 422 and result.get("outcome") == "not_sent", result
-            assert "newline_requires_multiline_field" in result.get("runner_error", {}).get("message", ""), result
-            assert call(prefix + f"/element/{first}/attribute/value") == "short replacement"
-            reports.append({"case": "daemon-short-newline-refused-before-clearing-single-line-field", "passed": True})
+                prepare()
+                result = begin()
+                before = call(prefix + f"/element/{first}/attribute/value")
+                call("/session", {})
+                status, result = api("/agent/input", {"type": "text", "continue_token": result["continue_token"]})
+                assert status == 422 and result.get("error") == "runner_rejected", result
+                first = find("field-a")
+                assert call(prefix + f"/element/{first}/attribute/value") == before
+                reports.append({"case": "daemon-native-session-change-refuses-continuation", "passed": True})
 
-            secure = find("field-secure")
-            call(prefix + f"/element/{secure}/click", {})
-            wait_for(lambda: call(prefix + f"/element/{secure}/attribute/focused") is True, "secure field focus")
-            status, result = api("/agent/input", {"type": "text", "text": "must-not-type"})
-            assert status == 422 and result.get("outcome") == "not_sent", result
-            assert "secure_field_requires_human" in result.get("runner_error", {}).get("message", ""), result
-            assert call(prefix + f"/element/{secure}/attribute/value") in (None, "")
-            reports.append({"case": "daemon-short-secure-field-requires-human", "passed": True})
+                prepare()
+                log_path = out / "runner.log"
+                before_calls = native_keys()
+                app_before = app_receipt() if args.expect_boundary_isolation else None
+                draft = "shift-focus-test-" + "字" * (500 - len("shift-focus-test-"))
+                status, result = api("/agent/input", {"type": "text", "text": draft, "budget_ms": 15000})
+                assert status == 502 and result.get("error") == "text_partially_typed", result
+                assert result.get("characters_confirmed") == 0 and result.get("characters_uncertain") == 200, result
+                assert "continue_token" not in result, result
+                assert native_keys() - before_calls == 1, "mid-chunk focus change must stop before another chunk"
+                first, second = find("field-a"), find("field-b")
+                lengths = {"a": len(call(prefix + f"/element/{first}/attribute/value") or ""),
+                           "b": len(call(prefix + f"/element/{second}/attribute/value") or "")}
+                if args.expect_boundary_isolation:
+                    assert lengths == {"a":20,"b":0}, lengths
+                    app_after=app_receipt();app_fault(app_before,app_after,draft)
+                reports.append({"case": "daemon-mid-chunk-focus-change-is-unknown-without-continuation",
+                                "passed": True, "native_key_requests": 1, "field_lengths": lengths,
+                                "app_receipts":{"before":app_before,"after":app_after if app_before else None}})
 
-            multiline = find("field-multiline")
-            call(prefix + f"/element/{multiline}/click", {})
-            wait_for(lambda: call(prefix + f"/element/{multiline}/attribute/focused") is True, "multiline field focus")
-            status, result = api("/agent/input", {"type": "text", "text": "one\ntwo", "clear": True})
-            assert status == 200 and result.get("ok") is True, result
-            assert call(prefix + f"/element/{multiline}/attribute/value") == "one\ntwo"
-            reports.append({"case": "daemon-short-multiline-textview-newline-readback", "passed": True})
-
-            second = find("field-b")
-            call(prefix + f"/element/{second}/click", {})
-            wait_for(lambda: call(prefix + f"/element/{second}/attribute/focused") is True, "second field setup focus")
-            second_target = call(prefix + "/wda/input-target")["token"]
-            call(prefix + f"/element/{second_target}/clear", {"inputTarget": second_target})
-            prepare()
-            draft = "shift-focus-test-" + "字" * 40
-            before_atomic = route_count("/ipu/text")
-            app_before = app_receipt() if args.expect_boundary_isolation else None
-            status, result = api("/agent/input", {"type": "text", "text": draft})
-            assert status == 502 and result.get("outcome") == "unknown" and result.get("retry_safe") is False, result
-            assert "continue_token" not in result
-            assert route_count("/ipu/text") - before_atomic == 1
-            wait_for(lambda: api("/agent/status")[1].get("drivable") is True, "daemon recovery after unknown")
-            # Read the receiver in one fresh AX snapshot. A health probe can replace the
-            # native session after unknown input and invalidate handles between two lookups.
-            tree = call(prefix + "/source?format=json")
-            values = {}
-            pending_nodes = [tree]
-            while pending_nodes:
-                node = pending_nodes.pop()
-                if node.get("rawIdentifier") in ("field-a", "field-b"):
-                    values[node["rawIdentifier"]] = node.get("value") or ""
-                pending_nodes.extend(node.get("children", []))
-            assert set(values) == {"field-a", "field-b"}, values
-            a, b = values["field-a"], values["field-b"]
-            if args.expect_boundary_isolation:
-                assert a == draft[:20] and b == "", {"a":a,"b":b}
-                app_after=app_receipt();app_fault(app_before,app_after,draft)
-            else:
-                assert a + b == draft, {"a": a, "b": b}
-            reports.append({"case": "daemon-short-mid-input-focus-change-is-unknown-without-retry",
-                            "passed": True, "native_requests": 1, "field_lengths": {"a": len(a), "b": len(b)},
-                            "app_receipts":{"before":app_before,"after":app_after if app_before else None}})
-
-            # Observe actual TCP disconnection separately from the acceptance verdicts above.
-            # If default input continues, explicitly release this fixture's owner to stop it;
-            # that is cleanup, not evidence that disconnect itself cancelled the device.
-            for typing_budget in [None, 6000]:
                 prepare()
                 before_calls = native_keys()
-                payload = {"type": "text", "text": "字" * 2000}
-                if typing_budget is not None:
-                    payload["budget_ms"] = typing_budget
-                data = json.dumps(payload).encode()
-                head = (f"POST /agent/input HTTP/1.1\r\nHost: 127.0.0.1:{daemon_port}\r\n"
-                        f"Authorization: Bearer {tok}\r\nX-Phone-Control: 1\r\n"
-                        f"X-Phone-Owner: input-continuation-fixture\r\nContent-Type: application/json\r\n"
-                        f"Content-Length: {len(data)}\r\n\r\n").encode()
-                connection = socket.create_connection(("127.0.0.1", daemon_port), timeout=10)
-                try:
-                    connection.sendall(head + data)
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    running = pool.submit(api, "/agent/input", {"type": "text", "text": "字" * 500, "budget_ms": 15000},
+                                          "input-continuation-fixture", True)
+                    until = time.monotonic() + 10
+                    while True:
+                        status = call("/status")
+                        if status.get("busy") is True and status.get("busyMs", 0) >= 200:
+                            break
+                        if running.done() or time.monotonic() >= until:
+                            raise RuntimeError("input did not enter a live native chunk before takeover")
+                        time.sleep(0.02)
+                    status, rejected = api("/agent/input", {"type": "text", "text": "x", "budget_ms": 1},
+                                           owner="other-fixture-owner", takeover=True)
+                    assert status == 400, rejected
+                    status, result = running.result(timeout=60)
+                assert status == 502 and result.get("characters_confirmed") == 200, result
+                assert "continue_token" not in result, result
+                _, observed = api("/agent/status", owner="other-fixture-owner")
+                assert observed.get("owner") == "other-fixture-owner", observed
+                assert native_keys() - before_calls == 1
+                first = find("field-a")  # An earlier unknown result can force a fresh runner session.
+                assert call(prefix + f"/element/{first}/attribute/value") == "字" * 200
+                reports.append({"case": "daemon-takeover-during-chunk-is-not-stolen-back-on-completion",
+                                "passed": True, "confirmed": 200, "native_key_requests": 1})
+
+                status, released = api("/agent/owner", {"release": True}, owner="other-fixture-owner")
+                assert status == 200, released
+                first, second = find("field-a"), find("field-b")
+                call(prefix + f"/element/{first}/click", {})
+                wait_for(lambda: call(prefix + f"/element/{first}/attribute/focused") is True, "short input focus")
+                route_count = lambda route: native_count("POST",route)
+                before_atomic, before_keys = route_count("/ipu/text"), native_keys()
+                before_targets = native_count("GET","/wda/input-target")
+                status, result = api("/agent/input", {"type": "text", "text": "short replacement", "clear": True})
+                assert status == 200 and result.get("ok") is True, result
+                assert call(prefix + f"/element/{first}/attribute/value") == "short replacement"
+                assert route_count("/ipu/text") - before_atomic == 1
+                assert native_keys() == before_keys
+                assert native_count("GET","/wda/input-target") == before_targets
+                reports.append({"case": "daemon-short-clear-is-one-bound-native-request", "passed": True, "native_requests": 1})
+
+                status, result = api("/agent/input", {"type": "text", "text": "Draft placeholder", "clear": True})
+                assert status == 200 and result.get("ok") is True, result
+                assert call(prefix + f"/element/{first}/attribute/value") == "Draft placeholder"
+                status, result = api("/agent/input", {"type": "text", "text": "short replacement", "clear": True})
+                assert status == 200 and result.get("ok") is True, result
+                assert call(prefix + f"/element/{first}/attribute/value") == "short replacement"
+                reports.append({"case": "daemon-short-clear-does-not-mistake-typed-placeholder-text-for-empty", "passed": True})
+
+                status, result = api("/agent/input", {"type": "text", "text": "must not\nsubmit", "clear": True})
+                assert status == 422 and result.get("outcome") == "not_sent", result
+                assert "newline_requires_multiline_field" in result.get("runner_error", {}).get("message", ""), result
+                assert call(prefix + f"/element/{first}/attribute/value") == "short replacement"
+                reports.append({"case": "daemon-short-newline-refused-before-clearing-single-line-field", "passed": True})
+
+                secure = find("field-secure")
+                call(prefix + f"/element/{secure}/click", {})
+                wait_for(lambda: call(prefix + f"/element/{secure}/attribute/focused") is True, "secure field focus")
+                status, result = api("/agent/input", {"type": "text", "text": "must-not-type"})
+                assert status == 422 and result.get("outcome") == "not_sent", result
+                assert "secure_field_requires_human" in result.get("runner_error", {}).get("message", ""), result
+                assert call(prefix + f"/element/{secure}/attribute/value") in (None, "")
+                reports.append({"case": "daemon-short-secure-field-requires-human", "passed": True})
+
+                multiline = find("field-multiline")
+                call(prefix + f"/element/{multiline}/click", {})
+                wait_for(lambda: call(prefix + f"/element/{multiline}/attribute/focused") is True, "multiline field focus")
+                status, result = api("/agent/input", {"type": "text", "text": "one\ntwo", "clear": True})
+                assert status == 200 and result.get("ok") is True, result
+                assert call(prefix + f"/element/{multiline}/attribute/value") == "one\ntwo"
+                reports.append({"case": "daemon-short-multiline-textview-newline-readback", "passed": True})
+
+                second = find("field-b")
+                call(prefix + f"/element/{second}/click", {})
+                wait_for(lambda: call(prefix + f"/element/{second}/attribute/focused") is True, "second field setup focus")
+                second_target = call(prefix + "/wda/input-target")["token"]
+                call(prefix + f"/element/{second_target}/clear", {"inputTarget": second_target})
+                prepare()
+                draft = "shift-focus-test-" + "字" * 40
+                before_atomic = route_count("/ipu/text")
+                app_before = app_receipt() if args.expect_boundary_isolation else None
+                status, result = api("/agent/input", {"type": "text", "text": draft})
+                assert status == 502 and result.get("outcome") == "unknown" and result.get("retry_safe") is False, result
+                assert "continue_token" not in result
+                assert route_count("/ipu/text") - before_atomic == 1
+                wait_for(lambda: api("/agent/status")[1].get("drivable") is True, "daemon recovery after unknown")
+                # Read the receiver in one fresh AX snapshot. A health probe can replace the
+                # native session after unknown input and invalidate handles between two lookups.
+                tree = call(prefix + "/source?format=json")
+                values = {}
+                pending_nodes = [tree]
+                while pending_nodes:
+                    node = pending_nodes.pop()
+                    if node.get("rawIdentifier") in ("field-a", "field-b"):
+                        values[node["rawIdentifier"]] = node.get("value") or ""
+                    pending_nodes.extend(node.get("children", []))
+                assert set(values) == {"field-a", "field-b"}, values
+                a, b = values["field-a"], values["field-b"]
+                if args.expect_boundary_isolation:
+                    assert a == draft[:20] and b == "", {"a":a,"b":b}
+                    app_after=app_receipt();app_fault(app_before,app_after,draft)
+                else:
+                    assert a + b == draft, {"a": a, "b": b}
+                reports.append({"case": "daemon-short-mid-input-focus-change-is-unknown-without-retry",
+                                "passed": True, "native_requests": 1, "field_lengths": {"a": len(a), "b": len(b)},
+                                "app_receipts":{"before":app_before,"after":app_after if app_before else None}})
+
+                # Observe actual TCP disconnection separately from the acceptance verdicts above.
+                # If default input continues, explicitly release this fixture's owner to stop it;
+                # that is cleanup, not evidence that disconnect itself cancelled the device.
+                for typing_budget in [None, 6000]:
+                    prepare()
+                    before_calls = native_keys()
+                    payload = {"type": "text", "text": "字" * 2000}
+                    if typing_budget is not None:
+                        payload["budget_ms"] = typing_budget
+                    data = json.dumps(payload).encode()
+                    head = (f"POST /agent/input HTTP/1.1\r\nHost: 127.0.0.1:{daemon_port}\r\n"
+                            f"Authorization: Bearer {tok}\r\nX-Phone-Control: 1\r\n"
+                            f"X-Phone-Owner: input-continuation-fixture\r\nContent-Type: application/json\r\n"
+                            f"Content-Length: {len(data)}\r\n\r\n").encode()
+                    connection = socket.create_connection(("127.0.0.1", daemon_port), timeout=10)
+                    try:
+                        connection.sendall(head + data)
+                        until = time.monotonic() + 10
+                        while True:
+                            live = call("/status")
+                            if live.get("busy") is True and live.get("busyMs", 0) >= 200:
+                                break
+                            if time.monotonic() >= until:
+                                raise RuntimeError("disconnect observation did not reach an active native request")
+                            time.sleep(0.02)
+                        closed_at = time.monotonic()
+                        connection.shutdown(socket.SHUT_RDWR)
+                    finally:
+                        connection.close()
+                    quiet_since = None
+                    released_for_cleanup = False
+                    observed_stop = None
+                    until = time.monotonic() + 15
+                    while time.monotonic() < until:
+                        completed = native_keys() - before_calls
+                        if completed >= 2 and not released_for_cleanup:
+                            status, released = api("/agent/owner", {"release": True})
+                            assert status == 200, released
+                            released_for_cleanup = True
+                        live = call("/status")
+                        if completed >= 1 and live.get("busy") is not True:
+                            if quiet_since is None:
+                                quiet_since = time.monotonic()
+                            elif time.monotonic() - quiet_since >= 0.75:
+                                observed_stop = round((time.monotonic() - closed_at) * 1000)
+                                break
+                        else:
+                            quiet_since = None
+                        time.sleep(0.02)
+                    if observed_stop is None and not released_for_cleanup:
+                        status, released = api("/agent/owner", {"release": True})
+                        assert status == 200, released
+                        released_for_cleanup = True
+                    observations.append({"case": "tcp-disconnect-during-input", "typing_budget_ms": typing_budget,
+                        "admitted_native_chunks": native_keys() - before_calls,
+                        "observed_quiet_after_disconnect_ms": observed_stop,
+                        "explicit_owner_release_for_cleanup": released_for_cleanup,
+                        "interpretation": "stop causality is unproven for bounded input; owner-release cleanup is not TCP cancellation"})
+
+
+                if args.input_privacy:
+                    prepare()
+                    saved = begin()
+                    token = saved["continue_token"]
+                    before = call(prefix + f"/element/{first}/attribute/value")
+                    before_calls = native_keys()
+                    status, held = api("/agent/hold", {"secs":60,"private":True})
+                    assert status == 200, held
+                    status, blocked = api("/agent/input", {"type":"text","text":"x"})
+                    assert status == 409 and blocked.get("error") == "input_privacy_changed", blocked
+                    status, lifted = api("/agent/hold", {"secs":0})
+                    assert status == 200, lifted
+                    status, refused = api("/agent/input", {"type":"text","continue_token":token})
+                    assert status == 409 and refused.get("error") == "input_continuation_expired", refused
+                    assert native_keys() == before_calls
+                    assert call(prefix + f"/element/{first}/attribute/value") == before
+                    reports.append({"case":"private-hold-blocks-text-and-invalidates-prior-continuation", "passed":True,
+                        "additional_native_key_requests":0,"confirmed_before_hold":saved["characters_confirmed"]})
+
+                    prepare()
+                    marker = Path(command("xcrun","simctl","get_app_container",udid,BUNDLE,"data")) / "Documents/input-started.count"
+                    marker.unlink(missing_ok=True)
+                    before_calls = native_keys()
+                    with ThreadPoolExecutor(max_workers=1) as pool:
+                        pending = pool.submit(api,"/agent/input",{"type":"text","text":"字"*800})
+                        until = time.monotonic()+10
+                        while not marker.exists():
+                            if pending.done() or time.monotonic() >= until:
+                                raise RuntimeError("fixture never observed the first input event before privacy hold")
+                            time.sleep(0.02)
+                        first_event_count = int(marker.read_text())
+                        assert first_event_count > 0
+                        status, held = api("/agent/hold",{"secs":60,"private":True})
+                        assert status == 200, held
+                        status, lifted = api("/agent/hold",{"secs":0})
+                        assert status == 200, lifted
+                        status, partial = pending.result(timeout=30)
+                    assert status == 502 and partial.get("characters_confirmed") == 200, partial
+                    assert partial.get("characters_uncertain") == 0 and "continue_token" not in partial, partial
+                    assert partial.get("detail",{}).get("input_error") == "input_privacy_changed", partial
+                    assert native_keys()-before_calls == 1
+                    assert call(prefix + f"/element/{first}/attribute/value") == "字"*200
+                    reports.append({"case":"private-on-off-during-native-typing-stops-after-current-acknowledged-chunk", "passed":True,
+                        "fixture_input_event_observed":True,"first_event_count":first_event_count,
+                        "native_key_requests":1,"characters_confirmed":200,"characters_uncertain":0})
+                    prepare()
+                    status, held = api("/agent/hold",{"secs":1,"private":True})
+                    assert status == 200, held
+                    wait_for(lambda: api("/agent/status")[1].get("screen_private_secs") == 0,"natural private hold expiry")
+                    fresh = begin()
+                    status, held = api("/agent/hold",{"secs":60})
+                    assert status == 200, held
+                    for _ in range(5):
+                        status, fresh = api("/agent/input",{"type":"text","continue_token":fresh["continue_token"]})
+                        if status == 200 and fresh.get("ok") is True:
+                            break
+                        assert status == 502 and fresh.get("continuation_safe") is True, fresh
+                    else:
+                        raise RuntimeError("fresh continuation after expiry did not complete")
+                    assert call(prefix + f"/element/{first}/attribute/value") == "字"*500
+                    status, lifted = api("/agent/hold",{"secs":0})
+                    assert status == 200, lifted
+                    reports.append({"case":"fresh-input-after-private-expiry-survives-normal-hold", "passed":True,"final_length":500})
+
+
+                if args.observation_scope:
+                    marker = Path(command("xcrun","simctl","get_app_container",udid,BUNDLE,"data")) / "Documents/input-started.count"
+                    for batch in [False,True]:
+                        prepare()
+                        marker.unlink(missing_ok=True)
+                        before_atomic, before_keys = route_count("/ipu/text"), native_keys()
+                        action = {"type":"text","text":"observation-probe"}
+                        path = "/agent/actions" if batch else "/agent/input?return=delta&settle_ms=2500"
+                        payload = {"observe":True,"steps":[{"kind":"action","action":action}]} if batch else action
+                        with ThreadPoolExecutor(max_workers=1) as pool:
+                            pending = pool.submit(api,path,payload)
+                            until = time.monotonic()+10
+                            while not marker.exists():
+                                if pending.done() or time.monotonic()>=until:
+                                    raise RuntimeError("no fixture input event before scoped observation test")
+                                time.sleep(0.01)
+                            assert int(marker.read_text())>0
+                            status, held = api("/agent/hold",{"secs":60,"private":True})
+                            assert status==200,held
+                            status, lifted = api("/agent/hold",{"secs":0})
+                            assert status==200,lifted
+                            status, receipt = pending.result(timeout=30)
+                        assert status==(423 if batch else 200) and receipt.get("ok") is (not batch),receipt
+                        reason="screen_privacy_changed" if batch else "input_privacy_changed"
+                        assert receipt.get("observation_omitted") is True and receipt.get("scope_changed")==reason,receipt
+                        assert all(key not in receipt for key in ["elements","delta","snapshot","alert","image"]),receipt
+                        if batch:
+                            assert receipt.get("completed")==1 and receipt.get("applied_actions")==1,receipt
+                            assert receipt["steps"][0]["ok"] is True,receipt
+                        assert route_count("/ipu/text")-before_atomic==1 and native_keys()==before_keys
+                        assert call(prefix+f"/element/{first}/attribute/value")=="observation-probe"
+                        reports.append({"case":"batch-applied-receipt-withholds-stale-observation" if batch else "single-applied-receipt-withholds-stale-observation",
+                            "passed":True,"native_atomic_requests":1,"ok":not batch,"observation_omitted":True,"independent_readback":True})
+
+                if args.native_scope:
+                    prepare()
+                    before_terminate=route_count("/wda/apps/terminate")
+                    before_launch=route_count("/wda/apps/launch")
+                    with ThreadPoolExecutor(max_workers=1) as pool:
+                        pending=pool.submit(api,"/agent/input",{"type":"launch_app","bundle":BUNDLE,"fresh":True})
+                        until=time.monotonic()+10
+                        while route_count("/wda/apps/terminate")==before_terminate:
+                            if pending.done() or time.monotonic()>=until:
+                                raise RuntimeError("fresh launch did not acknowledge termination")
+                            time.sleep(0.01)
+                        status,held=api("/agent/hold",{"secs":60,"private":True})
+                        assert status==200,held
+                        status,lifted=api("/agent/hold",{"secs":0})
+                        assert status==200,lifted
+                        status,receipt=pending.result(timeout=30)
+                    assert status==409 and receipt.get("outcome")=="partial",receipt
+                    assert receipt.get("native_mutations_confirmed")==1 and receipt.get("native_mutations_uncertain")==0,receipt
+                    assert receipt.get("retry_safe") is False,receipt
+                    assert route_count("/wda/apps/terminate")==before_terminate+1
+                    assert route_count("/wda/apps/launch")==before_launch
+                    reports.append({"case":"native-termination-ack-preserved-without-late-relaunch","passed":True,
+                        "native_mutations_confirmed":1,"native_mutations_uncertain":0,"later_launch_requests":0})
+                    command("xcrun","simctl","launch",udid,BUNDLE)
+                    settle_fixture()
+                    first,second=find("field-a"),find("field-b")
+                    call(prefix+f"/element/{first}/click",{})
+                    wait_for(lambda: call(prefix+f"/element/{first}/attribute/focused") is True,"fixture focus after interrupted fresh launch")
+
+                if mcp_binary:
+                    prepare()
+                    env = dict(environment)
+                    env.update(IPHONE_USE_URL=f"http://127.0.0.1:{daemon_port}", IPHONE_USE_TOKEN=tok,
+                        IPHONE_USE_OWNER="input-continuation-fixture", IPHONE_USE_MCP_TOOLS="phone_type,phone_run_steps",
+                        IPHONE_USE_MCP_STRUCTURED="full")
+                    with (out / "mcp.log").open("w") as log:
+                        mcp = subprocess.Popen([str(mcp_binary)], env=env, stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE, stderr=log, start_new_session=True)
+                    reply_buffer = b""
+
+                    def rpc(message):
+                        mcp.stdin.write((json.dumps(message) + "\n").encode())
+                        mcp.stdin.flush()
+
+                    def reply(identifier, timeout=10):
+                        nonlocal reply_buffer
+                        until = time.monotonic() + timeout
+                        while time.monotonic() < until:
+                            while b"\n" in reply_buffer:
+                                line, reply_buffer = reply_buffer.split(b"\n", 1)
+                                result = json.loads(line)
+                                if result.get("id") == identifier:
+                                    return result
+                            readable, _, _ = select.select([mcp.stdout], [], [], max(0, until - time.monotonic()))
+                            if readable:
+                                data = os.read(mcp.stdout.fileno(), 65536)
+                                if not data:
+                                    raise RuntimeError("MCP exited before its reply")
+                                reply_buffer += data
+                        raise RuntimeError("MCP reply deadline")
+
+                    rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+                        "protocolVersion": "2025-06-18", "capabilities": {},
+                        "clientInfo": {"name": "input-cancel-fixture", "version": "1"}}})
+                    assert "result" in reply(1)
+                    rpc({"jsonrpc": "2.0", "method": "notifications/initialized"})
+                    mcp_rpc, mcp_reply = rpc, reply
+                    before_calls = native_keys()
+                    rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+                        "name": "phone_type", "arguments": {"text": "字" * 2000, "observe": False}}})
                     until = time.monotonic() + 10
                     while True:
                         live = call("/status")
                         if live.get("busy") is True and live.get("busyMs", 0) >= 200:
                             break
-                        if time.monotonic() >= until:
-                            raise RuntimeError("disconnect observation did not reach an active native request")
+                        if mcp.poll() is not None or time.monotonic() >= until:
+                            raise RuntimeError("MCP input did not enter an active native request")
                         time.sleep(0.02)
-                    closed_at = time.monotonic()
-                    connection.shutdown(socket.SHUT_RDWR)
-                finally:
-                    connection.close()
-                quiet_since = None
-                released_for_cleanup = False
-                observed_stop = None
-                until = time.monotonic() + 15
-                while time.monotonic() < until:
-                    completed = native_keys() - before_calls
-                    if completed >= 2 and not released_for_cleanup:
-                        status, released = api("/agent/owner", {"release": True})
-                        assert status == 200, released
-                        released_for_cleanup = True
-                    live = call("/status")
-                    if completed >= 1 and live.get("busy") is not True:
-                        if quiet_since is None:
-                            quiet_since = time.monotonic()
-                        elif time.monotonic() - quiet_since >= 0.75:
-                            observed_stop = round((time.monotonic() - closed_at) * 1000)
-                            break
-                    else:
-                        quiet_since = None
-                    time.sleep(0.02)
-                if observed_stop is None and not released_for_cleanup:
-                    status, released = api("/agent/owner", {"release": True})
-                    assert status == 200, released
-                    released_for_cleanup = True
-                observations.append({"case": "tcp-disconnect-during-input", "typing_budget_ms": typing_budget,
-                    "admitted_native_chunks": native_keys() - before_calls,
-                    "observed_quiet_after_disconnect_ms": observed_stop,
-                    "explicit_owner_release_for_cleanup": released_for_cleanup,
-                    "interpretation": "stop causality is unproven for bounded input; owner-release cleanup is not TCP cancellation"})
-
-
-            if args.input_privacy:
-                prepare()
-                saved = begin()
-                token = saved["continue_token"]
-                before = call(prefix + f"/element/{first}/attribute/value")
-                before_calls = native_keys()
-                status, held = api("/agent/hold", {"secs":60,"private":True})
-                assert status == 200, held
-                status, blocked = api("/agent/input", {"type":"text","text":"x"})
-                assert status == 409 and blocked.get("error") == "input_privacy_changed", blocked
-                status, lifted = api("/agent/hold", {"secs":0})
-                assert status == 200, lifted
-                status, refused = api("/agent/input", {"type":"text","continue_token":token})
-                assert status == 409 and refused.get("error") == "input_continuation_expired", refused
-                assert native_keys() == before_calls
-                assert call(prefix + f"/element/{first}/attribute/value") == before
-                reports.append({"case":"private-hold-blocks-text-and-invalidates-prior-continuation", "passed":True,
-                    "additional_native_key_requests":0,"confirmed_before_hold":saved["characters_confirmed"]})
-
-                prepare()
-                marker = Path(command("xcrun","simctl","get_app_container",udid,BUNDLE,"data")) / "Documents/input-started.count"
-                marker.unlink(missing_ok=True)
-                before_calls = native_keys()
-                with ThreadPoolExecutor(max_workers=1) as pool:
-                    pending = pool.submit(api,"/agent/input",{"type":"text","text":"字"*800})
-                    until = time.monotonic()+10
-                    while not marker.exists():
-                        if pending.done() or time.monotonic() >= until:
-                            raise RuntimeError("fixture never observed the first input event before privacy hold")
-                        time.sleep(0.02)
-                    first_event_count = int(marker.read_text())
-                    assert first_event_count > 0
-                    status, held = api("/agent/hold",{"secs":60,"private":True})
-                    assert status == 200, held
-                    status, lifted = api("/agent/hold",{"secs":0})
-                    assert status == 200, lifted
-                    status, partial = pending.result(timeout=30)
-                assert status == 502 and partial.get("characters_confirmed") == 200, partial
-                assert partial.get("characters_uncertain") == 0 and "continue_token" not in partial, partial
-                assert partial.get("detail",{}).get("input_error") == "input_privacy_changed", partial
-                assert native_keys()-before_calls == 1
-                assert call(prefix + f"/element/{first}/attribute/value") == "字"*200
-                reports.append({"case":"private-on-off-during-native-typing-stops-after-current-acknowledged-chunk", "passed":True,
-                    "fixture_input_event_observed":True,"first_event_count":first_event_count,
-                    "native_key_requests":1,"characters_confirmed":200,"characters_uncertain":0})
-                prepare()
-                status, held = api("/agent/hold",{"secs":1,"private":True})
-                assert status == 200, held
-                wait_for(lambda: api("/agent/status")[1].get("screen_private_secs") == 0,"natural private hold expiry")
-                fresh = begin()
-                status, held = api("/agent/hold",{"secs":60})
-                assert status == 200, held
-                for _ in range(5):
-                    status, fresh = api("/agent/input",{"type":"text","continue_token":fresh["continue_token"]})
-                    if status == 200 and fresh.get("ok") is True:
-                        break
-                    assert status == 502 and fresh.get("continuation_safe") is True, fresh
-                else:
-                    raise RuntimeError("fresh continuation after expiry did not complete")
-                assert call(prefix + f"/element/{first}/attribute/value") == "字"*500
-                status, lifted = api("/agent/hold",{"secs":0})
-                assert status == 200, lifted
-                reports.append({"case":"fresh-input-after-private-expiry-survives-normal-hold", "passed":True,"final_length":500})
-
-
-            if args.observation_scope:
-                marker = Path(command("xcrun","simctl","get_app_container",udid,BUNDLE,"data")) / "Documents/input-started.count"
-                for batch in [False,True]:
-                    prepare()
-                    marker.unlink(missing_ok=True)
-                    before_atomic, before_keys = route_count("/ipu/text"), native_keys()
-                    action = {"type":"text","text":"observation-probe"}
-                    path = "/agent/actions" if batch else "/agent/input?return=delta&settle_ms=2500"
-                    payload = {"observe":True,"steps":[{"kind":"action","action":action}]} if batch else action
-                    with ThreadPoolExecutor(max_workers=1) as pool:
-                        pending = pool.submit(api,path,payload)
-                        until = time.monotonic()+10
-                        while not marker.exists():
-                            if pending.done() or time.monotonic()>=until:
-                                raise RuntimeError("no fixture input event before scoped observation test")
-                            time.sleep(0.01)
-                        assert int(marker.read_text())>0
-                        status, held = api("/agent/hold",{"secs":60,"private":True})
-                        assert status==200,held
-                        status, lifted = api("/agent/hold",{"secs":0})
-                        assert status==200,lifted
-                        status, receipt = pending.result(timeout=30)
-                    assert status==(423 if batch else 200) and receipt.get("ok") is (not batch),receipt
-                    reason="screen_privacy_changed" if batch else "input_privacy_changed"
-                    assert receipt.get("observation_omitted") is True and receipt.get("scope_changed")==reason,receipt
-                    assert all(key not in receipt for key in ["elements","delta","snapshot","alert","image"]),receipt
-                    if batch:
-                        assert receipt.get("completed")==1 and receipt.get("applied_actions")==1,receipt
-                        assert receipt["steps"][0]["ok"] is True,receipt
-                    assert route_count("/ipu/text")-before_atomic==1 and native_keys()==before_keys
-                    assert call(prefix+f"/element/{first}/attribute/value")=="observation-probe"
-                    reports.append({"case":"batch-applied-receipt-withholds-stale-observation" if batch else "single-applied-receipt-withholds-stale-observation",
-                        "passed":True,"native_atomic_requests":1,"ok":not batch,"observation_omitted":True,"independent_readback":True})
-
-            if args.native_scope:
-                prepare()
-                before_terminate=route_count("/wda/apps/terminate")
-                before_launch=route_count("/wda/apps/launch")
-                with ThreadPoolExecutor(max_workers=1) as pool:
-                    pending=pool.submit(api,"/agent/input",{"type":"launch_app","bundle":BUNDLE,"fresh":True})
-                    until=time.monotonic()+10
-                    while route_count("/wda/apps/terminate")==before_terminate:
-                        if pending.done() or time.monotonic()>=until:
-                            raise RuntimeError("fresh launch did not acknowledge termination")
-                        time.sleep(0.01)
-                    status,held=api("/agent/hold",{"secs":60,"private":True})
-                    assert status==200,held
-                    status,lifted=api("/agent/hold",{"secs":0})
-                    assert status==200,lifted
-                    status,receipt=pending.result(timeout=30)
-                assert status==409 and receipt.get("outcome")=="partial",receipt
-                assert receipt.get("native_mutations_confirmed")==1 and receipt.get("native_mutations_uncertain")==0,receipt
-                assert receipt.get("retry_safe") is False,receipt
-                assert route_count("/wda/apps/terminate")==before_terminate+1
-                assert route_count("/wda/apps/launch")==before_launch
-                reports.append({"case":"native-termination-ack-preserved-without-late-relaunch","passed":True,
-                    "native_mutations_confirmed":1,"native_mutations_uncertain":0,"later_launch_requests":0})
-                command("xcrun","simctl","launch",udid,BUNDLE)
-                settle_fixture()
-                first,second=find("field-a"),find("field-b")
-                call(prefix+f"/element/{first}/click",{})
-                wait_for(lambda: call(prefix+f"/element/{first}/attribute/focused") is True,"fixture focus after interrupted fresh launch")
-
-            if mcp_binary:
-                prepare()
-                env = dict(environment)
-                env.update(IPHONE_USE_URL=f"http://127.0.0.1:{daemon_port}", IPHONE_USE_TOKEN=tok,
-                    IPHONE_USE_OWNER="input-continuation-fixture", IPHONE_USE_MCP_TOOLS="phone_type,phone_run_steps",
-                    IPHONE_USE_MCP_STRUCTURED="full")
-                with (out / "mcp.log").open("w") as log:
-                    mcp = subprocess.Popen([str(mcp_binary)], env=env, stdin=subprocess.PIPE,
-                        stdout=subprocess.PIPE, stderr=log, start_new_session=True)
-                reply_buffer = b""
-
-                def rpc(message):
-                    mcp.stdin.write((json.dumps(message) + "\n").encode())
-                    mcp.stdin.flush()
-
-                def reply(identifier, timeout=10):
-                    nonlocal reply_buffer
-                    until = time.monotonic() + timeout
+                    cancelled_at = time.monotonic()
+                    rpc({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {
+                        "requestId": 2, "reason": "input fixture cancellation"}})
+                    cancelled = reply(2)
+                    verdict = cancelled.get("result", {}).get("structuredContent", {})
+                    assert verdict.get("outcome") == "unknown" and verdict.get("retry_safe") is False, cancelled
+                    quiet_since = None
+                    observed_stop = None
+                    until = time.monotonic() + 10
                     while time.monotonic() < until:
-                        while b"\n" in reply_buffer:
-                            line, reply_buffer = reply_buffer.split(b"\n", 1)
-                            result = json.loads(line)
-                            if result.get("id") == identifier:
-                                return result
-                        readable, _, _ = select.select([mcp.stdout], [], [], max(0, until - time.monotonic()))
-                        if readable:
-                            data = os.read(mcp.stdout.fileno(), 65536)
-                            if not data:
-                                raise RuntimeError("MCP exited before its reply")
-                            reply_buffer += data
-                    raise RuntimeError("MCP reply deadline")
+                        completed = native_keys() - before_calls
+                        assert completed <= 1, "MCP cancellation dispatched a later chunk"
+                        live = call("/status")
+                        if completed == 1 and live.get("busy") is not True:
+                            if quiet_since is None:
+                                quiet_since = time.monotonic()
+                            elif time.monotonic() - quiet_since >= 0.75:
+                                observed_stop = round((time.monotonic() - cancelled_at) * 1000)
+                                break
+                        else:
+                            quiet_since = None
+                        time.sleep(0.02)
+                    assert observed_stop is not None, "native input did not become quiet after MCP cancellation"
+                    reports.append({"case": "mcp-cancel-notification-stops-after-current-native-chunk",
+                        "passed": True, "native_key_requests": 1, "verdict": "unknown",
+                        "observed_quiet_after_notification_ms": observed_stop})
 
-                rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
-                    "protocolVersion": "2025-06-18", "capabilities": {},
-                    "clientInfo": {"name": "input-cancel-fixture", "version": "1"}}})
-                assert "result" in reply(1)
-                rpc({"jsonrpc": "2.0", "method": "notifications/initialized"})
-                mcp_rpc, mcp_reply = rpc, reply
-                before_calls = native_keys()
-                rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
-                    "name": "phone_type", "arguments": {"text": "字" * 2000, "observe": False}}})
-                until = time.monotonic() + 10
-                while True:
-                    live = call("/status")
-                    if live.get("busy") is True and live.get("busyMs", 0) >= 200:
-                        break
-                    if mcp.poll() is not None or time.monotonic() >= until:
-                        raise RuntimeError("MCP input did not enter an active native request")
-                    time.sleep(0.02)
-                cancelled_at = time.monotonic()
-                rpc({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {
-                    "requestId": 2, "reason": "input fixture cancellation"}})
-                cancelled = reply(2)
-                verdict = cancelled.get("result", {}).get("structuredContent", {})
-                assert verdict.get("outcome") == "unknown" and verdict.get("retry_safe") is False, cancelled
-                quiet_since = None
-                observed_stop = None
-                until = time.monotonic() + 10
-                while time.monotonic() < until:
-                    completed = native_keys() - before_calls
-                    assert completed <= 1, "MCP cancellation dispatched a later chunk"
-                    live = call("/status")
-                    if completed == 1 and live.get("busy") is not True:
-                        if quiet_since is None:
-                            quiet_since = time.monotonic()
-                        elif time.monotonic() - quiet_since >= 0.75:
-                            observed_stop = round((time.monotonic() - cancelled_at) * 1000)
-                            break
-                    else:
-                        quiet_since = None
-                    time.sleep(0.02)
-                assert observed_stop is not None, "native input did not become quiet after MCP cancellation"
-                reports.append({"case": "mcp-cancel-notification-stops-after-current-native-chunk",
-                    "passed": True, "native_key_requests": 1, "verdict": "unknown",
-                    "observed_quiet_after_notification_ms": observed_stop})
+                if args.recovery:
+                    status, result = api("/agent/input", {"type": "tap_locator", "locator": {"label": "__missing_fixture_target__"}})
+                    assert status == 422 and result.get("error") == "element_not_found", result
+                    assert result.get("outcome") == "not_sent" and result.get("retry_safe") is True, result
+                    image = result.get("image", {})
+                    assert image.get("png_base64") and image.get("pixel_size", [0, 0])[0] > 0, result
+                    assert image["received_at_ms"] >= image["requested_at_ms"]
+                    assert "failure" in image.get("relation", "")
+                    reports.append({"case": "daemon-visual-failure-fresh-image-preserves-verdict", "passed": True,
+                                    "pixel_size": image["pixel_size"], "source": image.get("source")})
 
-            if args.recovery:
-                status, result = api("/agent/input", {"type": "tap_locator", "locator": {"label": "__missing_fixture_target__"}})
-                assert status == 422 and result.get("error") == "element_not_found", result
-                assert result.get("outcome") == "not_sent" and result.get("retry_safe") is True, result
-                image = result.get("image", {})
-                assert image.get("png_base64") and image.get("pixel_size", [0, 0])[0] > 0, result
-                assert image["received_at_ms"] >= image["requested_at_ms"]
-                assert "failure" in image.get("relation", "")
-                reports.append({"case": "daemon-visual-failure-fresh-image-preserves-verdict", "passed": True,
-                                "pixel_size": image["pixel_size"], "source": image.get("source")})
+                    status, held = api("/agent/hold", {"secs": 60, "private": True})
+                    assert status == 200, held
+                    status, result = api("/agent/input", {"type": "tap_locator", "locator": {"label": "__missing_fixture_target__"}})
+                    assert status == 409 and result.get("error") == "input_privacy_changed" and "image" not in result, result
+                    reports.append({"case": "daemon-private-hold-withholds-failure-image", "passed": True})
+                    status, released = api("/agent/hold", {"secs": 0})
+                    assert status == 200, released
 
-                status, held = api("/agent/hold", {"secs": 60, "private": True})
-                assert status == 200, held
-                status, result = api("/agent/input", {"type": "tap_locator", "locator": {"label": "__missing_fixture_target__"}})
-                assert status == 409 and result.get("error") == "input_privacy_changed" and "image" not in result, result
-                reports.append({"case": "daemon-private-hold-withholds-failure-image", "passed": True})
-                status, released = api("/agent/hold", {"secs": 0})
-                assert status == 200, released
-
-                if mcp_binary:
-                    rpc({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {
-                        "name": "phone_run_steps", "arguments": {"steps": [{"kind": "tap_locator",
-                            "locator": {"label": "__missing_fixture_target__"}}], "observe": False}}})
-                    recovered = reply(3)
-                    payload = recovered.get("result", {})
-                    assert payload.get("isError") is True, recovered
-                    verdict = payload.get("structuredContent", {})
-                    assert verdict.get("outcome") == "not_sent" and verdict.get("retry_safe") is True, recovered
-                    images = [block for block in payload.get("content", []) if block.get("type") == "image"]
-                    assert len(images) == 1 and "png_base64" not in json.dumps(verdict), "image must be lifted once"
-                    assert all("png_base64" not in block.get("text", "") for block in payload.get("content", []))
-                    reports.append({"case": "stdio-visual-recovery-one-image-with-original-batch-fate", "passed": True})
+                    if mcp_binary:
+                        rpc({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {
+                            "name": "phone_run_steps", "arguments": {"steps": [{"kind": "tap_locator",
+                                "locator": {"label": "__missing_fixture_target__"}}], "observe": False}}})
+                        recovered = reply(3)
+                        payload = recovered.get("result", {})
+                        assert payload.get("isError") is True, recovered
+                        verdict = payload.get("structuredContent", {})
+                        assert verdict.get("outcome") == "not_sent" and verdict.get("retry_safe") is True, recovered
+                        images = [block for block in payload.get("content", []) if block.get("type") == "image"]
+                        assert len(images) == 1 and "png_base64" not in json.dumps(verdict), "image must be lifted once"
+                        assert all("png_base64" not in block.get("text", "") for block in payload.get("content", []))
+                        reports.append({"case": "stdio-visual-recovery-one-image-with-original-batch-fate", "passed": True})
 
 
-            if args.hosts:
-                status, before_owner = api("/agent/status")
-                assert status == 200
-                before_calls = native_keys()
-                for iteration in [1, 2]:
-                    if mcp and mcp.poll() is None:
-                        os.killpg(mcp.pid, signal.SIGTERM)
-                        mcp.wait(timeout=10)
-                    env = dict(environment)
-                    env.update(IPHONE_USE_URL=f"http://127.0.0.1:{daemon_port}", IPHONE_USE_TOKEN=tok,
-                        IPHONE_USE_OWNER="workbuddy-view-fixture", IPHONE_USE_MCP_HOST="workbuddy",
-                        IPHONE_USE_MCP_TOOLS="phone_screen", IPHONE_USE_MCP_STRUCTURED="off")
-                    with (out / "mcp.log").open("a") as log:
-                        mcp = subprocess.Popen([str(mcp_binary)], env=env, stdin=subprocess.PIPE,
-                            stdout=subprocess.PIPE, stderr=log, start_new_session=True)
-                    reply_buffer = b""
-                    rpc({"jsonrpc":"2.0","id":1,"method":"initialize","params":{
-                        "protocolVersion":"2025-06-18","capabilities":{},
-                        "clientInfo":{"name":"workbuddy-fixture","version":"1"}}})
-                    assert "result" in reply(1)
-                    rpc({"jsonrpc":"2.0","method":"notifications/initialized"})
-                    rpc({"jsonrpc":"2.0","id":2,"method":"resources/read","params":{
-                        "uri":f"ui://iphone-use/frame-v1/600/{iteration}"}})
-                    resource = reply(2)
-                    frame = json.loads(resource["result"]["contents"][0]["text"])
-                    assert frame["owner"] == before_owner.get("owner"), frame
-                    png = base64.b64decode(frame["frame"]["data"], validate=True)
+                if args.hosts:
+                    status, before_owner = api("/agent/status")
+                    assert status == 200
+                    before_calls = native_keys()
+                    for iteration in [1, 2]:
+                        if mcp and mcp.poll() is None:
+                            os.killpg(mcp.pid, signal.SIGTERM)
+                            mcp.wait(timeout=10)
+                        env = dict(environment)
+                        env.update(IPHONE_USE_URL=f"http://127.0.0.1:{daemon_port}", IPHONE_USE_TOKEN=tok,
+                            IPHONE_USE_OWNER="workbuddy-view-fixture", IPHONE_USE_MCP_HOST="workbuddy",
+                            IPHONE_USE_MCP_TOOLS="phone_screen", IPHONE_USE_MCP_STRUCTURED="off")
+                        with (out / "mcp.log").open("a") as log:
+                            mcp = subprocess.Popen([str(mcp_binary)], env=env, stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE, stderr=log, start_new_session=True)
+                        reply_buffer = b""
+                        rpc({"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+                            "protocolVersion":"2025-06-18","capabilities":{},
+                            "clientInfo":{"name":"workbuddy-fixture","version":"1"}}})
+                        assert "result" in reply(1)
+                        rpc({"jsonrpc":"2.0","method":"notifications/initialized"})
+                        rpc({"jsonrpc":"2.0","id":2,"method":"resources/read","params":{
+                            "uri":f"ui://iphone-use/frame-v1/600/{iteration}"}})
+                        resource = reply(2)
+                        frame = json.loads(resource["result"]["contents"][0]["text"])
+                        assert frame["owner"] == before_owner.get("owner"), frame
+                        png = base64.b64decode(frame["frame"]["data"], validate=True)
+                        assert png.startswith(b"\x89PNG\r\n\x1a\n")
+                    status, after_owner = api("/agent/status")
+                    assert status == 200 and after_owner.get("owner") == before_owner.get("owner")
+                    assert native_keys() == before_calls, "resource frame path sent keyboard input"
+                    reports.append({"case":"workbuddy-resource-frame-across-two-mcp-processes", "passed":True,
+                        "processes":2, "frame_mime":"image/png", "owner_unchanged":True, "native_key_requests":0})
+                    status, held = api("/agent/hold", {"secs":60,"private":True})
+                    assert status == 200, held
+                    rpc({"jsonrpc":"2.0","id":3,"method":"resources/read","params":{
+                        "uri":"ui://iphone-use/frame-v1/600/3"}})
+                    resource = reply(3)
+                    hidden = json.loads(resource["result"]["contents"][0]["text"])
+                    assert hidden["frame"] is None and hidden.get("clear_frame") is True, hidden
+                    assert hidden.get("private_secs",0) > 0, hidden
+                    status, lifted = api("/agent/hold", {"secs":0})
+                    assert status == 200, lifted
+                    rpc({"jsonrpc":"2.0","id":4,"method":"resources/read","params":{
+                        "uri":"ui://iphone-use/frame-v1/600/4"}})
+                    resource = reply(4)
+                    visible = json.loads(resource["result"]["contents"][0]["text"])
+                    assert base64.b64decode(visible["frame"]["data"],validate=True).startswith(b"\x89PNG\r\n\x1a\n")
+                    assert native_keys() == before_calls
+                    reports.append({"case":"workbuddy-private-capture-clears-frame-and-new-read-resumes", "passed":True,
+                        "private_frame":None,"clear_frame":True,"fresh_read_after_unhide":"image/png","native_key_requests":0})
+
+                if args.video:
+                    status,initial=api("/agent/status")
+                    before_keys=native_keys()
+                    identifier=100
+                    def video_read(reset):
+                        nonlocal identifier
+                        identifier+=1
+                        rpc({"jsonrpc":"2.0","id":identifier,"method":"resources/read","params":{
+                            "uri":f"ui://iphone-use/video-v1/{int(reset)}/{identifier}"}})
+                        result=reply(identifier)
+                        return json.loads(result["result"]["contents"][0]["text"])
+                    packets=[]
+                    scope=None
+                    until=time.monotonic()+15
+                    while time.monotonic()<until and len(packets)<3:
+                        frame=video_read(scope is None)
+                        assert not frame.get("video_unavailable"),frame
+                        video=frame.get("video",{})
+                        if video.get("reset"):packets=[]
+                        scope=video.get("scope",scope)
+                        packets.extend(video.get("packets",[]))
+                    assert packets and packets[0]["keyframe"],"no native keyframe in bounded reads"
+                    raw=b"".join(base64.b64decode(packet["data"],validate=True) for packet in packets)
+                    (out/"native-panel.h264").write_bytes(raw)
+                    command("ffmpeg","-v","error","-f","h264","-i",out/"native-panel.h264","-frames:v","1",out/"native-panel.png")
+                    png=(out/"native-panel.png").read_bytes()
                     assert png.startswith(b"\x89PNG\r\n\x1a\n")
-                status, after_owner = api("/agent/status")
-                assert status == 200 and after_owner.get("owner") == before_owner.get("owner")
-                assert native_keys() == before_calls, "resource frame path sent keyboard input"
-                reports.append({"case":"workbuddy-resource-frame-across-two-mcp-processes", "passed":True,
-                    "processes":2, "frame_mime":"image/png", "owner_unchanged":True, "native_key_requests":0})
-                status, held = api("/agent/hold", {"secs":60,"private":True})
-                assert status == 200, held
-                rpc({"jsonrpc":"2.0","id":3,"method":"resources/read","params":{
-                    "uri":"ui://iphone-use/frame-v1/600/3"}})
-                resource = reply(3)
-                hidden = json.loads(resource["result"]["contents"][0]["text"])
-                assert hidden["frame"] is None and hidden.get("clear_frame") is True, hidden
-                assert hidden.get("private_secs",0) > 0, hidden
-                status, lifted = api("/agent/hold", {"secs":0})
-                assert status == 200, lifted
-                rpc({"jsonrpc":"2.0","id":4,"method":"resources/read","params":{
-                    "uri":"ui://iphone-use/frame-v1/600/4"}})
-                resource = reply(4)
-                visible = json.loads(resource["result"]["contents"][0]["text"])
-                assert base64.b64decode(visible["frame"]["data"],validate=True).startswith(b"\x89PNG\r\n\x1a\n")
-                assert native_keys() == before_calls
-                reports.append({"case":"workbuddy-private-capture-clears-frame-and-new-read-resumes", "passed":True,
-                    "private_frame":None,"clear_frame":True,"fresh_read_after_unhide":"image/png","native_key_requests":0})
+                    size=[int.from_bytes(png[16:20],"big"),int.from_bytes(png[20:24],"big")]
+                    assert min(size)>0
+                    reports.append({"case":"native-h264-runner-daemon-stdio-resource-independent-decode","passed":True,
+                        "packets":len(packets),"encoded_bytes":len(raw),"decoded_pixel_size":size,"credentials_in_panel":False,
+                        "annexb_sha256":hashlib.sha256(raw).hexdigest(),"decoded_png_sha256":hashlib.sha256(png).hexdigest(),
+                        "native_passthrough_log": "passing the device runner\'s own H.264 through" in (out/"daemon.log").read_text(errors="replace")})
+                    keepalive=video_read(False)
+                    assert keepalive.get("video",{}).get("scope"),keepalive
+                    scope=keepalive["video"]["scope"]
+                    assert api("/agent/hold",{"secs":60,"private":True})[0]==200
+                    assert api("/agent/hold",{"secs":0})[0]==200
+                    stale=video_read(False)
+                    assert stale.get("clear_frame") is True and "video" not in stale,stale
+                    fresh=video_read(True)
+                    assert fresh.get("video",{}).get("scope")!=scope and not fresh.get("video_unavailable"),fresh
+                    assert native_keys()==before_keys
+                    status,final=api("/agent/status")
+                    assert final.get("owner")==initial.get("owner")
+                    reports.append({"case":"native-h264-private-on-off-clears-old-subscription","passed":True,
+                        "stale_packets_returned":0,"new_scope":True,"native_key_requests":0,"owner_unchanged":True})
 
-            if args.video:
-                status,initial=api("/agent/status")
-                before_keys=native_keys()
-                identifier=100
-                def video_read(reset):
-                    nonlocal identifier
-                    identifier+=1
-                    rpc({"jsonrpc":"2.0","id":identifier,"method":"resources/read","params":{
-                        "uri":f"ui://iphone-use/video-v1/{int(reset)}/{identifier}"}})
-                    result=reply(identifier)
-                    return json.loads(result["result"]["contents"][0]["text"])
-                packets=[]
-                scope=None
-                until=time.monotonic()+15
-                while time.monotonic()<until and len(packets)<3:
-                    frame=video_read(scope is None)
-                    assert not frame.get("video_unavailable"),frame
-                    video=frame.get("video",{})
-                    if video.get("reset"):packets=[]
-                    scope=video.get("scope",scope)
-                    packets.extend(video.get("packets",[]))
-                assert packets and packets[0]["keyframe"],"no native keyframe in bounded reads"
-                raw=b"".join(base64.b64decode(packet["data"],validate=True) for packet in packets)
-                (out/"native-panel.h264").write_bytes(raw)
-                command("ffmpeg","-v","error","-f","h264","-i",out/"native-panel.h264","-frames:v","1",out/"native-panel.png")
-                png=(out/"native-panel.png").read_bytes()
-                assert png.startswith(b"\x89PNG\r\n\x1a\n")
-                size=[int.from_bytes(png[16:20],"big"),int.from_bytes(png[20:24],"big")]
-                assert min(size)>0
-                reports.append({"case":"native-h264-runner-daemon-stdio-resource-independent-decode","passed":True,
-                    "packets":len(packets),"encoded_bytes":len(raw),"decoded_pixel_size":size,"credentials_in_panel":False,
-                    "annexb_sha256":hashlib.sha256(raw).hexdigest(),"decoded_png_sha256":hashlib.sha256(png).hexdigest(),
-                    "native_passthrough_log": "passing the device runner\'s own H.264 through" in (out/"daemon.log").read_text(errors="replace")})
-                keepalive=video_read(False)
-                assert keepalive.get("video",{}).get("scope"),keepalive
-                scope=keepalive["video"]["scope"]
-                assert api("/agent/hold",{"secs":60,"private":True})[0]==200
-                assert api("/agent/hold",{"secs":0})[0]==200
-                stale=video_read(False)
-                assert stale.get("clear_frame") is True and "video" not in stale,stale
-                fresh=video_read(True)
-                assert fresh.get("video",{}).get("scope")!=scope and not fresh.get("video_unavailable"),fresh
-                assert native_keys()==before_keys
-                status,final=api("/agent/status")
-                assert final.get("owner")==initial.get("owner")
-                reports.append({"case":"native-h264-private-on-off-clears-old-subscription","passed":True,
-                    "stale_packets_returned":0,"new_scope":True,"native_key_requests":0,"owner_unchanged":True})
+                    started=time.monotonic()
+                    rotations=0
+                    packet_count=0
+                    awaiting_key=False
+                    while time.monotonic()-started<20:
+                        body=video_read(False)
+                        assert body.get("video") and not body.get("video_unavailable"),body
+                        video=body["video"]
+                        assert video["scope"]==fresh["video"]["scope"],"no privacy transition during endurance"
+                        if video.get("reset"):
+                            rotations+=1
+                            awaiting_key=True
+                        if video["packets"]:
+                            if awaiting_key:
+                                assert video["packets"][0]["keyframe"],"rotation must begin on a keyframe"
+                                awaiting_key=False
+                            packet_count+=len(video["packets"])
+                    assert rotations>=1 and packet_count>=3
+                    reports.append({"case":"native-h264-continuous-view-crosses-http-deadline","passed":True,
+                        "observed_ms":round((time.monotonic()-started)*1000),"automatic_rotations":rotations,
+                        "packets_received":packet_count,"png_fallbacks":0,"native_key_requests":native_keys()-before_keys})
+                    peers=[]
+                    for name in ["viewer-a","viewer-b"]:
+                        env=dict(environment)
+                        env.update(IPHONE_USE_URL=f"http://127.0.0.1:{daemon_port}",IPHONE_USE_TOKEN=tok,
+                            IPHONE_USE_OWNER=name,IPHONE_USE_MCP_HOST="workbuddy",IPHONE_USE_MCP_TOOLS="phone_screen")
+                        peer=VideoPeer(mcp_binary,env,out/"mcp.log")
+                        video_peers.append(peer)
+                        peer.initialize()
+                        peers.append(peer)
+                    with ThreadPoolExecutor(max_workers=2) as pool:
+                        results=list(pool.map(lambda peer:peer.frame(True),peers))
+                    assert all(body.get("video") and not body.get("video_unavailable") for body in results),results
+                    for peer,body in zip(peers,results):
+                        until=time.monotonic()+5
+                        while not body["video"]["packets"]:
+                            assert time.monotonic()<until,"independent viewer received no keyframe"
+                            body=peer.frame(False)
+                            assert body.get("video") and not body.get("video_unavailable"),body
+                        assert body["video"]["packets"][0]["keyframe"],body
+                    # Keep B polling while A reconnects/closes: a paused B would
+                    # legitimately expire its own two-second lease on a slow host.
+                    for operation in [lambda:peers[0].frame(True),peers[0].close]:
+                        with ThreadPoolExecutor(max_workers=1) as pool:
+                            pending=pool.submit(operation)
+                            independent=None
+                            while not pending.done() or independent is None:
+                                independent=peers[1].frame(False)
+                                assert independent.get("video",{}).get("reset") is False,independent
+                            pending.result(timeout=12)
+                    peers[1].close()
+                    until=time.monotonic()+6
+                    while True:
+                        status,viewers=api("/agent/status")
+                        if viewers.get("viewer_count")==0:break
+                        assert time.monotonic()<until,viewers
+                        time.sleep(0.05)
+                    assert native_keys()==before_keys
+                    assert viewers.get("owner")==initial.get("owner")
+                    reports.append({"case":"native-h264-two-mcp-viewers-independent-and-idle-close","passed":True,
+                        "independent_processes":2,"other_viewer_reset":False,"final_viewer_count":0,
+                        "native_key_requests":0,"owner_unchanged":True})
 
-                started=time.monotonic()
-                rotations=0
-                packet_count=0
-                awaiting_key=False
-                while time.monotonic()-started<20:
-                    body=video_read(False)
-                    assert body.get("video") and not body.get("video_unavailable"),body
-                    video=body["video"]
-                    assert video["scope"]==fresh["video"]["scope"],"no privacy transition during endurance"
-                    if video.get("reset"):
-                        rotations+=1
-                        awaiting_key=True
-                    if video["packets"]:
-                        if awaiting_key:
-                            assert video["packets"][0]["keyframe"],"rotation must begin on a keyframe"
-                            awaiting_key=False
-                        packet_count+=len(video["packets"])
-                assert rotations>=1 and packet_count>=3
-                reports.append({"case":"native-h264-continuous-view-crosses-http-deadline","passed":True,
-                    "observed_ms":round((time.monotonic()-started)*1000),"automatic_rotations":rotations,
-                    "packets_received":packet_count,"png_fallbacks":0,"native_key_requests":native_keys()-before_keys})
-                peers=[]
-                for name in ["viewer-a","viewer-b"]:
+                if args.list_recovery:
                     env=dict(environment)
                     env.update(IPHONE_USE_URL=f"http://127.0.0.1:{daemon_port}",IPHONE_USE_TOKEN=tok,
-                        IPHONE_USE_OWNER=name,IPHONE_USE_MCP_HOST="workbuddy",IPHONE_USE_MCP_TOOLS="phone_screen")
+                        IPHONE_USE_OWNER="input-continuation-fixture",IPHONE_USE_MCP_HOST="generic",
+                        IPHONE_USE_MCP_TOOLS="phone_scroll_find,phone_collect_list",IPHONE_USE_MCP_STRUCTURED="full")
                     peer=VideoPeer(mcp_binary,env,out/"mcp.log")
                     video_peers.append(peer)
                     peer.initialize()
-                    peers.append(peer)
-                with ThreadPoolExecutor(max_workers=2) as pool:
-                    results=list(pool.map(lambda peer:peer.frame(True),peers))
-                assert all(body.get("video") and not body.get("video_unavailable") for body in results),results
-                for peer,body in zip(peers,results):
-                    until=time.monotonic()+5
-                    while not body["video"]["packets"]:
-                        assert time.monotonic()<until,"independent viewer received no keyframe"
-                        body=peer.frame(False)
-                        assert body.get("video") and not body.get("video_unavailable"),body
-                    assert body["video"]["packets"][0]["keyframe"],body
-                # Keep B polling while A reconnects/closes: a paused B would
-                # legitimately expire its own two-second lease on a slow host.
-                for operation in [lambda:peers[0].frame(True),peers[0].close]:
+                    before_actions=route_count("/actions")
+                    for lookup in [True,False]:
+                        result=peer.request("tools/call",{"name":"phone_scroll_find" if lookup else "phone_collect_list",
+                            "arguments":{"label":"__list_recovery_missing__","max_swipes":0} if lookup else {"row_kind":"Slider","max_pages":1}})["result"]
+                        verdict=result.get("structuredContent",{})
+                        assert verdict.get("swipes")==0 and verdict.get("native_mutations_confirmed")==0,verdict
+                        assert bool(result.get("isError"))==lookup,result
+                        if lookup:assert verdict.get("found") is False and verdict.get("error")=="element_not_found",verdict
+                        else:assert verdict.get("complete") is False and verdict.get("stop_reason")=="no_rows",verdict
+                        images=[block for block in result.get("content",[]) if block.get("type")=="image"]
+                        assert len(images)==1,result
+                        assert base64.b64decode(images[0]["data"],validate=True).startswith(b"\x89PNG\r\n\x1a\n")
+                        assert "png_base64" not in json.dumps(verdict)
+                        assert all("png_base64" not in block.get("text","") for block in result.get("content",[]))
+                        assert route_count("/actions")==before_actions
+                        reports.append({"case":"stdio-scroll-find-fresh-diagnostic-without-swipe" if lookup else "stdio-collect-no-rows-fresh-diagnostic-keeps-incomplete",
+                            "passed":True,"image_blocks":1,"native_swipes":0,"original_verdict_preserved":True})
+                    before_actions=route_count("/actions")
+                    source_reads=lambda:sum(bool(re.search(r"ipu-runner: GET (?:/session/[^/ ]+)?/source(?:\?[^ ]*)? ->",line)) for line in log_path.read_text(errors="replace").splitlines())
+                    before_reads=source_reads()
                     with ThreadPoolExecutor(max_workers=1) as pool:
-                        pending=pool.submit(operation)
-                        independent=None
-                        while not pending.done() or independent is None:
-                            independent=peers[1].frame(False)
-                            assert independent.get("video",{}).get("reset") is False,independent
-                        pending.result(timeout=12)
-                peers[1].close()
-                until=time.monotonic()+6
-                while True:
-                    status,viewers=api("/agent/status")
-                    if viewers.get("viewer_count")==0:break
-                    assert time.monotonic()<until,viewers
-                    time.sleep(0.05)
-                assert native_keys()==before_keys
-                assert viewers.get("owner")==initial.get("owner")
-                reports.append({"case":"native-h264-two-mcp-viewers-independent-and-idle-close","passed":True,
-                    "independent_processes":2,"other_viewer_reset":False,"final_viewer_count":0,
-                    "native_key_requests":0,"owner_unchanged":True})
+                        pending=pool.submit(api,"/agent/scroll_find",{"label":"__list_recovery_missing__","max_swipes":1})
+                        until=time.monotonic()+10
+                        while route_count("/actions")==before_actions:
+                            if pending.done() or time.monotonic()>=until:raise RuntimeError("list did not acknowledge native swipe")
+                            time.sleep(0.01)
+                        assert api("/agent/hold",{"secs":60,"private":True})[0]==200
+                        assert api("/agent/hold",{"secs":0})[0]==200
+                        status,receipt=pending.result(timeout=15)
+                    (out/"list-scope-receipt.json").write_text(json.dumps({"status":status,"receipt":receipt},indent=2)+"\n")
+                    assert status==409 and receipt.get("outcome")=="partial",receipt
+                    assert receipt.get("swipes")==1 and receipt.get("native_mutations_confirmed")==1 and receipt.get("native_mutations_uncertain")==0,receipt
+                    assert receipt.get("retry_safe") is False and receipt.get("observation_omitted") is True,receipt
+                    assert all(key not in receipt for key in ["snapshot","rows","target","candidates","image"]),receipt
+                    assert route_count("/actions")==before_actions+1,{"before_actions":before_actions,"after_actions":route_count("/actions")}
+                    assert source_reads()==before_reads+1,{"before_reads":before_reads,"after_reads":source_reads()}
+                    reports.append({"case":"list-private-transition-preserves-swipe-ack-without-post-scope-read","passed":True,
+                        "native_swipes_confirmed":1,"native_mutations_uncertain":0,"later_source_reads":0,"retry_safe":False})
+                    peer.close()
 
-            if args.list_recovery:
-                env=dict(environment)
-                env.update(IPHONE_USE_URL=f"http://127.0.0.1:{daemon_port}",IPHONE_USE_TOKEN=tok,
-                    IPHONE_USE_OWNER="input-continuation-fixture",IPHONE_USE_MCP_HOST="generic",
-                    IPHONE_USE_MCP_TOOLS="phone_scroll_find,phone_collect_list",IPHONE_USE_MCP_STRUCTURED="full")
-                peer=VideoPeer(mcp_binary,env,out/"mcp.log")
-                video_peers.append(peer)
-                peer.initialize()
-                before_actions=route_count("/actions")
-                for lookup in [True,False]:
-                    result=peer.request("tools/call",{"name":"phone_scroll_find" if lookup else "phone_collect_list",
-                        "arguments":{"label":"__list_recovery_missing__","max_swipes":0} if lookup else {"row_kind":"Slider","max_pages":1}})["result"]
-                    verdict=result.get("structuredContent",{})
-                    assert verdict.get("swipes")==0 and verdict.get("native_mutations_confirmed")==0,verdict
-                    assert bool(result.get("isError"))==lookup,result
-                    if lookup:assert verdict.get("found") is False and verdict.get("error")=="element_not_found",verdict
-                    else:assert verdict.get("complete") is False and verdict.get("stop_reason")=="no_rows",verdict
-                    images=[block for block in result.get("content",[]) if block.get("type")=="image"]
-                    assert len(images)==1,result
-                    assert base64.b64decode(images[0]["data"],validate=True).startswith(b"\x89PNG\r\n\x1a\n")
-                    assert "png_base64" not in json.dumps(verdict)
-                    assert all("png_base64" not in block.get("text","") for block in result.get("content",[]))
-                    assert route_count("/actions")==before_actions
-                    reports.append({"case":"stdio-scroll-find-fresh-diagnostic-without-swipe" if lookup else "stdio-collect-no-rows-fresh-diagnostic-keeps-incomplete",
-                        "passed":True,"image_blocks":1,"native_swipes":0,"original_verdict_preserved":True})
-                before_actions=route_count("/actions")
-                source_reads=lambda:sum(bool(re.search(r"ipu-runner: GET (?:/session/[^/ ]+)?/source(?:\?[^ ]*)? ->",line)) for line in log_path.read_text(errors="replace").splitlines())
-                before_reads=source_reads()
-                with ThreadPoolExecutor(max_workers=1) as pool:
-                    pending=pool.submit(api,"/agent/scroll_find",{"label":"__list_recovery_missing__","max_swipes":1})
-                    until=time.monotonic()+10
-                    while route_count("/actions")==before_actions:
-                        if pending.done() or time.monotonic()>=until:raise RuntimeError("list did not acknowledge native swipe")
-                        time.sleep(0.01)
-                    assert api("/agent/hold",{"secs":60,"private":True})[0]==200
-                    assert api("/agent/hold",{"secs":0})[0]==200
-                    status,receipt=pending.result(timeout=15)
-                (out/"list-scope-receipt.json").write_text(json.dumps({"status":status,"receipt":receipt},indent=2)+"\n")
-                assert status==409 and receipt.get("outcome")=="partial",receipt
-                assert receipt.get("swipes")==1 and receipt.get("native_mutations_confirmed")==1 and receipt.get("native_mutations_uncertain")==0,receipt
-                assert receipt.get("retry_safe") is False and receipt.get("observation_omitted") is True,receipt
-                assert all(key not in receipt for key in ["snapshot","rows","target","candidates","image"]),receipt
-                assert route_count("/actions")==before_actions+1,{"before_actions":before_actions,"after_actions":route_count("/actions")}
-                assert source_reads()==before_reads+1,{"before_reads":before_reads,"after_reads":source_reads()}
-                reports.append({"case":"list-private-transition-preserves-swipe-ack-without-post-scope-read","passed":True,
-                    "native_swipes_confirmed":1,"native_mutations_uncertain":0,"later_source_reads":0,"retry_safe":False})
-                peer.close()
-
-            if args.list_deadline:
-                # An interrupted gesture can still be decelerating. Start a
-                # new owned fixture task, rather than replaying a guarded clear.
-                command("xcrun","simctl","terminate",udid,BUNDLE)
-                command("xcrun","simctl","launch",udid,BUNDLE)
-                settle_fixture()
-                assert api("/agent/input",{"type":"text","text":""})[0]==200
-                first,second=find("field-a"),find("field-b")
-                wait_for(lambda:call(prefix+f"/element/{first}/attribute/focused") is True,"fresh deadline fixture focus")
-                assert call(prefix+f"/element/{first}/attribute/value") in (None,""),"fresh workload field is not empty"
-                container=Path(command("xcrun","simctl","get_app_container",udid,BUNDLE,"data"))
-                marker=container/"Documents/input-started.count"
-                if marker.exists():marker.unlink()  # Synthetic fixture marker only.
-                field_receipt=container/"Documents/field-a-state.json"
-                if field_receipt.exists():field_receipt.unlink()
-                text="queue-deadline-"+"字"*6000
-                before_actions=route_count("/actions")
-                count_sources=lambda:sum(bool(re.search(r"ipu-runner: GET (?:/session/[^/ ]+)?/source(?:\?[^ ]*)? ->",line)) for line in log_path.read_text(errors="replace").splitlines())
-                before_sources=count_sources()
-                pool=ThreadPoolExecutor(max_workers=2)
-                try:
-                    typing=pool.submit(api,"/agent/input",{"type":"text","text":text,"clear":False},timeout=360)
-                    until=time.monotonic()+10
-                    while not marker.exists():
-                        if typing.done() or time.monotonic()>=until:raise RuntimeError("long input did not start before queue deadline probe")
-                        time.sleep(0.01)
-                    started=time.monotonic()
-                    (out/"list-deadline-progress.json").write_text(json.dumps({"phase":"queued_behind_owned_input","started_at_ms":round(time.time()*1000)})+"\n")
-                    queued=pool.submit(api,"/agent/scroll_find",{"label":"__deadline_fixture_missing__","max_swipes":1},timeout=90)
-                    status,receipt=queued.result(timeout=92)
-                    elapsed=round((time.monotonic()-started)*1000)
-                    (out/"list-deadline-receipt.json").write_text(json.dumps({"status":status,"elapsed_ms":elapsed,"receipt":receipt},indent=2)+"\n")
-                    assert status==504 and receipt.get("error")=="list_deadline",receipt
-                    assert receipt.get("outcome")=="not_sent" and receipt.get("retry_safe") is True,receipt
-                    assert receipt.get("native_mutations_confirmed")==0 and receipt.get("native_mutations_uncertain")==0 and receipt.get("swipes")==0,receipt
-                    assert 80000<=elapsed<=85000,{"elapsed_ms":elapsed}
-                    assert not typing.done(),"busy precondition ended before the queue deadline"
-                    assert count_sources()==before_sources and route_count("/actions")==before_actions
-                    (out/"list-deadline-progress.json").write_text(json.dumps({"phase":"deadline_returned_waiting_for_original_input","elapsed_ms":elapsed})+"\n")
-                    status,finished=typing.result(timeout=60)
-                    assert status==200 and finished.get("ok") is True,finished
-                    assert count_sources()==before_sources and route_count("/actions")==before_actions
-                    first=find("field-a")
-                    readback=call(prefix+f"/element/{first}/attribute/value")
-                    expected_hash=hashlib.sha256(text.encode()).hexdigest()
-                    def fixture_value_matches():
-                        if not field_receipt.exists():return False
-                        state=json.loads(field_receipt.read_text())
-                        return state.get("characters")==len(text) and state.get("sha256")==expected_hash
-                    wait_for(fixture_value_matches,"fixture-owned full field count/hash")
-                    oracle=json.loads(field_receipt.read_text())
-                    (out/"list-deadline-field-oracle.json").write_text(json.dumps(oracle,indent=2)+"\n")
-                    (out/"list-deadline-progress.json").write_text(json.dumps({"phase":"finished_original_input_and_independent_readback","elapsed_ms":elapsed,"characters_verified":oracle["characters"],"readback_sha256":oracle["sha256"],"ax_attribute_chars_observed":len(readback or "")})+"\n")
-                    reports.append({"case":"real-queued-list-stops-at-entry-deadline-before-native-dispatch","passed":True,
-                        "elapsed_ms":elapsed,"native_mutations_confirmed":0,"native_mutations_uncertain":0,"new_swipes":0,"new_source_reads":0,
-                        "busy_input_observed":True,"privacy_or_owner_transition_used_for_cleanup":False,"original_input_completed":True,"independent_characters_verified":oracle["characters"],"fixture_value_sha256":oracle["sha256"],"ax_attribute_chars_observed":len(readback or "")})
-                finally:
-                    pool.shutdown(wait=False,cancel_futures=True)
+                if args.list_deadline:
+                    # An interrupted gesture can still be decelerating. Start a
+                    # new owned fixture task, rather than replaying a guarded clear.
+                    command("xcrun","simctl","terminate",udid,BUNDLE)
+                    command("xcrun","simctl","launch",udid,BUNDLE)
+                    settle_fixture()
+                    assert api("/agent/input",{"type":"text","text":""})[0]==200
+                    first,second=find("field-a"),find("field-b")
+                    wait_for(lambda:call(prefix+f"/element/{first}/attribute/focused") is True,"fresh deadline fixture focus")
+                    assert call(prefix+f"/element/{first}/attribute/value") in (None,""),"fresh workload field is not empty"
+                    container=Path(command("xcrun","simctl","get_app_container",udid,BUNDLE,"data"))
+                    marker=container/"Documents/input-started.count"
+                    if marker.exists():marker.unlink()  # Synthetic fixture marker only.
+                    field_receipt=container/"Documents/field-a-state.json"
+                    if field_receipt.exists():field_receipt.unlink()
+                    text="queue-deadline-"+"字"*6000
+                    before_actions=route_count("/actions")
+                    count_sources=lambda:sum(bool(re.search(r"ipu-runner: GET (?:/session/[^/ ]+)?/source(?:\?[^ ]*)? ->",line)) for line in log_path.read_text(errors="replace").splitlines())
+                    before_sources=count_sources()
+                    pool=ThreadPoolExecutor(max_workers=2)
+                    try:
+                        typing=pool.submit(api,"/agent/input",{"type":"text","text":text,"clear":False},timeout=360)
+                        until=time.monotonic()+10
+                        while not marker.exists():
+                            if typing.done() or time.monotonic()>=until:raise RuntimeError("long input did not start before queue deadline probe")
+                            time.sleep(0.01)
+                        started=time.monotonic()
+                        (out/"list-deadline-progress.json").write_text(json.dumps({"phase":"queued_behind_owned_input","started_at_ms":round(time.time()*1000)})+"\n")
+                        queued=pool.submit(api,"/agent/scroll_find",{"label":"__deadline_fixture_missing__","max_swipes":1},timeout=90)
+                        status,receipt=queued.result(timeout=92)
+                        elapsed=round((time.monotonic()-started)*1000)
+                        (out/"list-deadline-receipt.json").write_text(json.dumps({"status":status,"elapsed_ms":elapsed,"receipt":receipt},indent=2)+"\n")
+                        assert status==504 and receipt.get("error")=="list_deadline",receipt
+                        assert receipt.get("outcome")=="not_sent" and receipt.get("retry_safe") is True,receipt
+                        assert receipt.get("native_mutations_confirmed")==0 and receipt.get("native_mutations_uncertain")==0 and receipt.get("swipes")==0,receipt
+                        assert 80000<=elapsed<=85000,{"elapsed_ms":elapsed}
+                        assert not typing.done(),"busy precondition ended before the queue deadline"
+                        assert count_sources()==before_sources and route_count("/actions")==before_actions
+                        (out/"list-deadline-progress.json").write_text(json.dumps({"phase":"deadline_returned_waiting_for_original_input","elapsed_ms":elapsed})+"\n")
+                        status,finished=typing.result(timeout=60)
+                        assert status==200 and finished.get("ok") is True,finished
+                        assert count_sources()==before_sources and route_count("/actions")==before_actions
+                        first=find("field-a")
+                        readback=call(prefix+f"/element/{first}/attribute/value")
+                        expected_hash=hashlib.sha256(text.encode()).hexdigest()
+                        def fixture_value_matches():
+                            if not field_receipt.exists():return False
+                            state=json.loads(field_receipt.read_text())
+                            return state.get("characters")==len(text) and state.get("sha256")==expected_hash
+                        wait_for(fixture_value_matches,"fixture-owned full field count/hash")
+                        oracle=json.loads(field_receipt.read_text())
+                        (out/"list-deadline-field-oracle.json").write_text(json.dumps(oracle,indent=2)+"\n")
+                        (out/"list-deadline-progress.json").write_text(json.dumps({"phase":"finished_original_input_and_independent_readback","elapsed_ms":elapsed,"characters_verified":oracle["characters"],"readback_sha256":oracle["sha256"],"ax_attribute_chars_observed":len(readback or "")})+"\n")
+                        reports.append({"case":"real-queued-list-stops-at-entry-deadline-before-native-dispatch","passed":True,
+                            "elapsed_ms":elapsed,"native_mutations_confirmed":0,"native_mutations_uncertain":0,"new_swipes":0,"new_source_reads":0,
+                            "busy_input_observed":True,"privacy_or_owner_transition_used_for_cleanup":False,"original_input_completed":True,"independent_characters_verified":oracle["characters"],"fixture_value_sha256":oracle["sha256"],"ax_attribute_chars_observed":len(readback or "")})
+                    finally:
+                        pool.shutdown(wait=False,cancel_futures=True)
 
         if args.state_boundaries:
             previous_run=None
-            for fault in ["disable","hide","secure"]:
-                for length in [57,500]:
+            for fault in selected_state_faults:
+                for length in ([199,500] if fault=="background" else [57,500]):
                     command("xcrun","simctl","terminate",udid,BUNDLE)
                     command("xcrun","simctl","launch",udid,BUNDLE)
                     settle_fixture()
                     before=app_receipt(state_fault=fault)
                     assert before["run_id"]!=previous_run and before["focus_a"] is True,before
                     previous_run=before["run_id"]
-                    assert before["a_enabled"] is True and before["a_hidden"] is False and before["a_secure"] is False,before
+                    assert before["a_enabled"] is True and before["a_hidden"] is False and before["a_secure"] is False and before["a_interactive"] is True,before
                     assert before["fields"]["a"]["scalars"]==0 and before["state_fault_triggered"] is False,before
+                    if fault=="background": assert before["suspend_supported"] is True,before
                     text="state-guard-test-"+"字"*(length-len("state-guard-test-"))
                     routes=["/ipu/text","/wda/keys"]
                     counts={route:native_count("POST",route) for route in routes}
                     status,verdict=api("/agent/input",{"type":"text","text":text})
+                    foreground_observation=None
+                    home_observation=None
+                    background_boundary=None
+                    if fault=="background":
+                        documents=Path(command("xcrun","simctl","get_app_container",udid,BUNDLE,"data"))/"Documents"
+                        def entered_background():
+                            nonlocal background_boundary
+                            try: background_boundary=json.loads((documents/"background-boundary.json").read_text())
+                            except (OSError,ValueError): return False
+                            return background_boundary.get("run_id")==before["run_id"] and background_boundary.get("pid")==before["pid"] and background_boundary.get("phase")=="background"
+                        wait_for(entered_background,"App-owned background lifecycle boundary")
+                        def left_fixture():
+                            nonlocal foreground_observation
+                            foreground_observation=call(prefix+"/wda/activeAppInfo")
+                            return foreground_observation.get("bundleId")!=BUNDLE and foreground_observation.get("pid")!=before["pid"]
+                        wait_for(left_fixture,"independent foreground after fixture suspension")
+                        tree=call(prefix+"/source?format=json")
+                        stack=[tree]; focused_editables=0; visible_keyboards=0; payload_found=False; node_count=0
+                        while stack:
+                            node=stack.pop()
+                            if not isinstance(node,dict): continue
+                            node_count+=1
+                            stack.extend(node.get("children",[]))
+                            kind=node.get("type","")
+                            editable=kind in ["XCUIElementTypeTextField","XCUIElementTypeSearchField","XCUIElementTypeTextView","XCUIElementTypeSecureTextField"]
+                            if editable and str(node.get("isFocused")) in ["1","True"]: focused_editables+=1
+                            if editable and isinstance(node.get("value"),str) and ("字" in node["value"] or "state-guard" in node["value"]): payload_found=True
+                            rect=node.get("rect",{})
+                            if kind=="XCUIElementTypeKeyboard" and rect.get("width",0)>0 and rect.get("height",0)>0: visible_keyboards+=1
+                        home_observation={"node_count":node_count,"focused_editables":focused_editables,"visible_keyboards":visible_keyboards,"payload_found":payload_found,"bundle":foreground_observation.get("bundleId")}
+                        (out/f"home-after-{length}.json").write_text(json.dumps(home_observation,indent=2)+"\n")
+                        assert foreground_observation.get("bundleId")=="com.apple.springboard" and focused_editables==0 and visible_keyboards==0 and payload_found is False,home_observation
+                        # Resume only the owned App for an independent receipt;
+                        # never replay the input whose delivery is uncertain.
+                        command("xcrun","simctl","launch",udid,BUNDLE)
+                        settle_fixture()
                     after=app_receipt()
-                    evidence={"before":before,"after":after,"verdict":verdict}
+                    evidence={"before":before,"after":after,"verdict":verdict,"foreground_observation":foreground_observation,"home_observation":home_observation,"background_boundary":background_boundary}
                     (out/f"state-{fault}-{length}.json").write_text(json.dumps(evidence,indent=2)+"\n")
                     assert status==502 and verdict.get("outcome")==("unknown" if length<=200 else "partial") and verdict.get("retry_safe") is False,verdict
                     if length>200:
@@ -1429,9 +1504,15 @@ def main():
                     prefix_hash=hashlib.sha256(text[:20].encode()).hexdigest()
                     assert after["state_fault_triggered"] is True and after["fault_scalars"]==20,after
                     assert after["fault_sha256"]==prefix_hash,after
-                    assert after["fields"]["a"]["scalars"]==20 and after["fields"]["a"]["sha256"]==prefix_hash,after
-                    assert after["events_a"]-before["events_a"]==20,after
-                    assert {"disable":not after["a_enabled"],"hide":after["a_hidden"],"secure":after["a_secure"]}[fault] is True,after
+                    stop_scalars=20 if fault!="background" else after["inactive_scalars"]
+                    stop_hash=prefix_hash if fault!="background" else after["inactive_sha256"]
+                    assert 20<=stop_scalars<length,after
+                    assert after["fields"]["a"]["scalars"]==stop_scalars and after["fields"]["a"]["sha256"]==stop_hash,after
+                    assert after["events_a"]-before["events_a"]==stop_scalars,after
+                    if fault=="background":
+                        assert after["events_a"]==after["inactive_events_a"]==background_boundary["events_a"],"edits after App became inactive"
+                        assert background_boundary["scalars"]==stop_scalars and background_boundary["sha256"]==stop_hash,background_boundary
+                    assert {"disable":not after["a_enabled"],"hide":after["a_hidden"],"secure":after["a_secure"],"interaction":not after["a_interactive"],"background":foreground_observation is not None}[fault] is True,after
                     wait_for(lambda:call("/status").get("busy") is not True,"Native quiet after state fault")
                     time.sleep(.5)
                     stable=app_receipt()
@@ -1440,7 +1521,7 @@ def main():
                     for route in routes:
                         expected=1 if route==("/ipu/text" if length<=200 else "/wda/keys") else 0
                         assert native_count("POST",route)-counts[route]==expected,"later input admitted after state fault"
-                    reports.append({"case":f"mid-input-{fault}-{length}","passed":True,"app_receipts":{"before":before,"after":after,"stable":stable},"verdict":verdict,"admitted_native_chunks":1})
+                    reports.append({"case":f"mid-input-{fault}-{length}","passed":True,"app_receipts":{"before":before,"after":after,"stable":stable},"verdict":verdict,"admitted_native_chunks":1,"foreground_observation":foreground_observation,"home_observation":home_observation,"background_boundary":background_boundary})
 
             # Faults alter the owned App. Give subsequent controls a new,
             # normal fixture instead of reusing a hidden/secure/disabled field.
@@ -1448,7 +1529,7 @@ def main():
             command("xcrun","simctl","launch",udid,BUNDLE)
             settle_fixture()
 
-        if args.expect_boundary_isolation:
+        if args.expect_boundary_isolation and not args.only_state_boundaries:
             for identifier,key,focus,counter in [("field-a","a","focus_a","veto_calls_a"),
                                                  ("field-multiline","multi","focus_multi","veto_calls_multi")]:
                 prepare()
@@ -1554,6 +1635,9 @@ def main():
             files.extend(map(Path, ["crates/mcp/src/server.rs", "crates/mcp/src/client.rs", "crates/mcp/src/screen.rs", "crates/mcp/src/screen.html", "crates/mcp/src/screen_video.rs", "crates/mcp/src/compact.rs"]))
         manifest = {"native_request_oracle":"authenticated admission counters",
                     "experimental_character_boundaries": args.expect_boundary_isolation,
+                    "case_group": "state-boundaries-only" if args.only_state_boundaries else "full",
+                    "requested_native_backend": args.boundary_backend,
+                    "selected_state_faults": selected_state_faults if args.state_boundaries else [],
                     "scope": "actual XCTest runner on disposable iOS Simulator; not physical-device evidence",
             "simulator": udid, "runtime": args.runtime, "cases": reports, "observations": observations, "cleanup_errors": cleanup_errors,
             "xctestrun_sha256": hashlib.sha256(xctestrun.read_bytes()).hexdigest(),
@@ -1569,7 +1653,8 @@ def main():
     expected += 2 * int(args.expect_boundary_isolation)
     expected += 2 * int(args.long_boundaries)
     expected += int(args.metadata_controls)
-    expected += 6 * int(args.state_boundaries)
+    expected += 2 * len(selected_state_faults) * int(args.state_boundaries)
+    if args.only_state_boundaries: expected = 2 * len(selected_state_faults)
     return 0 if len(reports) == expected and all(r["passed"] for r in reports) and not cleanup_errors else 1
 
 

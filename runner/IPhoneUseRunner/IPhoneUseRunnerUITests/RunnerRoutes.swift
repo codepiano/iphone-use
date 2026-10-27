@@ -1298,6 +1298,14 @@ extension RunnerTests {
     guard text.unicodeScalars.count <= 200 else {
       throw RunnerError.invalidArgument("experimental public chunk exceeds 200 scalars; nothing was sent")
     }
+    let environment = ProcessInfo.processInfo.environment
+    let backend = environment["IPU_BOUNDARY_BACKEND"] ?? environment["TEST_RUNNER_IPU_BOUNDARY_BACKEND"] ?? "ax"
+    guard ["ax","hid"].contains(backend) else { throw RunnerError.invalidArgument("unknown experimental input backend; nothing was sent") }
+    IPURBridge.setInputForegroundLookupEnabled(true)
+    defer {
+      NSLog("ipu-input-foreground-lookup %@", IPURBridge.inputForegroundLookupStats())
+      IPURBridge.setInputForegroundLookupEnabled(false)
+    }
     var guardReads = 0
     func liveOriginal() throws -> UINode {
       guardReads += 1
@@ -1315,19 +1323,25 @@ extension RunnerTests {
         throw RunnerError.failed("original AX process changed")
       }
       let axVisible: Bool
-      if let value = current.attributes["input_visible"] as? Bool {
+      let axInteractive: Bool
+      if let value = current.attributes["input_visible"] as? Bool,
+          let interactive = current.attributes["input_interactive"] as? Bool {
         axVisible = value
+        axInteractive = interactive
       } else {
         guard let ax = current.axElement,
-            let value = timed("InputVisibility", { IPURBridge.inputVisibility(element: ax) }) else {
-          throw RunnerError.failed("original visibility unavailable")
+            let value = timed("InputReadiness", { IPURBridge.inputReadiness(element: ax) }),
+            let visible = value["visible"] as? Bool, let interactive = value["interactive"] as? Bool else {
+          throw RunnerError.failed("original visibility/interactivity unavailable")
         }
-        axVisible = value.boolValue
+        axVisible = visible
+        axInteractive = interactive
       }
       let visible = timed("InputGeometry") { axVisible && current.isVisible(screen: windowSizePoints()) }
       // The final remote read comes after field metadata; everything following
       // it is a pure predicate or local binding check. Do not duplicate it.
       let foregroundPID = foreground().pid
+      guard axInteractive else { throw RunnerError.failed("original interaction disabled") }
       if let refusal = InputTargetCheck.replacementRefusal(original: original, current: current,
           foregroundPID: foregroundPID, visible: visible, bindingMatches: inputBinding == token, requireFocus: true) {
         throw RunnerError.failed("\(refusal); original check stopped")
@@ -1370,12 +1384,12 @@ extension RunnerTests {
       return (after, value)
     }
     defer {
-      let parts = ["InputMetadata","InputSnapshot","InputVisibility","InputGeometry","InputFullValue","InputInsert","Foreground","ActiveApps","ViewService"].compactMap { name -> String? in
+      let parts = ["InputMetadata","InputSnapshot","InputReadiness","InputGeometry","InputFullValue","InputInsert","Foreground","ActiveApps","ViewService"].compactMap { name -> String? in
         guard let entry = requestTiming[name] else { return nil }
         return "\(name)=\(String(format: "%.1f", entry.ms))ms/\(entry.calls)"
       }.joined(separator: " ")
-      NSLog("ipu-character-profile requested=%d attempted=%d guards=%d full=%d %@",
-        text.unicodeScalars.count, attempted, guardReads, fullValueReads, parts)
+      NSLog("ipu-character-profile backend=%@ requested=%d attempted=%d guards=%d full=%d %@",
+        backend, text.unicodeScalars.count, attempted, guardReads, fullValueReads, parts)
     }
     if let ax = original.axElement { IPURBridge.probeBoundaryMetadata(element: ax) }
     let deadline = Date().addingTimeInterval(10)
@@ -1386,17 +1400,23 @@ extension RunnerTests {
         guard boundaryReads == attempted + 1, inputBinding == token,
               let ax = boundary.node.axElement else { throw RunnerError.failed("original boundary unavailable") }
         let beforeValue = boundary.value
-        let reply = timed("InputInsert") { IPURBridge.probeAXInsert(element: ax, value: String(character)) }
-        if reply["invoked"] as? Bool == true { attempted += 1 }
-        guard reply["invoked"] as? Bool == true, reply["actionAcknowledged"] as? Bool == true else {
-          throw RunnerError.failed("experimental target AX action not acknowledged")
+        if backend.hasPrefix("hid") {
+          attempted += 1
+          let failure = timed("InputInsert") { IPURBridge.synthesizeText(String(character), charactersPerSecond: 120, pid: original.pid) }
+          guard failure == nil else { throw RunnerError.failed("experimental HID action not acknowledged") }
+        } else {
+          let reply = timed("InputInsert") { IPURBridge.probeAXInsert(element: ax, value: String(character)) }
+          if reply["invoked"] as? Bool == true { attempted += 1 }
+          guard reply["invoked"] as? Bool == true, reply["actionAcknowledged"] as? Bool == true else {
+            throw RunnerError.failed("experimental target AX action not acknowledged")
+          }
         }
         let after = try verifiedBoundary()
         guard after.value != beforeValue else { throw RunnerError.failed("original value unchanged after input") }
         elements.renew(token, node: after.node)
         boundary = after
       }
-      return .value(NSNull(), headers:["X-IPU-Gesture":"target-bound-ax-characters", "X-IPU-Input-Boundary-Checks":String(guardReads),"X-IPU-Full-Value-Reads":String(fullValueReads)])
+      return .value(NSNull(), headers:["X-IPU-Gesture":backend.hasPrefix("hid") ? "experimental-unbound-\(backend)-characters" : "target-bound-ax-characters", "X-IPU-Input-Boundary-Checks":String(guardReads),"X-IPU-Full-Value-Reads":String(fullValueReads)])
     } catch {
       NSLog("ipu-character-stop reason=%@", String(describing: error))
       throw RunnerError.failed("experimental original-field input stopped; outcome unknown; no fallback or replay")
