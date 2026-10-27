@@ -644,7 +644,14 @@ def main():
 
             prepare()
             log_path = out / "runner.log"
-            native_keys = lambda: log_path.read_text(errors="replace").count(f"POST {prefix}/wda/keys ->")
+            counter_session = call("/status")["sessionId"]
+            def native_count(method, route):
+                state=call("/status")
+                assert state.get("sessionId")==counter_session,"Native Runner restarted during the trial"
+                counts=state.get("http_request_counts")
+                assert isinstance(counts,dict),"this experiment requires authenticated Native admission counters"
+                return counts.get(method+" "+route,0)
+            native_keys = lambda: native_count("POST","/wda/keys")
             before_calls = native_keys()
             app_before = app_receipt() if args.expect_boundary_isolation else None
             draft = "shift-focus-test-" + "字" * (500 - len("shift-focus-test-"))
@@ -695,15 +702,15 @@ def main():
             first, second = find("field-a"), find("field-b")
             call(prefix + f"/element/{first}/click", {})
             wait_for(lambda: call(prefix + f"/element/{first}/attribute/focused") is True, "short input focus")
-            route_count = lambda route: log_path.read_text(errors="replace").count(f"POST {prefix}{route} ->")
+            route_count = lambda route: native_count("POST",route)
             before_atomic, before_keys = route_count("/ipu/text"), native_keys()
-            before_targets = log_path.read_text(errors="replace").count(f"GET {prefix}/wda/input-target ->")
+            before_targets = native_count("GET","/wda/input-target")
             status, result = api("/agent/input", {"type": "text", "text": "short replacement", "clear": True})
             assert status == 200 and result.get("ok") is True, result
             assert call(prefix + f"/element/{first}/attribute/value") == "short replacement"
             assert route_count("/ipu/text") - before_atomic == 1
             assert native_keys() == before_keys
-            assert log_path.read_text(errors="replace").count(f"GET {prefix}/wda/input-target ->") == before_targets
+            assert native_count("GET","/wda/input-target") == before_targets
             reports.append({"case": "daemon-short-clear-is-one-bound-native-request", "passed": True, "native_requests": 1})
 
             status, result = api("/agent/input", {"type": "text", "text": "Draft placeholder", "clear": True})
@@ -826,7 +833,7 @@ def main():
                     assert status == 200, released
                     released_for_cleanup = True
                 observations.append({"case": "tcp-disconnect-during-input", "typing_budget_ms": typing_budget,
-                    "completed_native_chunks": native_keys() - before_calls,
+                    "admitted_native_chunks": native_keys() - before_calls,
                     "observed_quiet_after_disconnect_ms": observed_stop,
                     "explicit_owner_release_for_cleanup": released_for_cleanup,
                     "interpretation": "stop causality is unproven for bounded input; owner-release cleanup is not TCP cancellation"})
@@ -1408,7 +1415,8 @@ def main():
             files.extend(map(Path, ["Cargo.lock", "crates/server/Cargo.toml", "crates/mcp/Cargo.toml", "crates/server/src/http.rs", "crates/server/src/collect.rs", "crates/server/src/runner.rs", "crates/server/src/input_continuation.rs", "crates/server/src/recovery.rs", "crates/server/src/video.rs", "crates/server/src/observation.rs", "crates/server/src/native_scope.rs", "crates/server/src/timing.rs"]))
         if mcp_binary:
             files.extend(map(Path, ["crates/mcp/src/server.rs", "crates/mcp/src/client.rs", "crates/mcp/src/screen.rs", "crates/mcp/src/screen.html", "crates/mcp/src/screen_video.rs", "crates/mcp/src/compact.rs"]))
-        manifest = {"experimental_character_boundaries": args.expect_boundary_isolation,
+        manifest = {"native_request_oracle":"authenticated admission counters",
+                    "experimental_character_boundaries": args.expect_boundary_isolation,
                     "scope": "actual XCTest runner on disposable iOS Simulator; not physical-device evidence",
             "simulator": udid, "runtime": args.runtime, "cases": reports, "observations": observations, "cleanup_errors": cleanup_errors,
             "xctestrun_sha256": hashlib.sha256(xctestrun.read_bytes()).hexdigest(),

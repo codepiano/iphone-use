@@ -27,6 +27,10 @@ final class RunnerTests: XCTestCase {
   var exitNotice: RunnerExitNotice?
   /// Why the command listener stopped, when it failed rather than being shut down.
   var listenFailure: Error?
+  // Experimental admission counters are independent of text execution and
+  // Xcode's asynchronous console forwarding. No UI values or ids are retained.
+  let inputCountLock = NSLock()
+  var inputRequestCounts: [String: UInt64] = [:]
   let busyLock = NSLock()
   var busySince: Date?
   /// Issues XCTest recorded while the current request ran (fallback XCUI paths report through here).
@@ -172,6 +176,13 @@ final class RunnerTests: XCTestCase {
 
   /// Answered on the transport queue: liveness must not wait behind a slow command on main.
   func inlineResponse(_ request: HTTPRequest) -> HTTPResponse? {
+    let requestKey = request.method + " " + CaptureLane.route(request.path)
+    if ["POST /wda/keys", "POST /ipu/text", "POST /actions", "POST /wda/apps/launch",
+        "POST /wda/apps/terminate", "GET /wda/input-target"].contains(requestKey) {
+      inputCountLock.lock()
+      inputRequestCounts[requestKey, default: 0] += 1
+      inputCountLock.unlock()
+    }
     // A keep-awake renewal only moves a deadline; it must not wait behind a slow tree read.
     if request.path == "/wda/keepawake"
       || (request.path.hasPrefix("/session/") && request.path.hasSuffix("/wda/keepawake")) {
@@ -249,6 +260,9 @@ final class RunnerTests: XCTestCase {
     busyLock.lock()
     let busySince = self.busySince
     busyLock.unlock()
+    inputCountLock.lock()
+    let inputCounts = inputRequestCounts
+    inputCountLock.unlock()
     let bundle = Bundle(for: RunnerTests.self)
     let bundleID = bundle.bundleIdentifier ?? "com.leeguoo.iphone-use.runner"
     let version = bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
@@ -270,6 +284,7 @@ final class RunnerTests: XCTestCase {
       "bundle": bundleID,
       "version": version,
       "busy": busySince != nil,
+      "http_request_counts": inputCounts,
       // Only an authenticated caller ever reads this: setup takes it as proof that the runner
       // refuses unsigned requests, which is what makes a LAN relay safe to enable.
       "auth": ["required": true, "scheme": RunnerAuth.scheme],
