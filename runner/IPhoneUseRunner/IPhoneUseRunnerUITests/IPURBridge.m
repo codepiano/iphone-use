@@ -472,6 +472,36 @@ static BOOL IPURUseRequestCache(void)
   return attributes;
 }
 
++ (NSDictionary *)probeAXInsertForElement:(id)element value:(NSString *)value
+{
+  BOOL attempted = NO;
+  @try {
+    Class actionClass = NSClassFromString(@"XCUIAccessibilityAction");
+    SEL initAction = NSSelectorFromString(@"initWithAXAction:");
+    id instance = [actionClass alloc];
+    NSMethodSignature *initShape = [instance methodSignatureForSelector:initAction];
+    if (initShape == nil || initShape.numberOfArguments != 3 || initShape.methodReturnType[0] != '@' ||
+        [initShape getArgumentTypeAtIndex:2][0] != 'i')
+      return @{@"invoked":@NO,@"reason":@"typed AX action constructor unavailable"};
+    id action = ((id (*)(id,SEL,int))objc_msgSend)(instance,initAction,2056);
+    id client = [self axClient];
+    SEL perform = NSSelectorFromString(@"performAction:onElement:value:error:");
+    NSMethodSignature *shape = [client methodSignatureForSelector:perform];
+    if (action == nil || shape == nil || shape.numberOfArguments != 6 ||
+        (shape.methodReturnType[0] != 'B' && shape.methodReturnType[0] != 'c') ||
+        [shape getArgumentTypeAtIndex:2][0] != '@' || [shape getArgumentTypeAtIndex:3][0] != '@' ||
+        [shape getArgumentTypeAtIndex:4][0] != '@' || strcmp([shape getArgumentTypeAtIndex:5], "^@") != 0)
+      return @{@"invoked":@NO,@"reason":@"typed element AX action unavailable"};
+    NSError *error = nil;
+    attempted = YES;
+    BOOL acknowledged = ((BOOL (*)(id,SEL,id,id,id,NSError **))objc_msgSend)(client,perform,action,element,value,&error);
+    return @{@"invoked":@YES,@"actionAcknowledged":@(acknowledged && error == nil),@"action":@2056,
+      @"errorCode":@(error.code),@"errorDomain":error.domain ?: @"",@"transport":@"XCAXClient.performAction",@"confirmation":@"App receipt required"};
+  } @catch (NSException *exception) {
+    return @{@"invoked":@NO,@"invocationAttempted":@(attempted),@"exception":exception.name,@"confirmation":@"unknown; no fallback attempted"};
+  }
+}
+
 + (nullable NSDictionary<NSString *, id> *)readValueForAXElement:(id)element
                                                maxUTF16Length:(NSUInteger)limit
                                                   placeholder:(NSString *)placeholder

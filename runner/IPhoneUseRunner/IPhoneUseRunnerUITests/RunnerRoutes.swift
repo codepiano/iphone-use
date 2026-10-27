@@ -1288,17 +1288,91 @@ extension RunnerTests {
     if (text.contains("\n") || text.contains("\r")) && node.type != "XCUIElementTypeTextView" {
       throw RunnerError.invalidArgument("newline_requires_multiline_field; use an explicit key to submit; nothing was sent")
     }
-    let path = try typeIntoFocus(text, frequency: frequency, targetPID: node.pid)
-    // Focus can change while a chunk is in flight. A postflight refusal must never use the
-    // pre-dispatch "nothing was sent" envelope: some or all text may have landed elsewhere.
-    let after: UINode
-    do { after = try checkedInputTarget(token) }
-    catch {
-      inputBinding = nil
-      throw RunnerError.failed("input target changed or became unreadable during typing; text outcome unknown")
+    return try boundaryTextPrototype(text, token: token, original: node)
+  }
+
+  // ISOLATED PROTOTYPE ONLY: real public routes in an owned test Runner.
+  // No product capability/default change; no raw key fallback or text replay.
+  private func boundaryTextPrototype(_ text: String, token: String, original: UINode) throws -> HTTPResponse {
+    guard text.unicodeScalars.count <= 200 else {
+      throw RunnerError.invalidArgument("experimental public chunk exceeds 200 scalars; nothing was sent")
     }
-    elements.renew(token, node: after)
-    return .value(NSNull(), headers: ["X-IPU-Gesture": path])
+    var guardReads = 0
+    func liveOriginal() throws -> UINode {
+      guardReads += 1
+      IPURBridge.invalidateRequestCache()
+      elements.prune()
+      let current = try freshNode(token)
+      guard let originalAX = current.axElement, IPURBridge.pid(forAXElement: originalAX) == original.pid else {
+        throw RunnerError.failed("original AX process changed")
+      }
+      let visible = current.isVisible(screen: windowSizePoints())
+      // The final remote read comes after field metadata; everything following
+      // it is a pure predicate or local binding check. Do not duplicate it.
+      let foregroundPID = foreground().pid
+      if let refusal = InputTargetCheck.replacementRefusal(original: original, current: current,
+          foregroundPID: foregroundPID, visible: visible, bindingMatches: inputBinding == token, requireFocus: true) {
+        throw RunnerError.failed("\(refusal); original check stopped")
+      }
+      guard inputBinding == token else { throw RunnerError.failed("original binding changed") }
+      return current
+    }
+    var boundaryReads = 0, fullValueReads = 0, attempted = 0
+    func verifiedBoundary() throws -> (node: UINode, value: String) {
+      let before = try liveOriginal()
+      if (before.attributes["value_truncated"] as? Bool) == false {
+        boundaryReads += 1
+        return (before, before.value ?? "")
+      }
+      // Truncated or unknown snapshot completeness cannot prove progress.
+      // Read the retained original's full value between two complete guards.
+      guard let ax = before.axElement else { throw RunnerError.failed("original AX unavailable") }
+      var error: NSString?
+      guard let raw = IPURBridge.readValue(for: ax, maxUTF16: 65536,
+          placeholder: before.placeholder, error: &error),
+          (raw["complete"] as? NSNumber)?.boolValue == true,
+          (raw["truncated"] as? NSNumber)?.boolValue == false else {
+        throw RunnerError.failed("complete original value unavailable")
+      }
+      fullValueReads += 1
+      let after = try liveOriginal()
+      let emptySnapshots = (before.value ?? "").isEmpty && (after.value ?? "").isEmpty
+      let samePlaceholder = before.placeholder == after.placeholder
+      let matchesPlaceholder = (raw["_value_matches_placeholder"] as? NSNumber)?.boolValue == true
+      let value: String
+      if matchesPlaceholder && emptySnapshots && samePlaceholder {
+        value = ""
+      } else if let text = raw["value"] as? String {
+        value = text
+      } else if raw["value"] is NSNull && emptySnapshots &&
+          (raw["utf16_length"] as? NSNumber)?.intValue == 0 {
+        value = ""
+      } else { throw RunnerError.failed("original value shape unavailable") }
+      boundaryReads += 1
+      return (after, value)
+    }
+    let deadline = Date().addingTimeInterval(10)
+    do {
+      var boundary = try verifiedBoundary()
+      for character in text {
+        if Date() >= deadline { throw RunnerError.failed("experimental boundary budget expired") }
+        guard boundaryReads == attempted + 1, inputBinding == token,
+              let ax = boundary.node.axElement else { throw RunnerError.failed("original boundary unavailable") }
+        let beforeValue = boundary.value
+        let reply = IPURBridge.probeAXInsert(element: ax, value: String(character))
+        if reply["invoked"] as? Bool == true { attempted += 1 }
+        guard reply["invoked"] as? Bool == true, reply["actionAcknowledged"] as? Bool == true else {
+          throw RunnerError.failed("experimental target AX action not acknowledged")
+        }
+        let after = try verifiedBoundary()
+        guard after.value != beforeValue else { throw RunnerError.failed("original value unchanged after input") }
+        elements.renew(token, node: after.node)
+        boundary = after
+      }
+      return .value(NSNull(), headers:["X-IPU-Gesture":"target-bound-ax-characters", "X-IPU-Input-Boundary-Checks":String(guardReads),"X-IPU-Full-Value-Reads":String(fullValueReads)])
+    } catch {
+      throw RunnerError.failed("experimental original-field input stopped; outcome unknown; no fallback or replay")
+    }
   }
 
   /// One device-side transaction for short agent input. The raw keyboard route remains usable

@@ -253,6 +253,7 @@ def main():
     parser.add_argument("--list-deadline", action="store_true", help="observe the real 80-second queue deadline with an owned long-input fixture (adds ~110s)")
     parser.add_argument("--list-recovery", action="store_true", help="verify scoped list diagnostics and interruption after native swipe ACK")
     parser.add_argument("--video", action="store_true", help="verify native H.264 via WorkBuddy resources and independent ffmpeg decode (requires --hosts)")
+    parser.add_argument("--expect-boundary-isolation", action="store_true", help="experimental Runner must stop at A20/B0 in reached focus-switch faults")
     parser.add_argument("--runtime", default="com.apple.CoreSimulator.SimRuntime.iOS-27-0")
     parser.add_argument("--device-type", default="com.apple.CoreSimulator.SimDeviceType.iPhone-17")
     args = parser.parse_args()
@@ -562,6 +563,8 @@ def main():
             first, second = find("field-a"), find("field-b")
             lengths = {"a": len(call(prefix + f"/element/{first}/attribute/value") or ""),
                        "b": len(call(prefix + f"/element/{second}/attribute/value") or "")}
+            if args.expect_boundary_isolation:
+                assert lengths == {"a":20,"b":0}, lengths
             reports.append({"case": "daemon-mid-chunk-focus-change-is-unknown-without-continuation",
                             "passed": True, "native_key_requests": 1, "field_lengths": lengths})
 
@@ -664,7 +667,10 @@ def main():
                 pending_nodes.extend(node.get("children", []))
             assert set(values) == {"field-a", "field-b"}, values
             a, b = values["field-a"], values["field-b"]
-            assert a + b == draft, {"a": a, "b": b}
+            if args.expect_boundary_isolation:
+                assert a == draft[:20] and b == "", {"a":a,"b":b}
+            else:
+                assert a + b == draft, {"a": a, "b": b}
             reports.append({"case": "daemon-short-mid-input-focus-change-is-unknown-without-retry",
                             "passed": True, "native_requests": 1, "field_lengths": {"a": len(a), "b": len(b)}})
 
@@ -1275,7 +1281,8 @@ def main():
             files.extend(map(Path, ["Cargo.lock", "crates/server/Cargo.toml", "crates/mcp/Cargo.toml", "crates/server/src/http.rs", "crates/server/src/collect.rs", "crates/server/src/runner.rs", "crates/server/src/input_continuation.rs", "crates/server/src/recovery.rs", "crates/server/src/video.rs", "crates/server/src/observation.rs", "crates/server/src/native_scope.rs", "crates/server/src/timing.rs"]))
         if mcp_binary:
             files.extend(map(Path, ["crates/mcp/src/server.rs", "crates/mcp/src/client.rs", "crates/mcp/src/screen.rs", "crates/mcp/src/screen.html", "crates/mcp/src/screen_video.rs", "crates/mcp/src/compact.rs"]))
-        manifest = {"scope": "actual XCTest runner on disposable iOS Simulator; not physical-device evidence",
+        manifest = {"experimental_character_boundaries": args.expect_boundary_isolation,
+                    "scope": "actual XCTest runner on disposable iOS Simulator; not physical-device evidence",
             "simulator": udid, "runtime": args.runtime, "cases": reports, "observations": observations, "cleanup_errors": cleanup_errors,
             "xctestrun_sha256": hashlib.sha256(xctestrun.read_bytes()).hexdigest(),
             "runner_binary_sha256": hashlib.sha256((xctestrun.parent / "Debug-iphonesimulator/iPhoneUse-Runner.app/PlugIns/iPhoneUse.xctest/iPhoneUse").read_bytes()).hexdigest(),
