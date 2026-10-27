@@ -46,7 +46,7 @@ fn a_scope_change_during_final_observation_keeps_the_applied_receipt_without_ui(
   tokio::time::timeout(Duration::from_secs(4),f.source.notified()).await.unwrap();f.transition(owner).await;
   let (status,value)=pending.await.unwrap();
   assert_eq!(status,if batch && !owner {StatusCode::LOCKED}else{StatusCode::OK},"{value}");
-  assert_eq!(value["ok"],!(batch && !owner));
+  assert_eq!(value["ok"],!batch);
   assert!(!value.to_string().contains(SECRET),"an old observation escaped: {value}");
   assert_eq!(value["observation_omitted"],true);if batch{assert_eq!(value["applied_actions"],1);assert_eq!(value["completed"],1);}
   assert_eq!(f.homes.load(Ordering::Acquire),1);assert!(f.state.element_snapshots.lock().unwrap().is_empty());
@@ -82,13 +82,13 @@ fn prior_wait_observations_are_removed_when_scope_changes_during_a_later_action(
 
 #[test]
 fn queued_observation_body_is_redacted_without_dropping_the_receipt() {block(async {
- for batch in [false,true] {
+ for batch in [false,true] {for owner in [false,true] {
   let f=Fixture::new(false,false);let (path,payload)=observed(batch);let response=f.response(path,payload,"a",false).await;
-  assert_eq!(response.status(),StatusCode::OK);f.transition(false).await;
+  assert_eq!(response.status(),StatusCode::OK);f.transition(owner).await;
   let (status,value)=body(response).await;assert_eq!(status,StatusCode::OK);assert_eq!(value["ok"],!batch);assert_eq!(value["observation_omitted"],true);
-  if batch {assert_eq!(value["steps"][0]["ok"],true);assert_eq!(value["error"],"screen_privacy_changed");}assert!(!value.to_string().contains(SECRET),"{value}");if batch{assert_eq!(value["applied_actions"],1);}
+  if batch {assert_eq!(value["steps"][0]["ok"],true);assert_eq!(value["error"],if owner {"input_owner_changed"} else {"screen_privacy_changed"});}assert!(!value.to_string().contains(SECRET),"{value}");if batch{assert_eq!(value["applied_actions"],1);}
   assert_eq!(f.homes.load(Ordering::Acquire),1);
- }
+ }}
 });}
 
 #[test]

@@ -125,7 +125,11 @@ pub fn redact(mut value: Value, reason: &str) -> Value {
 /// A batch's top-level verdict includes screen-derived wait results. It is
 /// revoked even though individual confirmed action receipts remain valid.
 pub fn redact_batch(value: Value) -> Value {
-    let mut safe = redact(value, "screen_privacy_changed");
+    redact_batch_for_scope(value, "screen_privacy_changed")
+}
+/// Owner changes revoke the same screen-derived verdicts as privacy changes.
+pub fn redact_batch_for_scope(value: Value, reason: &str) -> Value {
+    let mut safe = redact(value, reason);
     let has_wait = safe.get("steps").and_then(Value::as_array)
         .is_some_and(|steps| steps.iter().any(|step| step["kind"] == "wait_for"));
     if let Some(map) = safe.as_object_mut() {
@@ -133,7 +137,7 @@ pub fn redact_batch(value: Value) -> Value {
         // An explicit privacy refusal is already independent of screen
         // contents. Keep its known no-write/retry verdict unchanged.
         if map.get("error").and_then(Value::as_str) != Some("screen_private") {
-            map.insert("error".into(), "screen_privacy_changed".into());
+            map.insert("error".into(), reason.into());
             map.insert("retry_safe".into(), false.into());
         }
         // Batch progress and the failed-step position can also encode whether

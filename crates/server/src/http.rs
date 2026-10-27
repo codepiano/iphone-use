@@ -17101,8 +17101,10 @@ async fn privacy_read_body_layer(request: axum::extract::Request, next: axum::mi
                     recover(fence.state.owner_snapshots.lock()).clear();
                 }
                 let value = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
+                let reason = mutation_reason.map(|v| v.0).unwrap_or("input_owner_changed");
                 let safe = if privacy_changed { crate::observation::redact_batch(value) }
-                    else { crate::observation::redact(value, mutation_reason.map(|v| v.0).unwrap_or("input_owner_changed")) };
+                    else if batch.is_some() { crate::observation::redact_batch_for_scope(value, reason) }
+                    else { crate::observation::redact(value, reason) };
                 bytes::Bytes::from(safe.to_string())
             } else { bytes };
             Ok::<_, std::io::Error>(bytes)
