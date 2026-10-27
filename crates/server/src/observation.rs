@@ -190,6 +190,25 @@ mod tests {
 #[cfg(test)]
 mod wait_receipt_tests {
     #[test]
+    fn owner_change_withholds_wait_progress_but_retains_action_receipts() {
+        let value = serde_json::json!({"ok":true,"completed":2,"failed_step":2,
+            "failed_step_outcome":"not_sent","applied_actions":1,"steps":[
+                {"index":0,"kind":"wait_for","ok":true,"observation":{"text":"PRIVATE"}},
+                {"index":1,"kind":"action","ok":true}
+            ]});
+        let safe = super::redact_batch_for_scope(value, "input_owner_changed");
+        assert_eq!(safe["ok"], false);
+        assert_eq!(safe["error"], "input_owner_changed");
+        assert_eq!(safe["retry_safe"], false);
+        for key in ["completed", "failed_step", "failed_step_outcome"] {
+            assert!(safe.get(key).is_none(), "{safe}");
+        }
+        assert!(safe["steps"][0].get("ok").is_none());
+        assert_eq!(safe["steps"][1]["ok"], true);
+        assert_eq!(safe["applied_actions"], 1);
+        assert!(!safe.to_string().contains("PRIVATE"));
+    }
+    #[test]
     fn explicit_private_refusal_keeps_the_known_no_write_verdict() {
         let safe = super::redact_batch(serde_json::json!({
             "ok":false,"error":"screen_private","applied_actions":0,"retry_safe":true,"steps":[]

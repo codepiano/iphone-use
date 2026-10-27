@@ -61,7 +61,7 @@ fn a_scope_change_during_a_wait_stops_later_actions_without_replaying_prior_inpu
   tokio::time::timeout(Duration::from_secs(4),f.source.notified()).await.unwrap();f.transition(owner).await;
   let (_,value)=pending.await.unwrap();assert_eq!(value["ok"],false,"{value}");assert_eq!(value["applied_actions"],1);assert_eq!(value["completed"],1);
   assert_eq!(value["steps"][0]["ok"],true);
-  if owner {assert_eq!(value["failed_step"],1);} else {assert!(value.get("failed_step").is_none(),"revoked UI positions are withheld");}
+  assert!(value.get("failed_step").is_none(),"revoked UI positions are withheld");
   assert_eq!(value["batch_outcome"],"partially_applied");assert_eq!(value["retry_safe"],false);assert_eq!(f.homes.load(Ordering::Acquire),1);
   assert!(!value.to_string().contains(SECRET),"{value}");
  }
