@@ -21,7 +21,8 @@ on:
       - scripts/test-replacement-recovery-simulator.py
       - scripts/test-replacement-recovery-verdict.py
       - scripts/paired-bench-fixture.swift
-      - scripts/compare-native-wda-simulator.py
+      - scripts/owned-mcp-fixture.py
+      - scripts/fixtures/replacement-recovery/**
       - scripts/test-input-target-simulator.py
       - scripts/runner_auth.py
       - .github/workflows/simulator-smoke.yml
