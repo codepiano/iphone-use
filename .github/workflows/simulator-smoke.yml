@@ -99,6 +99,20 @@ jobs:
         timeout-minutes: 35
         run: bash scripts/test-simulator-smoke.sh
 
+      - name: Bound input, continuation and permission changes
+        timeout-minutes: 20
+        env:
+          EXPECTED_RUNTIME: ${{ matrix.runtime }}
+        run: |
+          set -euo pipefail
+          xctestrun=$(python3 -c 'from pathlib import Path; p=list((Path.home()/".iphone-use/instances/ci-sim/runner-build-simulator/Build/Products").glob("*.xctestrun")); assert len(p)==1, p; print(p[0])')
+          python3 scripts/test-input-target-simulator.py \
+            --xctestrun "$xctestrun" --runtime "$EXPECTED_RUNTIME" \
+            --device-type com.apple.CoreSimulator.SimDeviceType.iPhone-15 \
+            --daemon target/release/iphone-use --mcp target/release/iphone-use-mcp \
+            --input-privacy --observation-scope --native-scope \
+            --out "$RUNNER_TEMP/input-target-acceptance"
+
       - name: Logs
         if: always()
         run: |
@@ -128,6 +142,9 @@ jobs:
             ~/.iphone-use/instances/ci-sim/replacement-recovery/result.json
             ~/.iphone-use/instances/ci-sim/replacement-recovery/traceback.txt
             ~/.iphone-use/instances/ci-sim/replacement-recovery/mcp.log
+            ${{ runner.temp }}/input-target-acceptance/results.json
+            ${{ runner.temp }}/input-target-acceptance/daemon.log
+            ${{ runner.temp }}/input-target-acceptance/runner.log
 
       - name: Remove only the owned CI Simulator
         if: always()

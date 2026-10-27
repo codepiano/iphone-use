@@ -799,14 +799,17 @@ def main():
                         status, lifted = api("/agent/hold",{"secs":0})
                         assert status==200,lifted
                         status, receipt = pending.result(timeout=30)
-                    assert status==200 and receipt.get("ok") is True,receipt
-                    assert receipt.get("observation_omitted") is True and receipt.get("scope_changed")=="input_privacy_changed",receipt
+                    assert status==(423 if batch else 200) and receipt.get("ok") is (not batch),receipt
+                    reason="screen_privacy_changed" if batch else "input_privacy_changed"
+                    assert receipt.get("observation_omitted") is True and receipt.get("scope_changed")==reason,receipt
                     assert all(key not in receipt for key in ["elements","delta","snapshot","alert","image"]),receipt
-                    if batch: assert receipt.get("completed")==1 and receipt.get("applied_actions")==1,receipt
+                    if batch:
+                        assert receipt.get("completed")==1 and receipt.get("applied_actions")==1,receipt
+                        assert receipt["steps"][0]["ok"] is True,receipt
                     assert route_count("/ipu/text")-before_atomic==1 and native_keys()==before_keys
                     assert call(prefix+f"/element/{first}/attribute/value")=="observation-probe"
                     reports.append({"case":"batch-applied-receipt-withholds-stale-observation" if batch else "single-applied-receipt-withholds-stale-observation",
-                        "passed":True,"native_atomic_requests":1,"ok":True,"observation_omitted":True,"independent_readback":True})
+                        "passed":True,"native_atomic_requests":1,"ok":not batch,"observation_omitted":True,"independent_readback":True})
 
             if args.native_scope:
                 prepare()
