@@ -40,6 +40,36 @@ import CryptoKit
 @objc(InputGuardSceneDelegate) final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   var window: UIWindow?
   private weak var secondField: UITextField?
+  private weak var firstField: UITextField?
+  private weak var multilineField: UITextView?
+  private weak var secureField: UITextField?
+  private var firstEvents = 0, secondEvents = 0, returnEvents = 0
+  private let receiptRun = UUID().uuidString
+  private var receiptTimer: Timer?
+  private var lastReceiptRequest: String?
+  @objc private func secondEdited(_ field: UITextField) { secondEvents += 1 }
+  @objc private func returnPressed(_ field: UITextField) { returnEvents += 1 }
+  @objc private func writeRequestedReceipt(_ timer: Timer?) {
+    let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    guard let data = try? Data(contentsOf: documents.appendingPathComponent("boundary-state-command.json")),
+          let command = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let nonce = command["nonce"] as? String, nonce != lastReceiptRequest else { return }
+    func field(_ value: String?) -> [String: Any] {
+      let text = value ?? ""
+      return ["scalars":text.unicodeScalars.count,"utf16":text.utf16.count,
+        "sha256":SHA256.hash(data: Data(text.utf8)).map { String(format:"%02x",$0) }.joined()]
+    }
+    let state: [String: Any] = ["nonce":nonce,"run_id":receiptRun,"pid":ProcessInfo.processInfo.processIdentifier,
+      "foreground":window?.windowScene?.activationState == .foregroundActive,
+      "fields_present":firstField != nil && secondField != nil && multilineField != nil && secureField != nil,
+      "fields":["a":field(firstField?.text),"b":field(secondField?.text),"multi":field(multilineField?.text),"secure":field(secureField?.text)],
+      "events_a":firstEvents,"events_b":secondEvents,"returns":returnEvents,"shifted":shifted,
+      "focus_a":firstField?.isFirstResponder ?? false,"focus_b":secondField?.isFirstResponder ?? false]
+    if let data = try? JSONSerialization.data(withJSONObject:state,options:[.sortedKeys]),
+       (try? data.write(to:documents.appendingPathComponent("boundary-state.json"),options:.atomic)) != nil {
+      lastReceiptRequest = nonce
+    }
+  }
   private var shifted = false
   private var fieldReceiptGeneration = 0
   private weak var liveTitle: UILabel?
@@ -61,6 +91,7 @@ import CryptoKit
     }
   }
   @objc private func shiftFocusIfRequested(_ field: UITextField) {
+    firstEvents += 1
     let marker = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("input-started.count")
     fieldReceiptGeneration += 1
     if field.text?.hasPrefix("queue-deadline-") == true || ProcessInfo.processInfo.arguments.contains("--continuous-value-receipt") {
@@ -102,7 +133,10 @@ import CryptoKit
       title.leadingAnchor.constraint(equalTo: controller.view.leadingAnchor, constant: 24),
     ])
     let first = UITextField(), second = UITextField()
-    secondField = second
+    firstField = first; secondField = second
+    second.addTarget(self, action:#selector(secondEdited(_:)), for:.editingChanged)
+    first.addTarget(self, action:#selector(returnPressed(_:)), for:.editingDidEndOnExit)
+    second.addTarget(self, action:#selector(returnPressed(_:)), for:.editingDidEndOnExit)
     first.placeholder = "Draft placeholder"
     first.addTarget(self, action: #selector(shiftFocusIfRequested(_:)), for: .editingChanged)
     for (field, id) in [(first, "field-a"), (second, "field-b")] {
@@ -114,6 +148,7 @@ import CryptoKit
       field.autocapitalizationType = .none
     }
     let multiline = UITextView(), secure = UITextField()
+    multilineField = multiline; secureField = secure
     multiline.accessibilityIdentifier = "field-multiline"
     multiline.accessibilityLabel = "Multiline draft"
     multiline.autocorrectionType = .no
@@ -137,6 +172,8 @@ import CryptoKit
     ])
     window = UIWindow(windowScene: scene)
     window?.rootViewController = controller; window?.makeKeyAndVisible()
+    receiptTimer = Timer.scheduledTimer(timeInterval:0.05,target:self,
+      selector:#selector(writeRequestedReceipt(_:)),userInfo:nil,repeats:true)
     if ProcessInfo.processInfo.arguments.contains("--live-video-fixture") {
       liveTitle = title
       liveTimer = Timer.scheduledTimer(timeInterval: 0.1, target: self,
@@ -495,6 +532,37 @@ def main():
                 assert call(prefix + f"/element/{first}/attribute/value") in (None, "")
                 return len(before)
 
+            def app_receipt():
+                documents = Path(command("xcrun","simctl","get_app_container",udid,BUNDLE,"data"))/"Documents"
+                documents.mkdir(exist_ok=True)
+                nonce = secrets.token_hex(16)
+                (documents/"boundary-state-command.json").write_text(json.dumps({"nonce":nonce}))
+                observed = {}
+                def fresh():
+                    nonlocal observed
+                    try: observed=json.loads((documents/"boundary-state.json").read_text())
+                    except (OSError,ValueError): return False
+                    return observed.get("nonce")==nonce
+                wait_for(fresh,"fresh App-owned receipt")
+                assert observed.get("foreground") is True and observed.get("fields_present") is True,observed
+                return observed
+
+            def app_trial(before, after):
+                assert before["run_id"]==after["run_id"] and before["pid"]==after["pid"],"App process/trial changed"
+                assert before["nonce"]!=after["nonce"],"stale App receipt"
+                assert after["returns"]==before["returns"],"unexpected Return event"
+                for other in ["b","multi","secure"]:
+                    assert after["fields"][other]==before["fields"][other],"unselected field changed: "+other
+                assert after["events_b"]==before["events_b"],"other field received editing events"
+
+            def app_fault(before, after, draft):
+                app_trial(before,after)
+                assert before["fields"]["a"]["scalars"]==0 and before["focus_a"] is True and before["shifted"] is False,before
+                assert after["shifted"] is True and after["focus_b"] is True,after
+                assert after["events_a"]-before["events_a"]==20,after
+                assert after["fields"]["a"]["scalars"]==20,after
+                assert after["fields"]["a"]["sha256"]==hashlib.sha256(draft[:20].encode()).hexdigest(),after
+
             def begin():
                 status, result = api("/agent/input", {"type": "text", "text": "字" * 500, "budget_ms": 6000})
                 assert status == 502 and result.get("characters_uncertain") == 0, result
@@ -502,6 +570,7 @@ def main():
                 return result
 
             prepare()
+            app_before = app_receipt() if args.expect_boundary_isolation else None
             result = begin()
             portions = [result["characters_confirmed"]]
             for _ in range(5):
@@ -514,8 +583,14 @@ def main():
             else:
                 raise RuntimeError("continuation did not finish within five calls")
             assert call(prefix + f"/element/{first}/attribute/value") == "字" * 500
+            app_after = app_receipt() if app_before else None
+            if app_after:
+                app_trial(app_before,app_after)
+                assert app_after["fields"]["a"]["sha256"]==hashlib.sha256(("字"*500).encode()).hexdigest(),app_after
+                assert app_after["events_a"]-app_before["events_a"]==500,app_after
             reports.append({"case": "daemon-continuation-500-character-readback", "passed": True,
-                            "confirmed_partial_portions": portions, "final_length": 500})
+                            "confirmed_partial_portions": portions, "final_length": 500,
+                            "app_receipts":{"before":app_before,"after":app_after}})
 
             assert prepare() == 500
             reports.append({"case": "native-clear-after-mid-field-click", "passed": True,
@@ -554,6 +629,7 @@ def main():
             log_path = out / "runner.log"
             native_keys = lambda: log_path.read_text(errors="replace").count(f"POST {prefix}/wda/keys ->")
             before_calls = native_keys()
+            app_before = app_receipt() if args.expect_boundary_isolation else None
             draft = "shift-focus-test-" + "字" * (500 - len("shift-focus-test-"))
             status, result = api("/agent/input", {"type": "text", "text": draft, "budget_ms": 15000})
             assert status == 502 and result.get("error") == "text_partially_typed", result
@@ -565,8 +641,10 @@ def main():
                        "b": len(call(prefix + f"/element/{second}/attribute/value") or "")}
             if args.expect_boundary_isolation:
                 assert lengths == {"a":20,"b":0}, lengths
+                app_after=app_receipt();app_fault(app_before,app_after,draft)
             reports.append({"case": "daemon-mid-chunk-focus-change-is-unknown-without-continuation",
-                            "passed": True, "native_key_requests": 1, "field_lengths": lengths})
+                            "passed": True, "native_key_requests": 1, "field_lengths": lengths,
+                            "app_receipts":{"before":app_before,"after":app_after if app_before else None}})
 
             prepare()
             before_calls = native_keys()
@@ -650,6 +728,7 @@ def main():
             prepare()
             draft = "shift-focus-test-" + "字" * 40
             before_atomic = route_count("/ipu/text")
+            app_before = app_receipt() if args.expect_boundary_isolation else None
             status, result = api("/agent/input", {"type": "text", "text": draft})
             assert status == 502 and result.get("outcome") == "unknown" and result.get("retry_safe") is False, result
             assert "continue_token" not in result
@@ -669,10 +748,12 @@ def main():
             a, b = values["field-a"], values["field-b"]
             if args.expect_boundary_isolation:
                 assert a == draft[:20] and b == "", {"a":a,"b":b}
+                app_after=app_receipt();app_fault(app_before,app_after,draft)
             else:
                 assert a + b == draft, {"a": a, "b": b}
             reports.append({"case": "daemon-short-mid-input-focus-change-is-unknown-without-retry",
-                            "passed": True, "native_requests": 1, "field_lengths": {"a": len(a), "b": len(b)}})
+                            "passed": True, "native_requests": 1, "field_lengths": {"a": len(a), "b": len(b)},
+                            "app_receipts":{"before":app_before,"after":app_after if app_before else None}})
 
             # Observe actual TCP disconnection separately from the acceptance verdicts above.
             # If default input continues, explicitly release this fixture's owner to stop it;
