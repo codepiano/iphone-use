@@ -12774,6 +12774,17 @@ async fn agent_actions_claimed(
                 }
                 applied_actions += 1;
                 record_activity(&state, &headers, action);
+                // Record confirmed dispatch before the optional pause: scope loss
+                // may revoke UI-derived progress, but must retain this action ACK.
+                let mut receipt = serde_json::json!({
+                    "index": index,
+                    "kind": "action",
+                    "ok": true
+                });
+                if let Some((_, resolved)) = launch_resolutions.iter().find(|(step, _)| *step == index) {
+                    receipt["resolved"] = resolved.clone();
+                }
+                step_results.push(receipt);
                 if *after_ms > 0 {
                     match in_request_scope(&state,request_scope.as_ref(),tokio::time::timeout_at(batch_deadline,
                         tokio::time::sleep(std::time::Duration::from_millis(*after_ms)))).await {
@@ -12785,15 +12796,6 @@ async fn agent_actions_claimed(
                         Some(Err(_))=>return agent_actions_failure(StatusCode::GATEWAY_TIMEOUT,index,completed,applied_actions,"batch_deadline_after_action","applied",false,&step_results,None),
                     }
                 }
-                let mut receipt = serde_json::json!({
-                    "index": index,
-                    "kind": "action",
-                    "ok": true
-                });
-                if let Some((_, resolved)) = launch_resolutions.iter().find(|(step, _)| *step == index) {
-                    receipt["resolved"] = resolved.clone();
-                }
-                step_results.push(receipt);
             }
             AgentActionStep::Pause { ms } => {
                 match in_request_scope(&state,request_scope.as_ref(),tokio::time::timeout_at(batch_deadline,

@@ -72,7 +72,12 @@ fn prior_wait_observations_are_removed_when_scope_changes_during_a_later_action(
  let f=Arc::new(Fixture::new(false,false));let c=f.clone();
  let pending=tokio::spawn(async move{body(c.response("/agent/actions",json!({"observe":false,"steps":[{"kind":"wait_for","expect":{"present":[{"label":SECRET}]},"timeout_ms":2000,"poll_ms":50},{"kind":"action","action":{"type":"home"},"after_ms":700},{"kind":"action","action":{"type":"home"}}]}),"a",false).await).await});
  tokio::time::timeout(Duration::from_secs(4),f.action.notified()).await.unwrap();f.transition(false).await;
- let (_,value)=pending.await.unwrap();assert_eq!(value["ok"],false,"{value}");assert_eq!(value["completed"],1);assert_eq!(value["failed_step"],1);assert_eq!(value["failed_step_outcome"],"applied");assert_eq!(value["retry_safe"],false);assert_eq!(value["applied_actions"],1);assert_eq!(f.homes.load(Ordering::Acquire),1);assert!(!value.to_string().contains(SECRET),"{value}");
+ let (_,value)=pending.await.unwrap();assert_eq!(value["ok"],false,"{value}");
+ for key in ["completed","failed_step","failed_step_outcome"] {assert!(value.get(key).is_none(),"revoked screen progress escaped: {value}");}
+ assert_eq!(value["steps"].as_array().unwrap().len(),2,"{value}");
+ assert!(value["steps"][0].get("ok").is_none(),"revoked wait verdict escaped: {value}");
+ assert_eq!(value["steps"][1]["kind"],"action");assert_eq!(value["steps"][1]["index"],1);assert_eq!(value["steps"][1]["ok"],true);
+ assert_eq!(value["retry_safe"],false);assert_eq!(value["applied_actions"],1);assert_eq!(f.homes.load(Ordering::Acquire),1);assert!(!value.to_string().contains(SECRET),"{value}");
 });}
 
 #[test]
