@@ -37,13 +37,22 @@ import CryptoKit
   func application(_ application: UIApplication,
                    didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool { true }
 }
-@objc(InputGuardSceneDelegate) final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+@objc(InputGuardSceneDelegate) final class SceneDelegate: UIResponder, UIWindowSceneDelegate, UITextFieldDelegate, UITextViewDelegate {
   var window: UIWindow?
   private weak var secondField: UITextField?
   private weak var firstField: UITextField?
   private weak var multilineField: UITextView?
   private weak var secureField: UITextField?
   private var firstEvents = 0, secondEvents = 0, returnEvents = 0
+  private var vetoMode = "off", vetoA = 0, vetoMulti = 0
+  func textField(_ field: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
+    if vetoMode == "a" && field === firstField { vetoA += 1; return false }
+    return true
+  }
+  func textView(_ view: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+    if vetoMode == "multi" && view === multilineField { vetoMulti += 1; return false }
+    return true
+  }
   private let receiptRun = UUID().uuidString
   private var receiptTimer: Timer?
   private var lastReceiptRequest: String?
@@ -54,6 +63,7 @@ import CryptoKit
     guard let data = try? Data(contentsOf: documents.appendingPathComponent("boundary-state-command.json")),
           let command = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
           let nonce = command["nonce"] as? String, nonce != lastReceiptRequest else { return }
+    if let veto = command["veto"] as? String, ["off","a","multi"].contains(veto) { vetoMode = veto }
     func field(_ value: String?) -> [String: Any] {
       let text = value ?? ""
       return ["scalars":text.unicodeScalars.count,"utf16":text.utf16.count,
@@ -64,7 +74,8 @@ import CryptoKit
       "fields_present":firstField != nil && secondField != nil && multilineField != nil && secureField != nil,
       "fields":["a":field(firstField?.text),"b":field(secondField?.text),"multi":field(multilineField?.text),"secure":field(secureField?.text)],
       "events_a":firstEvents,"events_b":secondEvents,"returns":returnEvents,"shifted":shifted,
-      "focus_a":firstField?.isFirstResponder ?? false,"focus_b":secondField?.isFirstResponder ?? false]
+      "focus_a":firstField?.isFirstResponder ?? false,"focus_b":secondField?.isFirstResponder ?? false,
+      "focus_multi":multilineField?.isFirstResponder ?? false,"veto":vetoMode,"veto_calls_a":vetoA,"veto_calls_multi":vetoMulti]
     if let data = try? JSONSerialization.data(withJSONObject:state,options:[.sortedKeys]),
        (try? data.write(to:documents.appendingPathComponent("boundary-state.json"),options:.atomic)) != nil {
       lastReceiptRequest = nonce
@@ -134,6 +145,7 @@ import CryptoKit
     ])
     let first = UITextField(), second = UITextField()
     firstField = first; secondField = second
+    first.delegate = self; second.delegate = self
     second.addTarget(self, action:#selector(secondEdited(_:)), for:.editingChanged)
     first.addTarget(self, action:#selector(returnPressed(_:)), for:.editingDidEndOnExit)
     second.addTarget(self, action:#selector(returnPressed(_:)), for:.editingDidEndOnExit)
@@ -149,6 +161,7 @@ import CryptoKit
     }
     let multiline = UITextView(), secure = UITextField()
     multilineField = multiline; secureField = secure
+    multiline.delegate = self
     multiline.accessibilityIdentifier = "field-multiline"
     multiline.accessibilityLabel = "Multiline draft"
     multiline.autocorrectionType = .no
@@ -309,6 +322,8 @@ def main():
         raise RuntimeError("--list-recovery requires --daemon and --mcp")
     if args.video and (not args.hosts or not shutil.which("ffmpeg")):
         raise RuntimeError("--video requires --hosts and ffmpeg")
+    if args.expect_boundary_isolation and not daemon_binary:
+        raise RuntimeError("--expect-boundary-isolation requires --daemon")
     if args.native_scope and not daemon_binary:
         raise RuntimeError("--native-scope requires --daemon")
     if args.observation_scope and not daemon_binary:
@@ -532,11 +547,13 @@ def main():
                 assert call(prefix + f"/element/{first}/attribute/value") in (None, "")
                 return len(before)
 
-            def app_receipt():
+            def app_receipt(veto=None):
                 documents = Path(command("xcrun","simctl","get_app_container",udid,BUNDLE,"data"))/"Documents"
                 documents.mkdir(exist_ok=True)
                 nonce = secrets.token_hex(16)
-                (documents/"boundary-state-command.json").write_text(json.dumps({"nonce":nonce}))
+                request={"nonce":nonce}
+                if veto is not None: request["veto"]=veto
+                (documents/"boundary-state-command.json").write_text(json.dumps(request))
                 observed = {}
                 def fresh():
                     nonlocal observed
@@ -1322,6 +1339,35 @@ def main():
                 finally:
                     pool.shutdown(wait=False,cancel_futures=True)
 
+        if args.expect_boundary_isolation:
+            for identifier,key,focus,counter in [("field-a","a","focus_a","veto_calls_a"),
+                                                 ("field-multiline","multi","focus_multi","veto_calls_multi")]:
+                prepare()
+                field=find(identifier)
+                call(prefix+f"/element/{field}/click",{})
+                before=app_receipt(veto=key)
+                assert before[focus] is True and before["veto"]==key,before
+                status,reply=api("/agent/input",{"type":"text","text":"blocked"})
+                assert status==502 and reply.get("outcome")=="unknown" and reply.get("retry_safe") is False,reply
+                after=app_receipt()
+                assert after["run_id"]==before["run_id"] and after["pid"]==before["pid"]
+                assert after["fields"]==before["fields"],"App veto was bypassed"
+                assert after[counter]-before[counter]==1,"focused App veto was not reached exactly once"
+                assert after["events_a"]==before["events_a"] and after["events_b"]==before["events_b"]
+                assert after["returns"]==before["returns"]
+                wait_for(lambda:api("/agent/status")[1].get("drivable") is True,"healthy Runner after App veto")
+                ready=app_receipt(veto="off")
+                assert ready["veto"]=="off" and ready[focus] is True,ready
+                status,reply=api("/agent/input",{"type":"text","text":"accepted","clear":True})
+                assert status==200 and reply.get("ok") is True,reply
+                positive=app_receipt()
+                assert positive["fields"][key]["sha256"]==hashlib.sha256(b"accepted").hexdigest(),positive
+                for other in ["a","b","multi","secure"]:
+                    if other!=key:assert positive["fields"][other]==after["fields"][other],"unrelated field changed"
+                assert positive["returns"]==after["returns"]
+                reports.append({"case":"focused-App-veto-"+key,"passed":True,
+                    "app_receipts":{"before":before,"after":after,"positive":positive},"veto_callbacks":1})
+
     except Exception as error:
         reports.append({"case": "harness-or-current-case", "passed": False, "error": str(error),"error_type":type(error).__name__,"traceback":traceback.format_exc(limit=5)})
     finally:
@@ -1375,6 +1421,7 @@ def main():
         (out / "results.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(json.dumps({"cases": reports, "observations": observations, "cleanup_errors": cleanup_errors}))
     expected = (20 if mcp_binary else 19 if daemon_binary else 6) + ((3 if mcp_binary else 2) if args.recovery else 0) + 2 * int(args.hosts) + 3 * int(args.input_privacy) + 2 * int(args.observation_scope) + int(args.native_scope) + 4 * int(args.video) + 3 * int(args.list_recovery) + int(args.list_deadline)
+    expected += 2 * int(args.expect_boundary_isolation)
     return 0 if len(reports) == expected and all(r["passed"] for r in reports) and not cleanup_errors else 1
 
 
