@@ -22,9 +22,12 @@ live under scripts/fixtures/replacement-recovery.
   interleaved reads and invalid targets. Host panel tests cover both default and
   named targets. Actual host application acceptance remains outstanding.
 
-The current integration branch compiles and passes 912 server library tests
-and 255 MCP library tests (one ignored in each); this does not replace the
-remaining integration, host, physical and default-path acceptance lanes.
+After integration with v0.25.3, 918 server library tests and 256 MCP library
+tests passed (one ignored in each). The real stdio instance suite, host panel
+suites, locked-text/batch-order regression and complete GitHub PR checks passed;
+both iOS 17.5 / Xcode 15.4 and iOS 18.2 / Xcode 16.2 Simulator lanes passed.
 
-The routing revision passes 256 MCP library tests (one ignored), the real stdio
-instance suite, both host panel suites, and the locked-text/batch-order regression.
+The subsequent gesture merge retains #347's delivery boundaries and passes 315
+Swift logic checks plus unsigned iOS compilation. The branch also includes the
+v0.25.4 version metadata. These checks do not replace the remaining host,
+physical and default-path acceptance lanes.
