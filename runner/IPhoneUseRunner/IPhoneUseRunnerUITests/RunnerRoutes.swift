@@ -1359,6 +1359,7 @@ extension RunnerTests {
       NSLog("ipu-character-profile requested=%d attempted=%d guards=%d full=%d %@",
         text.unicodeScalars.count, attempted, guardReads, fullValueReads, parts)
     }
+    if let ax = original.axElement { IPURBridge.probeBoundaryMetadata(element: ax) }
     let deadline = Date().addingTimeInterval(10)
     do {
       var boundary = try verifiedBoundary()

@@ -270,6 +270,17 @@ static BOOL IPURUseRequestCache(void)
 {
   if (pid != NULL) *pid = 0;
   NSArray *active = [self activeApplicationElements];
+  // With exactly one valid active element, both the application and
+  // SpringBoard branches below select that same element. Keep the live
+  // active-app query, avoiding the unused system-element round trip.
+  if (active.count == 1) {
+    id sole = active.firstObject;
+    int solePID = [self pidForAXElement:sole];
+    if (solePID > 0) {
+      if (pid != NULL) *pid = solePID;
+      return sole;
+    }
+  }
   int springBoardPID = [self pidForAXElement:[self systemApplicationElement] ?: NSNull.null];
   NSMutableArray *candidates = [NSMutableArray array];
   id springBoard = nil;
@@ -470,6 +481,42 @@ static BOOL IPURUseRequestCache(void)
     attributes = mappedAttributes;
   });
   return attributes;
+}
+
++ (void)probeBoundaryMetadataForElement:(id)element
+{
+  // One read-only calibration per experimental Runner. Values, labels and
+  // identifiers never enter the log, and no probe result admits an action.
+  static BOOL reported = NO;
+  if (reported) return;
+  reported = YES;
+  CFAbsoluteTime started = CFAbsoluteTimeGetCurrent();
+  @try {
+    id client = [self axClient];
+    SEL selector = NSSelectorFromString(@"attributesForElement:attributes:error:");
+    NSMethodSignature *shape = [client methodSignatureForSelector:selector];
+    if (shape == nil || shape.numberOfArguments != 5 || shape.methodReturnType[0] != '@' ||
+        [shape getArgumentTypeAtIndex:2][0] != '@' || [shape getArgumentTypeAtIndex:3][0] != '@' ||
+        strcmp([shape getArgumentTypeAtIndex:4], "^@") != 0) return;
+    NSMutableArray *wanted = [NSMutableArray array];
+    for (id key in [self snapshotAttributes]) {
+      if (![[key description] hasSuffix:@"Value"]) [wanted addObject:key];
+    }
+    NSError *error = nil;
+    id raw = ((id (*)(id,SEL,id,id,NSError **))objc_msgSend)(client,selector,element,wanted,&error);
+    NSMutableDictionary *types = [NSMutableDictionary dictionary];
+    if ([raw isKindOfClass:NSDictionary.class]) {
+      for (id key in (NSDictionary *)raw) {
+        id value = raw[key];
+        types[[key description]] = NSStringFromClass([value class]) ?: @"nil";
+      }
+    }
+    NSLog(@"ipu-boundary-metadata-probe ms=%.1f ok=%d count=%lu types=%@",
+      (CFAbsoluteTimeGetCurrent()-started)*1000, error == nil && [raw isKindOfClass:NSDictionary.class],
+      (unsigned long)types.count,types);
+  } @catch (__unused NSException *exception) {
+    NSLog(@"ipu-boundary-metadata-probe unavailable; input guards unchanged");
+  }
 }
 
 + (NSDictionary *)probeAXInsertForElement:(id)element value:(NSString *)value

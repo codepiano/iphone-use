@@ -30,6 +30,7 @@ FOUNDATION_EXPORT NSString *const IPURNodeAXElementKey;
 
 @interface IPURBridge : NSObject
 + (NSDictionary *)probeAXInsertForElement:(id)element value:(NSString *)value NS_SWIFT_NAME(probeAXInsert(element:value:));
++ (void)probeBoundaryMetadataForElement:(id)element NS_SWIFT_NAME(probeBoundaryMetadata(element:));
 
 /// Turns every XCTest quiescence / idle wait into a no-op for the whole process
 /// (XCUIApplicationProcess waitForQuiescence…, XCAXClient_iOS
