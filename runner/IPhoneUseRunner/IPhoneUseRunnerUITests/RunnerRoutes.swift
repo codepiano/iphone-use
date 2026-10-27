@@ -1302,11 +1302,11 @@ extension RunnerTests {
       guardReads += 1
       IPURBridge.invalidateRequestCache()
       elements.prune()
-      let current = try freshNode(token)
+      let current = try timed("InputSnapshot") { try freshNode(token) }
       guard let originalAX = current.axElement, IPURBridge.pid(forAXElement: originalAX) == original.pid else {
         throw RunnerError.failed("original AX process changed")
       }
-      let visible = current.isVisible(screen: windowSizePoints())
+      let visible = timed("InputGeometry") { current.isVisible(screen: windowSizePoints()) }
       // The final remote read comes after field metadata; everything following
       // it is a pure predicate or local binding check. Do not duplicate it.
       let foregroundPID = foreground().pid
@@ -1328,8 +1328,8 @@ extension RunnerTests {
       // Read the retained original's full value between two complete guards.
       guard let ax = before.axElement else { throw RunnerError.failed("original AX unavailable") }
       var error: NSString?
-      guard let raw = IPURBridge.readValue(for: ax, maxUTF16: 65536,
-          placeholder: before.placeholder, error: &error),
+      guard let raw = timed("InputFullValue", { IPURBridge.readValue(for: ax, maxUTF16: 65536,
+          placeholder: before.placeholder, error: &error) }),
           (raw["complete"] as? NSNumber)?.boolValue == true,
           (raw["truncated"] as? NSNumber)?.boolValue == false else {
         throw RunnerError.failed("complete original value unavailable")
@@ -1351,6 +1351,14 @@ extension RunnerTests {
       boundaryReads += 1
       return (after, value)
     }
+    defer {
+      let parts = ["InputSnapshot","InputGeometry","InputFullValue","InputInsert","Foreground","ActiveApps","ViewService"].compactMap { name -> String? in
+        guard let entry = requestTiming[name] else { return nil }
+        return "\(name)=\(String(format: "%.1f", entry.ms))ms/\(entry.calls)"
+      }.joined(separator: " ")
+      NSLog("ipu-character-profile requested=%d attempted=%d guards=%d full=%d %@",
+        text.unicodeScalars.count, attempted, guardReads, fullValueReads, parts)
+    }
     let deadline = Date().addingTimeInterval(10)
     do {
       var boundary = try verifiedBoundary()
@@ -1359,7 +1367,7 @@ extension RunnerTests {
         guard boundaryReads == attempted + 1, inputBinding == token,
               let ax = boundary.node.axElement else { throw RunnerError.failed("original boundary unavailable") }
         let beforeValue = boundary.value
-        let reply = IPURBridge.probeAXInsert(element: ax, value: String(character))
+        let reply = timed("InputInsert") { IPURBridge.probeAXInsert(element: ax, value: String(character)) }
         if reply["invoked"] as? Bool == true { attempted += 1 }
         guard reply["invoked"] as? Bool == true, reply["actionAcknowledged"] as? Bool == true else {
           throw RunnerError.failed("experimental target AX action not acknowledged")
