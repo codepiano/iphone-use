@@ -17084,7 +17084,8 @@ async fn privacy_read_body_layer(request: axum::extract::Request, next: axum::mi
         let limit = if batch.is_some() { 2 << 20 } else { usize::MAX };
         let bytes = match axum::body::to_bytes(body, limit).await {
             Ok(bytes) => bytes,
-            Err(_) => return Response::from_parts(parts, Body::from(crate::timing::UNKNOWN_BODY)),
+            Err(_) => return json_response(StatusCode::BAD_GATEWAY,
+                serde_json::json!({"ok":false,"error":"outcome_unknown","outcome":"unknown","retry_safe":false})),
         };
         parts.headers.remove(header::CONTENT_LENGTH);
         let stream = futures_util::stream::once(async move {

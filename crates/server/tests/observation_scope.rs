@@ -44,7 +44,9 @@ fn a_scope_change_during_final_observation_keeps_the_applied_receipt_without_ui(
   let f=Arc::new(Fixture::new(true,false));let c=f.clone();let (path,payload)=observed(batch);
   let pending=tokio::spawn(async move{body(c.response(path,payload,"a",false).await).await});
   tokio::time::timeout(Duration::from_secs(4),f.source.notified()).await.unwrap();f.transition(owner).await;
-  let (status,value)=pending.await.unwrap();assert_eq!(status,StatusCode::OK,"{value}");assert_eq!(value["ok"],true);
+  let (status,value)=pending.await.unwrap();
+  assert_eq!(status,if batch && !owner {StatusCode::LOCKED}else{StatusCode::OK},"{value}");
+  assert_eq!(value["ok"],!(batch && !owner));
   assert!(!value.to_string().contains(SECRET),"an old observation escaped: {value}");
   assert_eq!(value["observation_omitted"],true);if batch{assert_eq!(value["applied_actions"],1);assert_eq!(value["completed"],1);}
   assert_eq!(f.homes.load(Ordering::Acquire),1);assert!(f.state.element_snapshots.lock().unwrap().is_empty());
@@ -57,7 +59,9 @@ fn a_scope_change_during_a_wait_stops_later_actions_without_replaying_prior_inpu
   let f=Arc::new(Fixture::new(true,false));let c=f.clone();
   let pending=tokio::spawn(async move{body(c.response("/agent/actions",json!({"observe":false,"steps":[{"kind":"action","action":{"type":"home"}},{"kind":"wait_for","expect":{"present":[{"label":SECRET}]},"timeout_ms":2000,"poll_ms":50},{"kind":"action","action":{"type":"home"}}]}),"a",false).await).await});
   tokio::time::timeout(Duration::from_secs(4),f.source.notified()).await.unwrap();f.transition(owner).await;
-  let (_,value)=pending.await.unwrap();assert_eq!(value["ok"],false,"{value}");assert_eq!(value["applied_actions"],1);assert_eq!(value["completed"],1);assert_eq!(value["failed_step"],1);
+  let (_,value)=pending.await.unwrap();assert_eq!(value["ok"],false,"{value}");assert_eq!(value["applied_actions"],1);assert_eq!(value["completed"],1);
+  assert_eq!(value["steps"][0]["ok"],true);
+  if owner {assert_eq!(value["failed_step"],1);} else {assert!(value.get("failed_step").is_none(),"revoked UI positions are withheld");}
   assert_eq!(value["batch_outcome"],"partially_applied");assert_eq!(value["retry_safe"],false);assert_eq!(f.homes.load(Ordering::Acquire),1);
   assert!(!value.to_string().contains(SECRET),"{value}");
  }
@@ -76,7 +80,8 @@ fn queued_observation_body_is_redacted_without_dropping_the_receipt() {block(asy
  for batch in [false,true] {
   let f=Fixture::new(false,false);let (path,payload)=observed(batch);let response=f.response(path,payload,"a",false).await;
   assert_eq!(response.status(),StatusCode::OK);f.transition(false).await;
-  let (status,value)=body(response).await;assert_eq!(status,StatusCode::OK);assert_eq!(value["ok"],true);assert_eq!(value["observation_omitted"],true);assert!(!value.to_string().contains(SECRET),"{value}");if batch{assert_eq!(value["applied_actions"],1);}
+  let (status,value)=body(response).await;assert_eq!(status,StatusCode::OK);assert_eq!(value["ok"],!batch);assert_eq!(value["observation_omitted"],true);
+  if batch {assert_eq!(value["steps"][0]["ok"],true);assert_eq!(value["error"],"screen_privacy_changed");}assert!(!value.to_string().contains(SECRET),"{value}");if batch{assert_eq!(value["applied_actions"],1);}
   assert_eq!(f.homes.load(Ordering::Acquire),1);
  }
 });}
