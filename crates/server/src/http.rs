@@ -12261,7 +12261,7 @@ async fn agent_actions(
     if let Some(owner) = trusted_bearer_owner(&state, &headers) {
         crate::advice::reset(&owner);
     }
-    let response = agent_actions_inner(state.clone(), headers.clone(), body).await;
+    let response = agent_actions_inner(state.0.clone(), headers.clone(), body).await;
     attach_failure_recovery(&state, &headers, response).await
 }
 
