@@ -707,6 +707,47 @@ static BOOL IPURUseRequestCache(void)
   } @catch (__unused NSException *exception) { return nil; }
 }
 
+// Isolated input experiment: ask the original App process for a main-loop
+// boundary. An AX insertion ACK alone does not prove lifecycle work has run.
++ (nullable NSString *)waitForInputIdleForPID:(int)pid
+{
+  if (!NSThread.isMainThread || pid <= 0) return @"input idle requires original process on main thread";
+  @try {
+    id monitor = IPURObject(XCUIDevice.sharedDevice,@"applicationMonitor");
+    SEL lookup = NSSelectorFromString(@"applicationProcessWithPID:");
+    NSMethodSignature *lookupShape = [monitor methodSignatureForSelector:lookup];
+    if (lookupShape == nil || lookupShape.numberOfArguments != 3 || lookupShape.methodReturnType[0] != '@' ||
+        [lookupShape getArgumentTypeAtIndex:2][0] != 'i') return @"original process lookup unavailable";
+    id process = ((IPURMsgSendObjectInt)objc_msgSend)(monitor,lookup,pid);
+    if (process == nil || IPURInt(process,@"processID") != pid) return @"original process identity unavailable";
+    SEL notify = NSSelectorFromString(@"_notifyWhenMainRunLoopIsIdle:");
+    NSMethodSignature *shape = [process methodSignatureForSelector:notify];
+    if (shape == nil || shape.numberOfArguments != 3 || shape.methodReturnType[0] != 'v' ||
+        strcmp([shape getArgumentTypeAtIndex:2],"@?") != 0) return @"original App idle notification unavailable";
+    XCTestExpectation *idle = [[XCTestExpectation alloc] initWithDescription:@"original App input idle boundary"];
+    NSObject *lock = [NSObject new];
+    __block BOOL arrived = NO, accepted = NO;
+    // XCUIApplicationProcess's callback takes one NSError object. Only compare
+    // it with nil; do not retain or dereference an unknown callback payload.
+    void (^reply)(void *) = ^(void *error) {
+      @synchronized(lock) {
+        if (arrived) return;
+        arrived = YES; accepted = error == NULL;
+        [idle fulfill];
+      }
+    };
+    ((void (*)(id,SEL,id))objc_msgSend)(process,notify,reply);
+    XCTWaiterResult result = [XCTWaiter waitForExpectations:@[idle] timeout:0.5];
+    @synchronized(lock) {
+      if (result != XCTWaiterResultCompleted || !arrived || !accepted)
+        return @"original App idle boundary not acknowledged";
+    }
+    return nil;
+  } @catch (__unused NSException *exception) {
+    return @"original App idle boundary exception";
+  }
+}
+
 + (NSDictionary *)probeAXInsertForElement:(id)element value:(NSString *)value
 {
   BOOL attempted = NO;

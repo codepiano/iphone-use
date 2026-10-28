@@ -31,6 +31,11 @@ on:
       - scripts/value-read-fixture.swift
       - .github/workflows/simulator-smoke.yml
   workflow_dispatch:
+    inputs:
+      app_idle_only:
+        description: Compare App idle boundary with the AX control using synthetic background faults
+        type: boolean
+        default: false
 
 concurrency:
   group: >-
@@ -43,6 +48,7 @@ permissions:
 
 jobs:
   smoke:
+    if: ${{ !inputs.app_idle_only }}
     name: Simulator iOS ${{ matrix.ios }} / Xcode ${{ matrix.xcode }}
     runs-on: macos-14
     timeout-minutes: 45
@@ -171,3 +177,54 @@ jobs:
             xcrun simctl shutdown "$SIM" >/dev/null 2>&1 || true
             xcrun simctl delete "$SIM"
           fi
+
+  app_idle_probe:
+    if: ${{ inputs.app_idle_only }}
+    name: App idle boundary / ${{ matrix.backend }} / iOS 18.2
+    runs-on: macos-14
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [ax, ax-idle]
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Select toolchain
+        run: |
+          set -euo pipefail
+          test "$(xcrun --sdk iphonesimulator --show-sdk-version)" = '18.2'
+          echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master; explicit stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - name: Build candidate daemon and isolated Runner
+        run: |
+          set -euo pipefail
+          cargo build --release --locked -p server
+          export IPU_RUNNER_DERIVED_DATA="$RUNNER_TEMP/idle-runner"
+          bash runner/build.sh --simulator
+      - name: Exercise unchanged App-owned background boundary oracle
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          xctestrun=$(python3 -c 'import os; from pathlib import Path; p=list((Path(os.environ["RUNNER_TEMP"])/"idle-runner/Build/Products").glob("*.xctestrun")); assert len(p)==1,p; print(p[0])')
+          python3 scripts/test-input-target-simulator.py --xctestrun "$xctestrun" \
+            --runtime com.apple.CoreSimulator.SimRuntime.iOS-18-2 \
+            --device-type com.apple.CoreSimulator.SimDeviceType.iPhone-15 \
+            --daemon target/release/iphone-use --expect-boundary-isolation \
+            --state-boundaries --only-state-boundaries --state-fault background \
+            --boundary-backend '${{ matrix.backend }}' --out "$RUNNER_TEMP/input-idle-probe"
+      - name: Preserve independent App receipts and profiles
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: app-idle-${{ matrix.backend }}-ios18.2
+          path: |
+            ${{ runner.temp }}/input-idle-probe/*.json
+            ${{ runner.temp }}/input-idle-probe/runner.log
+            ${{ runner.temp }}/input-idle-probe/daemon.log
+            ${{ runner.temp }}/build-simulator.log

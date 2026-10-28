@@ -1300,7 +1300,7 @@ extension RunnerTests {
     }
     let environment = ProcessInfo.processInfo.environment
     let backend = environment["IPU_BOUNDARY_BACKEND"] ?? environment["TEST_RUNNER_IPU_BOUNDARY_BACKEND"] ?? "ax"
-    guard ["ax","hid","ax-bulk"].contains(backend) else { throw RunnerError.invalidArgument("unknown experimental input backend; nothing was sent") }
+    guard ["ax","ax-idle","hid","ax-bulk"].contains(backend) else { throw RunnerError.invalidArgument("unknown experimental input backend; nothing was sent") }
     IPURBridge.setInputForegroundLookupEnabled(true)
     defer {
       NSLog("ipu-input-foreground-lookup %@", IPURBridge.inputForegroundLookupStats())
@@ -1384,7 +1384,7 @@ extension RunnerTests {
       return (after, value)
     }
     defer {
-      let parts = ["InputMetadata","InputSnapshot","InputReadiness","InputGeometry","InputFullValue","InputInsert","Foreground","ActiveApps","ViewService"].compactMap { name -> String? in
+      let parts = ["InputMetadata","InputSnapshot","InputReadiness","InputGeometry","InputFullValue","InputInsert","InputIdle","Foreground","ActiveApps","ViewService"].compactMap { name -> String? in
         guard let entry = requestTiming[name] else { return nil }
         return "\(name)=\(String(format: "%.1f", entry.ms))ms/\(entry.calls)"
       }.joined(separator: " ")
@@ -1394,6 +1394,9 @@ extension RunnerTests {
     if let ax = original.axElement { IPURBridge.probeBoundaryMetadata(element: ax) }
     let deadline = Date().addingTimeInterval(10)
     do {
+      if backend == "ax-idle", let failure = timed("InputIdle", { IPURBridge.waitForInputIdle(pid: original.pid) }) {
+        throw RunnerError.failed(failure)
+      }
       var boundary = try verifiedBoundary()
       // Diagnostic only: bulk insertion delays App-driven handoff and cannot
       // make the external focus check atomic with App input validation.
@@ -1413,6 +1416,9 @@ extension RunnerTests {
           guard reply["invoked"] as? Bool == true, reply["actionAcknowledged"] as? Bool == true else {
             throw RunnerError.failed("experimental target AX action not acknowledged")
           }
+        }
+        if backend == "ax-idle", let failure = timed("InputIdle", { IPURBridge.waitForInputIdle(pid: original.pid) }) {
+          throw RunnerError.failed(failure)
         }
         let after = try verifiedBoundary()
         guard after.value != beforeValue else { throw RunnerError.failed("original value unchanged after input") }

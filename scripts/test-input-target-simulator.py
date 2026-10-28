@@ -365,7 +365,7 @@ def main():
     parser.add_argument("--long-boundaries", action="store_true", help="verify long-field App veto and public MCP append")
     parser.add_argument("--state-fault", action="append", choices=["disable","hide","secure","interaction","background"], help="select state faults explicitly; repeat to select more than one")
     parser.add_argument("--only-state-boundaries", action="store_true", help="run only the independent state-fault cohort; not full acceptance")
-    parser.add_argument("--boundary-backend", choices=["ax","hid","ax-bulk"], default="ax", help="isolated experimental Native input backend")
+    parser.add_argument("--boundary-backend", choices=["ax","ax-idle","hid","ax-bulk"], default="ax", help="isolated experimental Native input backend")
     parser.add_argument("--state-boundaries", action="store_true", help="verify mid-input disable/hide/secure/background changes on short and long routes")
     parser.add_argument("--runtime", default="com.apple.CoreSimulator.SimRuntime.iOS-27-0")
     parser.add_argument("--device-type", default="com.apple.CoreSimulator.SimDeviceType.iPhone-17")
