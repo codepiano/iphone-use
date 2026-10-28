@@ -188,6 +188,10 @@ final class InputController: UIViewController, UITableViewDataSource, UITableVie
     edits.append(searchController.searchBar.text ?? "")
     publish()
   }
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    publish()
+  }
   private func publish() {
     let windowRect = view.window?.bounds ?? view.bounds
     let tableRect = table.convert(table.bounds, to: view.window)
@@ -201,8 +205,10 @@ final class InputController: UIViewController, UITableViewDataSource, UITableVie
     ]
     if let data = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]),
        let text = String(data: data, encoding: .utf8) {
-      result.text = text
-      result.accessibilityLabel = text
+      if result.text != text {
+        result.text = text
+        result.accessibilityLabel = text
+      }
     }
   }
 }

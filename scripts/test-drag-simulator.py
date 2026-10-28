@@ -396,7 +396,7 @@ def _input_case(daemon, args, label, kind, attempt):
     row = 8 if kind == "scroll" else 3
     steps = []
     if kind == "scroll":
-        anchor_x,anchor_y=input_scroll_anchor(before)
+        anchor_x, anchor_y = input_scroll_anchor(before)
         steps.extend([
             {"kind": "action", "action": {"type": "scroll", "x": anchor_x, "y": anchor_y, "dx": 0, "dy": 300}},
             {"kind": "wait_for", "expect": {"present": [{"identifier": f"input-row-{row}", "kind": "Cell"}]}, "timeout_ms": 4000},
