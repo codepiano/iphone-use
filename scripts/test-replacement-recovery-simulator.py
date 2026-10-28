@@ -310,6 +310,7 @@ def main():
                 if time.monotonic() > until: raise RuntimeError("fixture setup did not converge: " + name)
                 time.sleep(.1)
             active_before = before
+            observed_task_started=time.monotonic()
             active, _ = drag.runner_call(args, "/wda/activeAppInfo")
             if active.get("value", {}).get("bundleId") != BUNDLE or active["value"].get("pid") != before["pid"]:
                 raise RuntimeError("fixture foreground/process changed before task")
@@ -371,6 +372,7 @@ def main():
                 reply = call("phone_type", {"continue_token":token,"observe":False})
                 reply_received_ns = time.time_ns()
             task_ms = (time.monotonic()-task_started)*1000
+            verification_started=time.monotonic()
             # No transport timeout is retried. A received refusal is followed
             # only by readonly idle/stability checks, then a distinct trial.
             wait_for_native_idle(daemon, args, peer, phase="after_"+name)
@@ -383,9 +385,11 @@ def main():
                 after = fresh
                 if time.monotonic() > until: raise RuntimeError("fixture edits did not settle; no next reset")
             errors = judge(name, before, after, reply)
+            verification_ms=(time.monotonic()-verification_started)*1000
+            observed_replacement_ms=(time.monotonic()-observed_task_started)*1000
             wanted = digest(text)
             field = "b" if target == "field-b" else "a"
-            reports.append({"case":name,"trial":trial,"before":before,"after":after,"reply":reply,"continuations":continuations,"task_ms":task_ms,"observation_ms":observation_ms,"observed_replacement_ms":observation_ms+task_ms,"budget_ms":args.budget_ms,"matched_expected_observation":not errors,"errors":errors,"requested_text_match":after.get("fields",{}).get(field,{}).get("sha256") == wanted,"kind":"known_limit_observation" if shift else "replacement" if name in [x[0] for x in CASES[1:6]] else "expected_stop"})
+            reports.append({"case":name,"trial":trial,"before":before,"after":after,"reply":reply,"continuations":continuations,"task_ms":task_ms,"observation_ms":observation_ms,"verification_ms":verification_ms,"observed_replacement_ms":observed_replacement_ms,"budget_ms":args.budget_ms,"matched_expected_observation":not errors,"errors":errors,"requested_text_match":after.get("fields",{}).get(field,{}).get("sha256") == wanted,"kind":"known_limit_observation" if shift else "replacement" if name in [x[0] for x in CASES[1:6]] else "expected_stop"})
             (args.out / "result.json").write_text(json.dumps({"cases":reports},ensure_ascii=False,indent=2)+"\n")
             print(json.dumps({"case":name,"matched_expected_observation":not errors,"kind":reports[-1]["kind"]}), flush=True)
             if errors: raise RuntimeError(name + ": " + "; ".join(errors))
@@ -418,7 +422,7 @@ def main():
         try:
             if (args.out / "mcp-state").exists(): shutil.rmtree(args.out / "mcp-state")
         except OSError as error: cleanup_errors.append("private state cleanup: " + str(error))
-    result = {"scope":"Simulator-only public MCP recovery regression; expected stops/known limit are not full task successes", "source_commit":pair.fixture.command("git","-C",ROOT,"rev-parse","HEAD"), "source_sha256":{n:hashlib.sha256((ROOT/n).read_bytes()).hexdigest() for n in ["scripts/test-replacement-recovery-simulator.py","scripts/paired-bench-fixture.swift"]}, "mcp_sha256":hashlib.sha256(args.mcp.read_bytes()).hexdigest(), "cases":reports,"harness_error":harness_error,"cleanup_errors":cleanup_errors,"selected_cases":[c[0] for c in selected_cases],"budget_ms":args.budget_ms,"passed":len(reports)==len(selected_cases) and not harness_error and not cleanup_errors}
+    result = {"scope":"Simulator-only public MCP recovery regression; expected stops/known limit are not full task successes", "source_commit":pair.fixture.command("git","-C",ROOT,"rev-parse","HEAD"), "source_sha256":{n:hashlib.sha256((ROOT/n).read_bytes()).hexdigest() for n in ["scripts/test-replacement-recovery-simulator.py","scripts/paired-bench-fixture.swift"]}, "mcp_sha256":hashlib.sha256(args.mcp.read_bytes()).hexdigest(), "cases":reports,"harness_error":harness_error,"cleanup_errors":cleanup_errors,"selected_cases":[c[0] for c in selected_cases],"budget_ms":args.budget_ms,"timing_scope":"task_ms is input/continuation only; observed_replacement_ms includes target identity, observation and final App verification; fixture setup and model latency excluded","passed":len(reports)==len(selected_cases) and not harness_error and not cleanup_errors}
     (args.out / "result.json").write_text(json.dumps(result,ensure_ascii=False,indent=2)+"\n")
     print(json.dumps({k:result[k] for k in ["passed","harness_error","cleanup_errors"]}),flush=True)
     return 0 if result["passed"] else 1
