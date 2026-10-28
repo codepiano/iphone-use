@@ -504,9 +504,14 @@ def main():
         def find(identifier):
             return call(prefix + "/element", {"using": "accessibility id", "value": identifier})["ELEMENT"]
 
+        # This App stays installed in this one owned Simulator throughout the
+        # trial. Its container survives process restarts; fresh nonces/PIDs,
+        # rather than repeated simctl lookups, establish each receipt's identity.
+        fixture_documents = Path(command("xcrun","simctl","get_app_container",udid,BUNDLE,"data"))/"Documents"
+        fixture_documents.mkdir(exist_ok=True)
+
         def app_receipt(veto=None, state_fault=None):
-            documents = Path(command("xcrun","simctl","get_app_container",udid,BUNDLE,"data"))/"Documents"
-            documents.mkdir(exist_ok=True)
+            documents = fixture_documents
             nonce = secrets.token_hex(16)
             request={"nonce":nonce}
             if veto is not None: request["veto"]=veto
@@ -1439,11 +1444,20 @@ def main():
                         pool.shutdown(wait=False,cancel_futures=True)
 
         if args.state_boundaries:
+            def restart_state_fixture():
+                if args.only_state_boundaries:
+                    # The live owned Runner can control this synthetic App
+                    # directly. Avoid per-case CoreSimulator command processes.
+                    call(prefix+"/wda/apps/terminate", {"bundleId":BUNDLE})
+                    call(prefix+"/wda/apps/launch", {"bundleId":BUNDLE})
+                else:
+                    command("xcrun","simctl","terminate",udid,BUNDLE)
+                    command("xcrun","simctl","launch",udid,BUNDLE)
+
             previous_run=None
             for fault in selected_state_faults:
                 for length in ([199,500] if fault=="background" else [57,500]):
-                    command("xcrun","simctl","terminate",udid,BUNDLE)
-                    command("xcrun","simctl","launch",udid,BUNDLE)
+                    restart_state_fixture()
                     settle_fixture()
                     before=app_receipt(state_fault=fault)
                     assert before["run_id"]!=previous_run and before["focus_a"] is True,before
@@ -1459,7 +1473,7 @@ def main():
                     home_observation=None
                     background_boundary=None
                     if fault=="background":
-                        documents=Path(command("xcrun","simctl","get_app_container",udid,BUNDLE,"data"))/"Documents"
+                        documents=fixture_documents
                         def entered_background():
                             nonlocal background_boundary
                             try: background_boundary=json.loads((documents/"background-boundary.json").read_text())
@@ -1489,7 +1503,10 @@ def main():
                         assert foreground_observation.get("bundleId")=="com.apple.springboard" and focused_editables==0 and visible_keyboards==0 and payload_found is False,home_observation
                         # Resume only the owned App for an independent receipt;
                         # never replay the input whose delivery is uncertain.
-                        command("xcrun","simctl","launch",udid,BUNDLE)
+                        if args.only_state_boundaries:
+                            call(prefix+"/wda/apps/launch", {"bundleId":BUNDLE})
+                        else:
+                            command("xcrun","simctl","launch",udid,BUNDLE)
                         settle_fixture()
                     after=app_receipt()
                     evidence={"before":before,"after":after,"verdict":verdict,"foreground_observation":foreground_observation,"home_observation":home_observation,"background_boundary":background_boundary}
@@ -1525,8 +1542,7 @@ def main():
 
             # Faults alter the owned App. Give subsequent controls a new,
             # normal fixture instead of reusing a hidden/secure/disabled field.
-            command("xcrun","simctl","terminate",udid,BUNDLE)
-            command("xcrun","simctl","launch",udid,BUNDLE)
+            restart_state_fixture()
             settle_fixture()
 
         if args.expect_boundary_isolation and not args.only_state_boundaries:
