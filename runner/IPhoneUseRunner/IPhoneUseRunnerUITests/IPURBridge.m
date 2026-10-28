@@ -815,7 +815,7 @@ static BOOL IPURUseRequestCache(void)
     }
     return @{@"available":@YES,@"main_thread":@(NSThread.isMainThread),@"samples_per_mode":@30,
       @"requested_producer_delay_ms":@1,@"ordering":@"interleaved alternating when both modes exist",@"measurements":measurements,
-      @"async_available":@([measurements[@"async"] count] == 30),
+      @"async_available":([measurements[@"async"] count] == 30 ? @YES : @NO),
       @"AX_actions_issued":@0,@"cancellation_exercised":@NO,
       @"scope":@"pure Future waiting only; not AX transport speed or input acceptance"};
   } @catch (NSException *exception) {
