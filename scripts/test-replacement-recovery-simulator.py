@@ -313,8 +313,18 @@ def main():
             active, _ = drag.runner_call(args, "/wda/activeAppInfo")
             if active.get("value", {}).get("bundleId") != BUNDLE or active["value"].get("pid") != before["pid"]:
                 raise RuntimeError("fixture foreground/process changed before task")
+            observation_started=time.monotonic()
             seen = call("phone_elements", {})
+            observation_ms=(time.monotonic()-observation_started)*1000
             result, _, tree = pair.payload(seen)
+            timing=tree.get("timing") if isinstance(tree.get("timing"),dict) else {}
+            registry=tree.get("registry") if isinstance(tree.get("registry"),dict) else {}
+            flows=registry.get("flows") if isinstance(registry.get("flows"),list) else []
+            observation={"case":name,"phase":"phone_elements","elapsed_ms":observation_ms,
+                         "daemon_reported_ms":timing.get("total_ms"),"registry_flow_count":len(flows),
+                         "is_error":result.get("isError") is True}
+            with (args.out/"observation-timing.jsonl").open("a") as log:log.write(json.dumps(observation)+"\n")
+            print(json.dumps(observation),flush=True)
             if result.get("isError"): raise RuntimeError("observation refused")
             rows = tree.get("elements", [])
             index = next(i for i, row in enumerate(rows) if row.get("identifier") == target)
@@ -375,7 +385,7 @@ def main():
             errors = judge(name, before, after, reply)
             wanted = digest(text)
             field = "b" if target == "field-b" else "a"
-            reports.append({"case":name,"trial":trial,"before":before,"after":after,"reply":reply,"continuations":continuations,"task_ms":task_ms,"budget_ms":args.budget_ms,"matched_expected_observation":not errors,"errors":errors,"requested_text_match":after.get("fields",{}).get(field,{}).get("sha256") == wanted,"kind":"known_limit_observation" if shift else "replacement" if name in [x[0] for x in CASES[1:6]] else "expected_stop"})
+            reports.append({"case":name,"trial":trial,"before":before,"after":after,"reply":reply,"continuations":continuations,"task_ms":task_ms,"observation_ms":observation_ms,"observed_replacement_ms":observation_ms+task_ms,"budget_ms":args.budget_ms,"matched_expected_observation":not errors,"errors":errors,"requested_text_match":after.get("fields",{}).get(field,{}).get("sha256") == wanted,"kind":"known_limit_observation" if shift else "replacement" if name in [x[0] for x in CASES[1:6]] else "expected_stop"})
             (args.out / "result.json").write_text(json.dumps({"cases":reports},ensure_ascii=False,indent=2)+"\n")
             print(json.dumps({"case":name,"matched_expected_observation":not errors,"kind":reports[-1]["kind"]}), flush=True)
             if errors: raise RuntimeError(name + ": " + "; ".join(errors))
