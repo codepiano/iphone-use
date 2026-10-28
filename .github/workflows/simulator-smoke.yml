@@ -139,6 +139,9 @@ jobs:
             ~/.iphone-use/instances/ci-sim/gesture-acceptance/fixture-build.log
             ~/.iphone-use/instances/ci-sim/gesture-acceptance/**/*.xml
             ~/.iphone-use/instances/ci-sim/gesture-acceptance/**/trace.ndjson
+            ~/.iphone-use/instances/ci-sim/replacement-continuation/result.json
+            ~/.iphone-use/instances/ci-sim/replacement-continuation/traceback.txt
+            ~/.iphone-use/instances/ci-sim/replacement-continuation/mcp.log
             ~/.iphone-use/instances/ci-sim/replacement-recovery/result.json
             ~/.iphone-use/instances/ci-sim/replacement-recovery/traceback.txt
             ~/.iphone-use/instances/ci-sim/replacement-recovery/mcp.log

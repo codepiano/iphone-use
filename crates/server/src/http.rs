@@ -7263,10 +7263,32 @@ async fn tap_snapshot_element(
 /// Text inputs that `set_value` may resolve by frame when the row carries no
 /// label and no identifier.
 const TEXT_INPUT_KINDS: [&str; 4] = ["TextField", "SecureTextField", "SearchField", "TextView"];
+#[derive(Clone, Copy)]
+struct ReplacementBudget<'a> {
+    context: InputContext<'a>,
+    deadline: tokio::time::Instant,
+    budget_ms: u64,
+}
+struct ReplacementPause { confirmed: usize, token: String }
+
 async fn set_value_snapshot_element(
     w: &mut crate::runner::RunnerClient,
     value: &serde_json::Value,
 ) -> Result<(), SnapshotElementTapError> {
+    if value.get("budget_ms").is_some() {
+        return Err(SnapshotElementTapError::Refused("input_owner_required", "bounded replacement requires the owned agent path; nothing was sent"));
+    }
+    match set_value_snapshot_element_inner(w, value, None).await? {
+        None => Ok(()),
+        Some(_) => Err(SnapshotElementTapError::AfterDispatch(anyhow::anyhow!("unbounded replacement unexpectedly paused"))),
+    }
+}
+
+async fn set_value_snapshot_element_inner(
+    w: &mut crate::runner::RunnerClient,
+    value: &serde_json::Value,
+    budget: Option<ReplacementBudget<'_>>,
+) -> Result<Option<ReplacementPause>, SnapshotElementTapError> {
     let recover_focus = match value.get("recover_focus_after_clear") {
         None => false,
         Some(serde_json::Value::Bool(value)) => *value,
@@ -7290,7 +7312,7 @@ async fn set_value_snapshot_element(
     let element_id = if snapshot_row_locator(row).is_some() {
         let element_id = resolve_snapshot_row_element(w, &rows, index).await?;
         if reused && !verify_reused_row(w, &element_id, row).await? {
-            return Box::pin(set_value_snapshot_element(w, value)).await;
+            return Box::pin(set_value_snapshot_element_inner(w, value, budget)).await;
         }
         element_id
     } else if TEXT_INPUT_KINDS.contains(&row.kind.as_str()) {
@@ -7305,11 +7327,49 @@ async fn set_value_snapshot_element(
         return Err(SnapshotElementTapError::Refused("replacement_focus_recovery_unsupported",
             "This Runner cannot verify and restore a cleared original field. Update the Runner or omit recover_focus_after_clear; no replacement input was sent"));
     }
+    if budget.is_some() && !w.supports_input_continuation() {
+        return Err(SnapshotElementTapError::Refused("input_continuation_unsupported", "bounded replacement requires a supporting Native Runner; nothing was sent"));
+    }
     let before = w.element_value(&element_id).await.ok().map(|value|value.unwrap_or_default());
-    let typed = match w.replace_element_if_supported(&element_id, &text, recover_focus).await {
-        Ok(true) => Ok(()),
+    let deadline = budget.map(|b| b.deadline.min(tokio::time::Instant::now() + std::time::Duration::from_millis(b.budget_ms))
+        - TEXT_CHUNK_DEADLINE_MARGIN);
+    let replacement = if budget.is_some() {
+        w.replace_element_budgeted(&element_id, &text, recover_focus, deadline).await
+    } else {
+        w.replace_element_if_supported(&element_id, &text, recover_focus).await.map(|supported|
+            if supported {crate::runner::ReplacementResult::Complete} else {crate::runner::ReplacementResult::Unsupported})
+    };
+    let typed = match replacement {
+        Ok(crate::runner::ReplacementResult::Complete) => Ok(()),
+        Ok(crate::runner::ReplacementResult::BudgetExhausted) => return Err(SnapshotElementTapError::Refused(
+            "input_budget_exhausted", "no replacement prefix fits the budget; nothing was sent")),
+        Ok(crate::runner::ReplacementResult::Paused { confirmed, target, chunk_chars }) => {
+            let Some(budget) = budget else {
+                return Err(SnapshotElementTapError::AfterDispatch(anyhow::anyhow!("unbounded replacement unexpectedly paused")));
+            };
+            let prefix: String = text.chars().take(confirmed).collect();
+            let actual = w.element_value(&element_id).await;
+            let stopped = || SnapshotElementTapError::AfterDispatch(crate::runner::ReplacementDeliveryError::wrap(
+                anyhow::anyhow!("replacement prefix cannot be safely continued; inspect the original field without replay"),
+                confirmed, 0, text.chars().count() - confirmed, true));
+            if budget.context.refusal().is_some() || !matches!(actual, Ok(Some(ref value)) if same_text(value, &prefix)) {
+                return Err(stopped());
+            }
+            let remaining: String = text.chars().skip(confirmed).collect();
+            let Some(token) = w.save_bounded_input_continuation(budget.context.scope.clone(), target, remaining, budget.budget_ms, chunk_chars) else {
+                return Err(stopped());
+            };
+            if budget.context.refusal().is_some() {
+                w.discard_input_continuation();
+                return Err(stopped());
+            }
+            return Ok(Some(ReplacementPause { confirmed, token }));
+        },
         Err(error) => return Err(SnapshotElementTapError::AfterDispatch(error)),
-        Ok(false) => {
+        Ok(crate::runner::ReplacementResult::Unsupported) => {
+            if budget.is_some() {
+                return Err(SnapshotElementTapError::Refused("input_continuation_unsupported", "bounded replacement requires a supporting Native Runner; nothing was sent"));
+            }
             // The legacy clear may already have changed focus or text. Any failure is terminal:
             // a replacement must never silently turn into an append or retry a different field.
             let total = text.chars().count();
@@ -7319,7 +7379,7 @@ async fn set_value_snapshot_element(
                 };
                 return Err(SnapshotElementTapError::AfterDispatch(error));
             }
-            if text.is_empty() { return Ok(()); }
+            if text.is_empty() { return Ok(None); }
             w.type_into(&element_id, &text).await.map_err(|error| {
                 let not_sent = error_never_reached_runner(&error)
                     || crate::runner::runner_http_error(&error).is_some_and(crate::runner::RunnerHttpError::nothing_sent)
@@ -7334,8 +7394,8 @@ async fn set_value_snapshot_element(
     typed.map_err(SnapshotElementTapError::AfterDispatch)?;
     let after = w.element_value(&element_id).await;
     match after {
-        Ok(Some(ref now)) if same_text(now, &text) => Ok(()),
-        Ok(None) if text.is_empty() => Ok(()),
+        Ok(Some(ref now)) if same_text(now, &text) => Ok(None),
+        Ok(None) if text.is_empty() => Ok(None),
         Ok(ref value) if before.as_deref().is_some_and(|was| was == value.as_deref().unwrap_or_default()) => Err(
             SnapshotElementTapError::NoEffect("value_not_applied", SET_VALUE_NOT_APPLIED_HINT),
         ),
@@ -9765,7 +9825,7 @@ async fn type_text_chunked(
     deadline: tokio::time::Instant,
     detail: &mut Option<serde_json::Value>,
 ) -> RunnerControlOutcome {
-    type_text_chunked_bound(w, actionable, text, clear, deadline, detail, None, None, None).await
+    type_text_chunked_bound(w, actionable, text, clear, deadline, detail, None, None, None, crate::text_input::CHUNK_CHARS).await
 }
 
 fn capture_input_scope(state: &AppState, headers: &HeaderMap, privacy_epoch: u64,
@@ -9864,8 +9924,9 @@ async fn type_text_chunked_bound(
     bound_target: Option<String>,
     context: Option<InputContext<'_>>,
     budget_ms: Option<u64>,
+    chunk_chars: usize,
 ) -> RunnerControlOutcome {
-    use crate::text_input::{char_count, chunk_timeout, split, typing_time, CHUNK_CHARS};
+    use crate::text_input::{char_count, chunk_timeout, split, typing_time};
     if let Some((error, hint)) = context.and_then(InputContext::refusal) {
         return RunnerControlOutcome::Refused(error, hint);
     }
@@ -9912,7 +9973,8 @@ async fn type_text_chunked_bound(
         }
     }
     let mut confirmed = 0;
-    for piece in split(text, CHUNK_CHARS) {
+    let mut previous_chunk = None;
+    for piece in split(text, chunk_chars) {
         if let Some((error, hint)) = context.and_then(InputContext::refusal) {
             w.discard_input_continuation();
             *detail = Some(serde_json::json!({"input_error":error,"clear_applied":clear}));
@@ -9921,7 +9983,9 @@ async fn type_text_chunked_bound(
         }
         let n = char_count(piece);
         let left = deadline.saturating_duration_since(tokio::time::Instant::now());
-        if left < typing_time(n) + std::time::Duration::from_millis(500) {
+        let admission = if budget_ms.is_some() { crate::text_input::chunk_admission_time(n, previous_chunk) }
+            else { typing_time(n) + std::time::Duration::from_millis(500) };
+        if left < admission {
             // Not enough time to type this chunk: stop before sending it.
             tracing::warn!("chunked text stopped at the deadline after {confirmed} characters");
             if confirmed == 0 && !clear {
@@ -9932,7 +9996,7 @@ async fn type_text_chunked_bound(
             if let (Some(target), Some(context)) = (target.as_ref(), context) {
                 if context.refusal().is_none() {
                     let remaining: String = text.chars().skip(confirmed).collect();
-                    if let Some(token) = w.save_input_continuation(context.scope.clone(), target.clone(), remaining, budget_ms.unwrap_or(15000)) {
+                    if let Some(token) = w.save_bounded_input_continuation(context.scope.clone(), target.clone(), remaining, budget_ms.unwrap_or(15000), chunk_chars) {
                         if context.refusal().is_none() {
                             let body = detail.get_or_insert_with(|| serde_json::json!({}));
                             body["continue_token"] = token.into();
@@ -9942,6 +10006,7 @@ async fn type_text_chunked_bound(
             }
             return RunnerControlOutcome::TextPartial { confirmed, uncertain: 0 };
         }
+        let chunk_started = tokio::time::Instant::now();
         let result = if let Some(token) = target.as_deref() {
             w.keys_to_target(piece, token, chunk_timeout(n).min(left))
                 .await
@@ -9970,6 +10035,7 @@ async fn type_text_chunked_bound(
                 uncertain: n,
             };
         }
+        previous_chunk = Some((n, chunk_started.elapsed()));
         confirmed += n;
     }
     actionable.store(true, std::sync::atomic::Ordering::Release);
@@ -10050,6 +10116,15 @@ fn is_input_continuation(action: &serde_json::Value) -> bool {
     action.get("type").and_then(serde_json::Value::as_str) == Some("text") && action.get("continue_token").is_some()
 }
 
+fn replacement_budget(action: &serde_json::Value) -> Result<Option<u64>, &'static str> {
+    if action.get("type").and_then(serde_json::Value::as_str) != Some("set_value") { return Ok(None); }
+    match action.get("budget_ms") {
+        None => Ok(None),
+        Some(value) => value.as_u64().filter(|ms| (6000..=15000).contains(ms)).map(Some)
+            .ok_or("replacement budget_ms must be an integer from 6000 to 15000"),
+    }
+}
+
 fn validate_text_request(action: &serde_json::Map<String, serde_json::Value>) -> Result<(), &'static str> {
     if let Some(token) = action.get("continue_token") {
         if action.len() != 2 || !token.as_str().is_some_and(|v| v.len()==64 && v.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())) {
@@ -10119,6 +10194,13 @@ async fn owned_agent_action(
     request_scope: Option<&crate::input_continuation::Scope>,
     unlock: bool,
 ) -> (RunnerControlOutcome, Option<serde_json::Value>) {
+    let replacement_budget_ms = match replacement_budget(action) {
+        Ok(value) => value,
+        Err(hint) => return (RunnerControlOutcome::InvalidValue(hint), None),
+    };
+    if replacement_budget_ms.is_some() && named_owner(headers).is_none() {
+        return (RunnerControlOutcome::Refused("input_owner_required", "bounded replacement requires a named X-Phone-Owner"), None);
+    }
     let resume = is_input_continuation(action);
     let text = action.get("text").and_then(serde_json::Value::as_str).unwrap_or("");
     let budget = action.get("budget_ms").and_then(serde_json::Value::as_u64);
@@ -10133,9 +10215,29 @@ async fn owned_agent_action(
     if let Some((error,hint)) = context.refusal() { return (RunnerControlOutcome::Refused(error,hint),None); }
     if action.get("type").and_then(serde_json::Value::as_str)!=Some("text") {
         let guard=native_guard(state,context.scope);
+        let mut effective = None;
         let outcome=guard.run(async {
             if unlock {unlock_before_action(state,w,deadline).await;}
-            direct_agent_action(w,&state.runner_actionable,action,detail,deadline).await
+            if let Some(budget_ms) = replacement_budget_ms {
+                let result = set_value_snapshot_element_inner(w, action, Some(ReplacementBudget { context, deadline, budget_ms })).await;
+                match result {
+                    Ok(Some(pause)) => {
+                        let metadata = detail.get_or_insert_with(|| serde_json::json!({}));
+                        metadata["continue_token"] = pause.token.into();
+                        metadata["clear_applied"] = true.into();
+                        effective = Some(serde_json::json!({"type":"text", "text":action["value"], "clear":true}));
+                        RunnerControlOutcome::TextPartial { confirmed: pause.confirmed, uncertain: 0 }
+                    },
+                    Ok(None) => RunnerControlOutcome::Applied,
+                    Err(error) => match snapshot_element_outcome(Err(error), w, "bounded selected-field replacement") {
+                        Err(outcome) => outcome,
+                        Ok(Err(error)) => runner_failure_outcome(w, &state.runner_actionable, &error, "set_value", detail),
+                        Ok(Ok(())) => RunnerControlOutcome::Applied,
+                    },
+                }
+            } else {
+                direct_agent_action(w,&state.runner_actionable,action,detail,deadline).await
+            }
         }).await;
         let counts=guard.counts();
         if guard.denied() || (counts.approved>0 && outcome.as_ref().is_some_and(|result|*result!=RunnerControlOutcome::Applied)) {
@@ -10156,7 +10258,14 @@ async fn owned_agent_action(
             if counts.uncertain()>0 {return (RunnerControlOutcome::Failed,None);}
             if counts.confirmed>0 {return (RunnerControlOutcome::NativePartial{confirmed:counts.confirmed},None);}
         }
-        return (outcome.unwrap_or(RunnerControlOutcome::NotSent),None);
+        if replacement_budget_ms.is_some() && context.refusal().is_some() {
+            w.discard_input_continuation();
+            if let Some(metadata) = detail.as_mut().and_then(serde_json::Value::as_object_mut) { metadata.remove("continue_token"); }
+            if matches!(outcome, Some(RunnerControlOutcome::TextPartial { .. })) {
+                return (RunnerControlOutcome::NativePartial { confirmed: counts.confirmed }, None);
+            }
+        }
+        return (outcome.unwrap_or(RunnerControlOutcome::NotSent),effective);
     }
     if !resume && budget.is_none() && text.chars().count() <= crate::text_input::CHUNK_CHARS {
         // Capability discovery may await a new session. Recheck before sending
@@ -10202,19 +10311,19 @@ async fn owned_agent_action(
         return (outcome,None);
     }
     let mut effective = None;
-    let (target, budget) = if resume {
+    let (target, budget, chunk_chars) = if resume {
         let scope = scope.as_ref().unwrap();
         let token = action["continue_token"].as_str().unwrap_or_default();
         let Some(pending) = w.take_input_continuation(token, scope) else {
             return (RunnerControlOutcome::Refused("input_continuation_expired", "continuation is expired, consumed or belongs to another owner/session/privacy generation; nothing was typed now. Read the original field before planning any further input"), None);
         };
         effective = Some(serde_json::json!({"type":"text","text":pending.remaining}));
-        (Some(pending.target), Some(pending.budget_ms))
-    } else { (None, budget) };
+        (Some(pending.target), Some(pending.budget_ms), pending.chunk_chars)
+    } else { (None, budget, crate::text_input::CHUNK_CHARS) };
     let value = effective.as_ref().unwrap_or(action);
     let outcome = type_text_chunked_bound(w, &state.runner_actionable, value["text"].as_str().unwrap_or_default(),
         value.get("clear").and_then(serde_json::Value::as_bool).unwrap_or(false), deadline, detail,
-        target, Some(context), budget).await;
+        target, Some(context), budget, chunk_chars).await;
     (outcome, effective)
 }
 
@@ -11370,6 +11479,7 @@ fn validate_agent_action_value(
             }
         }
         "set_value" => {
+            replacement_budget(&serde_json::Value::Object(action.clone())).map_err(|error| format!("steps[{index}].action {error}"))?;
             if action
                 .get("element")
                 .and_then(serde_json::Value::as_u64)
@@ -15128,6 +15238,12 @@ async fn agent_input_claimed(
         if (is_input_continuation(&value) || value.get("budget_ms").is_some()) && named_owner(&headers).is_none() {
             return ControlRefusal::new(StatusCode::BAD_REQUEST, "input_owner_required", false).into_response();
         }
+    }
+    if let Err(hint) = replacement_budget(&value) {
+        return ControlRefusal::new(StatusCode::BAD_REQUEST, "invalid_replacement_budget", false).with("hint", hint.into()).into_response();
+    }
+    if replacement_budget(&value).ok().flatten().is_some() && named_owner(&headers).is_none() {
+        return ControlRefusal::new(StatusCode::BAD_REQUEST, "input_owner_required", false).into_response();
     }
     if let Err(response) = reject_invalid_open_url(&value) {
         return response;

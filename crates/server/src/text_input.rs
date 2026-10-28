@@ -130,6 +130,15 @@ pub fn typing_time(chars: usize) -> Duration {
     Duration::from_secs_f64(chars as f64 / TYPING_CHARS_PER_SEC)
 }
 
+/// Conservative admission cost for a planned chunk. A slow acknowledged chunk
+/// informs the next boundary; it never makes the configured speed estimate smaller.
+pub(crate) fn chunk_admission_time(chars: usize, previous: Option<(usize, Duration)>) -> Duration {
+    let measured = previous.filter(|(count, _)| *count > 0)
+        .map(|(count, elapsed)| elapsed.mul_f64(chars as f64 / count as f64))
+        .unwrap_or(Duration::ZERO);
+    typing_time(chars).max(measured) + Duration::from_millis(500)
+}
+
 /// The timeout of one chunk's request: twice its typing time plus overhead,
 /// and never below the client's ordinary 20 s.
 pub fn chunk_timeout(chars: usize) -> Duration {

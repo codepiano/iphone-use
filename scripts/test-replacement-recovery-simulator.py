@@ -123,6 +123,29 @@ def judge(name, before, after, reply):
     return errors
 
 
+def verified_pause_prefix(body, before, paused, text, cumulative, field):
+    """A safe ACK alone cannot authorize another input; require the App receipt."""
+    token = body.get("continue_token")
+    if not (body.get("ok") is False and body.get("outcome") == "partial" and body.get("continuation_safe") is True
+            and body.get("retry_safe") is False and body.get("characters_uncertain") == 0
+            and isinstance(token,str) and re.fullmatch(r"[0-9a-f]{64}",token)):
+        raise RuntimeError("unconfirmed partial response; no continuation sent")
+    confirmed = body.get("characters_confirmed")
+    if (not isinstance(confirmed,int) or isinstance(confirmed,bool)
+            or not 0 < confirmed < len(text)-cumulative
+            or body.get("characters_total") != len(text)-cumulative):
+        raise RuntimeError("invalid confirmed prefix; no continuation sent")
+    cumulative += confirmed
+    if body.get("remaining_text") != text[cumulative:]:
+        raise RuntimeError("unsent text disagrees with original request; no continuation sent")
+    if (paused.get("trial") != before.get("trial") or paused.get("pid") != before.get("pid")
+            or paused.get("foreground_active") is not True or paused.get("focus") != field
+            or paused.get("fields",{}).get(field) != {"characters":cumulative,"sha256":digest(text[:cumulative])}
+            or any(paused.get("fields",{}).get(key) != old for key,old in before["fields"].items() if key != field)):
+        raise RuntimeError("independent App prefix/focus check failed; no continuation sent")
+    return cumulative
+
+
 def require_target(daemon, args):
     status = daemon.require_simulator(args.udid)
     if status.get("owner") != args.owner or status.get("screen_private_secs", 1) != 0:
@@ -201,7 +224,10 @@ def main():
     parser.add_argument("--mcp", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--case", action="append", choices=[c[0] for c in CASES+EXPERIMENTAL_CASES], help="select a named cohort; omitted means the standard suite; experimental cases require explicit selection")
+    parser.add_argument("--budget-ms", type=int, metavar="6000..15000", help="explicit planned-pause cohort; resume only independently verified unsent text")
     args = parser.parse_args()
+    if args.budget_ms is not None and not 6000 <= args.budget_ms <= 15000:
+        parser.error("--budget-ms must be from 6000 to 15000")
     selected_cases=CASES if not args.case else [c for c in CASES+EXPERIMENTAL_CASES if c[0] in args.case]
     uuid.UUID(args.udid)
     args.out = args.out.resolve()
@@ -277,7 +303,25 @@ def main():
             text = "shift-focus-test-" + "字" * 483 if shift else "字" * length
             arguments = {"element":index,"snapshot":tree["snapshot"],"value":text,"observe":False}
             if recover: arguments["recover_focus_after_clear"] = True
+            if args.budget_ms is not None: arguments["budget_ms"] = args.budget_ms
+            task_started = time.monotonic()
             reply = call("phone_set_value", arguments)
+            continuations = []
+            cumulative = 0
+            while args.budget_ms is not None:
+                body = pair.payload(reply)[2]
+                token = body.get("continue_token")
+                if token is None: break
+                if len(continuations) >= 10: raise RuntimeError("continuation bound exceeded; no replay")
+                wait_for_native_idle(daemon,args,peer,phase="paused_"+name)
+                paused = state()
+                field = "b" if target == "field-b" else "a"
+                cumulative = verified_pause_prefix(body,before,paused,text,cumulative,field)
+                if token in {pair.payload(previous["reply"])[2]["continue_token"] for previous in continuations}:
+                    raise RuntimeError("repeated continuation token; no continuation sent")
+                continuations.append({"reply":reply,"independent_prefix":paused,"confirmed_total":cumulative})
+                reply = call("phone_type", {"continue_token":token,"observe":False})
+            task_ms = (time.monotonic()-task_started)*1000
             # No transport timeout is retried. A received refusal is followed
             # only by readonly idle/stability checks, then a distinct trial.
             wait_for_native_idle(daemon, args, peer, phase="after_"+name)
@@ -292,7 +336,7 @@ def main():
             errors = judge(name, before, after, reply)
             wanted = digest(text)
             field = "b" if target == "field-b" else "a"
-            reports.append({"case":name,"trial":trial,"before":before,"after":after,"reply":reply,"matched_expected_observation":not errors,"errors":errors,"requested_text_match":after.get("fields",{}).get(field,{}).get("sha256") == wanted,"kind":"known_limit_observation" if shift else "replacement" if name in [x[0] for x in CASES[1:6]] else "expected_stop"})
+            reports.append({"case":name,"trial":trial,"before":before,"after":after,"reply":reply,"continuations":continuations,"task_ms":task_ms,"budget_ms":args.budget_ms,"matched_expected_observation":not errors,"errors":errors,"requested_text_match":after.get("fields",{}).get(field,{}).get("sha256") == wanted,"kind":"known_limit_observation" if shift else "replacement" if name in [x[0] for x in CASES[1:6]] else "expected_stop"})
             (args.out / "result.json").write_text(json.dumps({"cases":reports},ensure_ascii=False,indent=2)+"\n")
             print(json.dumps({"case":name,"matched_expected_observation":not errors,"kind":reports[-1]["kind"]}), flush=True)
             if errors: raise RuntimeError(name + ": " + "; ".join(errors))
@@ -317,7 +361,7 @@ def main():
         try:
             if (args.out / "mcp-state").exists(): shutil.rmtree(args.out / "mcp-state")
         except OSError as error: cleanup_errors.append("private state cleanup: " + str(error))
-    result = {"scope":"Simulator-only public MCP recovery regression; expected stops/known limit are not full task successes", "source_commit":pair.fixture.command("git","-C",ROOT,"rev-parse","HEAD"), "source_sha256":{n:hashlib.sha256((ROOT/n).read_bytes()).hexdigest() for n in ["scripts/test-replacement-recovery-simulator.py","scripts/paired-bench-fixture.swift"]}, "mcp_sha256":hashlib.sha256(args.mcp.read_bytes()).hexdigest(), "cases":reports,"harness_error":harness_error,"cleanup_errors":cleanup_errors,"selected_cases":[c[0] for c in selected_cases],"passed":len(reports)==len(selected_cases) and not harness_error and not cleanup_errors}
+    result = {"scope":"Simulator-only public MCP recovery regression; expected stops/known limit are not full task successes", "source_commit":pair.fixture.command("git","-C",ROOT,"rev-parse","HEAD"), "source_sha256":{n:hashlib.sha256((ROOT/n).read_bytes()).hexdigest() for n in ["scripts/test-replacement-recovery-simulator.py","scripts/paired-bench-fixture.swift"]}, "mcp_sha256":hashlib.sha256(args.mcp.read_bytes()).hexdigest(), "cases":reports,"harness_error":harness_error,"cleanup_errors":cleanup_errors,"selected_cases":[c[0] for c in selected_cases],"budget_ms":args.budget_ms,"passed":len(reports)==len(selected_cases) and not harness_error and not cleanup_errors}
     (args.out / "result.json").write_text(json.dumps(result,ensure_ascii=False,indent=2)+"\n")
     print(json.dumps({k:result[k] for k in ["passed","harness_error","cleanup_errors"]}),flush=True)
     return 0 if result["passed"] else 1

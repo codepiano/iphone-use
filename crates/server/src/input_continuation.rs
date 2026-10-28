@@ -15,6 +15,7 @@ pub struct Pending {
     pub target: String,
     pub remaining: String,
     pub budget_ms: u64,
+    pub chunk_chars: usize,
     scope: Scope,
     session: String,
     token: String,
@@ -52,12 +53,20 @@ impl Store {
             target,
             remaining,
             budget_ms,
+            chunk_chars: crate::text_input::CHUNK_CHARS,
             scope,
             session,
             token: token.clone(),
             expires: now + Duration::from_millis(TTL_MS),
         });
         Some(token)
+    }
+
+    pub(crate) fn limit_chunks(&mut self, token: &str, chunk_chars: usize) -> bool {
+        let Some(pending) = self.0.as_mut().filter(|pending| pending.token == token) else { return false; };
+        if !(1..=crate::text_input::CHUNK_CHARS).contains(&chunk_chars) { return false; }
+        pending.chunk_chars = chunk_chars;
+        true
     }
 
     pub fn take(

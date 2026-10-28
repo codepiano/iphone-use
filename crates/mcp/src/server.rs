@@ -182,6 +182,10 @@ pub struct SetValueParams {
     /// its clear is verified and before text starts; needs a supporting native Runner.
     #[serde(default)]
     pub recover_focus_after_clear: Option<bool>,
+    /// Optional 6000..15000 ms typing budget. A confirmed prefix may pause;
+    /// resume only via phone_type with the returned continue_token alone.
+    #[serde(default)]
+    pub budget_ms: Option<u64>,
     /// Default true: return the resulting screen change.
     #[serde(default)]
     pub observe: Option<bool>,
@@ -1361,19 +1365,25 @@ impl PhoneHandler {
         never restore focus after clearing. It does not recover a focus change during typing. Newlines require a multiline field, \
         and secure fields refuse. An unknown outcome \
         may include partial changes: inspect the original field and never replay the whole value automatically. \
+        Optional budget_ms (6000..15000) permits a verified prefix to pause safely: if continue_token is returned, \
+        resume with phone_type and that token alone; never resend the value or clear again. \
         Use phone_type for appending to current focus. observe defaults true; verify the resulting value."
     )]
     async fn phone_set_value(
         &self,
-        Parameters(SetValueParams { element, snapshot, value, recover_focus_after_clear, observe }): Parameters<SetValueParams>,
+        Parameters(SetValueParams { element, snapshot, value, recover_focus_after_clear, budget_ms, observe }): Parameters<SetValueParams>,
     ) -> CallToolResult {
         if snapshot.trim().is_empty() || snapshot.chars().count() > 200 || value.chars().count() > 1000 {
             return not_sent_result("invalid_replacement", "No request was sent: supply the original snapshot (1..200 characters), its field index and a value of at most 1000 characters".into());
+        }
+        if budget_ms.is_some_and(|ms| !(6000..=15000).contains(&ms)) {
+            return not_sent_result("invalid_replacement_budget", "budget_ms must be from 6000 to 15000; no request was sent".into());
         }
         self.progress_reset();
         let observe = observe.unwrap_or(true);
         let mut action = serde_json::json!({"type":"set_value","element":element,"snapshot":snapshot,"value":value});
         if let Some(recover) = recover_focus_after_clear { action["recover_focus_after_clear"] = serde_json::Value::Bool(recover); }
+        if let Some(ms) = budget_ms { action["budget_ms"] = ms.into(); }
         match self.daemon.input_value_observed(&action, observe).await {
             Ok(response) => daemon_action_result(&response, observe, "replaced the selected field"),
             Err(error) => unknown_action_result("transport_error", format!("the call failed: {error:#}.")),

@@ -107,6 +107,17 @@ ok_t "single, batch, Flow and native input satisfy the fixture's UIKit postcondi
 # hashes/fault counters; an error acknowledgement alone cannot pass a case.
 curl -fsS -m 30 "${H[@]}" -X POST "$B/agent/hold" -d '{"secs":300}' >/dev/null \
     || bad "claim the disposable simulator lease for recovery checks"
+# Explicit continuation cohort. Keep the original unbudgeted suite below intact:
+# this proves full tasks across planned pauses, not single-call latency or lifecycle isolation.
+python3 "$ROOT/scripts/test-replacement-recovery-simulator.py" --base "$B" --udid "$SIM" \
+    --owner smoke --mcp "$BIN/iphone-use-mcp" --runner-record "$STATE/simulator.json" --budget-ms 15000 \
+    --case normal-opt-in --case unfocused-b-opt-in --case advance-opt-in-1 --case advance-opt-in-2 \
+    --case empty-clear-opt-in --case insertion-veto --case strict-advance --case refilled-before-focus \
+    --case disabled-original --case hidden-original --case secure-conversion --case covered-original \
+    --case refilled-on-focus --case failed-selection --case partial-selection \
+    --out "$STATE/replacement-continuation" || bad "planned replacement continuation checks failed"
+ok_t "selected full replacements and expected stops through explicit continuation"
+
 python3 "$ROOT/scripts/test-replacement-recovery-simulator.py" --base "$B" --udid "$SIM" \
     --owner smoke --mcp "$BIN/iphone-use-mcp" --runner-record "$STATE/simulator.json" \
     --out "$STATE/replacement-recovery" || bad "selected replacement recovery checks failed"

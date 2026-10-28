@@ -69,6 +69,41 @@ class VerdictTests(unittest.TestCase):
         r['reply']['result']['structuredContent']['outcome']='applied'
         self.assertTrue(self.verdict('late-focus',r),"a complete original cannot hide text leaked to B")
 
+class PausePrefixTests(unittest.TestCase):
+    def receipt(self):
+        # Synthetic verifier contract, not a device acceptance record.
+        text="字"*500
+        before={"trial":"owned","pid":42,"fields":{"a":{"characters":3,"sha256":recovery.digest("old")},"b":{"characters":0,"sha256":recovery.digest("")}}}
+        paused=copy.deepcopy(before)
+        paused.update(foreground_active=True,focus="a")
+        paused["fields"]["a"]={"characters":200,"sha256":recovery.digest(text[:200])}
+        body={"ok":False,"outcome":"partial","continuation_safe":True,"retry_safe":False,"characters_uncertain":0,
+              "characters_confirmed":200,"characters_total":500,"remaining_text":text[200:],"continue_token":"a"*64}
+        return body,before,paused,text
+
+    def test_ack_requires_independent_exact_prefix_and_unchanged_other_fields(self):
+        body,before,paused,text=self.receipt()
+        self.assertEqual(recovery.verified_pause_prefix(body,before,paused,text,0,"a"),200)
+        for change in ("hash","focus","pid","trial","other-field","inactive"):
+            receipt=copy.deepcopy(paused)
+            if change=="hash":receipt["fields"]["a"]["sha256"]=recovery.digest(text)
+            elif change=="focus":receipt["focus"]="b"
+            elif change=="pid":receipt["pid"]=99
+            elif change=="trial":receipt["trial"]="stale"
+            elif change=="other-field":receipt["fields"]["b"]["characters"]=1
+            else:receipt["foreground_active"]=False
+            with self.subTest(change=change),self.assertRaises(RuntimeError):
+                recovery.verified_pause_prefix(body,before,receipt,text,0,"a")
+
+    def test_unknown_progress_or_inconsistent_unsent_text_cannot_resume(self):
+        body,before,paused,text=self.receipt()
+        for key,value in [("outcome","unknown"),("characters_uncertain",1),("characters_confirmed",0),
+                          ("characters_total",300),("remaining_text",text),("retry_safe",True),("continue_token","bad")]:
+            reply=copy.deepcopy(body);reply[key]=value
+            with self.subTest(key=key),self.assertRaises(RuntimeError):
+                recovery.verified_pause_prefix(reply,before,paused,text,0,"a")
+
+
 class IdleGateTests(unittest.TestCase):
     def setUp(self):
         self.args=SimpleNamespace(owner='test',udid='owned-simulator')

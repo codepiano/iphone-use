@@ -42,8 +42,19 @@ impl Fixture {
             seen.lock().unwrap().push(request.to_string());
             let response = if request.starts_with("POST /session ") {
                 hook.session_started.notify_one();
-                let body=json!({"value":{"sessionId":"SESSION","capabilities":{"ipu:guardedInput":guarded,"ipu:inputContinuation":continuation,"ipu:atomicText":hook.atomic.load(std::sync::atomic::Ordering::Acquire)}}});
+                let body=json!({"value":{"sessionId":"SESSION","capabilities":{"ipu:guardedInput":guarded,"ipu:inputContinuation":continuation,"ipu:elementReplace":guarded,"ipu:replaceFocusRecovery":guarded,"ipu:atomicText":hook.atomic.load(std::sync::atomic::Ordering::Acquire)}}});
                 return Some((if *hook.delay.lock().unwrap()==Some("session") {Duration::from_millis(500)}else{Duration::ZERO},body.to_string()));
+            } else if request.contains("/ipu/element/bound-field/replace") {
+                let body: Value = serde_json::from_str(request.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+                *typed.lock().unwrap() = body["text"].as_str().unwrap().to_string();
+                if *fail.lock().unwrap() == Some("prefix-transport") { return None; }
+                return Some((if *hook.delay.lock().unwrap()==Some("slow-input") {Duration::from_secs(6)} else {Duration::from_secs(2)}, json!({"value":{"inputTarget":"bound-field"}}).to_string()));
+            } else if request.contains("/element/bound-field/attribute/value") {
+                json!({"value":if *fail.lock().unwrap()==Some("prefix-mismatch") {"changed-by-app".to_string()} else {typed.lock().unwrap().clone()}})
+            } else if request.contains("/element/bound-field/rect") {
+                json!({"value":{"x":10,"y":100,"width":300,"height":50}})
+            } else if request.starts_with("POST /session/SESSION/elements ") {
+                json!({"value":[{"ELEMENT":"bound-field"}]})
             } else if request.contains("/wda/input-target") {
                 hook.target_started.notify_one();
                 return Some((if *hook.delay.lock().unwrap()==Some("target") {Duration::from_millis(500)}else{Duration::ZERO},json!({"value":{"token":"bound-field"}}).to_string()));
@@ -77,7 +88,7 @@ impl Fixture {
                     .push_str(body["value"][0].as_str().unwrap());
                 hook.key_started.notify_one();
                 return Some((
-                    Duration::from_millis(250),
+                    if *hook.delay.lock().unwrap()==Some("slow-input") {Duration::from_millis(body["value"][0].as_str().unwrap().chars().count() as u64*30)} else {Duration::from_millis(250)},
                     json!({"value":null}).to_string(),
                 ));
             } else if request.contains("/source") {
@@ -166,6 +177,27 @@ impl Fixture {
             .as_str()
             .expect("safe continuation token")
             .to_string()
+    }
+    async fn replacement_action(&self, budget: Value) -> Value {
+        let (status, tree) = self.call("/agent/elements", Some("a"), None, false).await;
+        assert_eq!(status, StatusCode::OK, "{tree}");
+        let index = tree["elements"].as_array().unwrap().iter().position(|v|v["label"]=="Draft").unwrap();
+        json!({"type":"set_value","element":index,"snapshot":tree["snapshot"],"value":"字".repeat(500),"budget_ms":budget})
+    }
+    async fn start_replacement(&self, batch: bool) -> String {
+        let action = self.replacement_action(json!(6000)).await;
+        let payload = input_payload(batch, action);
+        let (_, body) = self.call(input_path(batch),Some("a"),Some(payload),false).await;
+        assert_eq!(body["outcome"],"partial","{body}");
+        let confirmed=body["characters_confirmed"].as_u64().expect("confirmed prefix count");
+        assert!(confirmed>0 && confirmed<=200,"{body}");
+        assert_eq!(body["characters_uncertain"],0,"{body}");
+        assert_eq!(body["characters_total"],500,"{body}");
+        assert_eq!(body["continuation_safe"],true,"{body}");
+        assert_eq!(body["retry_safe"],false,"{body}");
+        assert_eq!(*self.text.lock().unwrap(),"字".repeat(confirmed as usize));
+        assert_eq!(self.count("/wda/keys"),0);
+        body["continue_token"].as_str().expect("confirmed replacement continuation").to_string()
     }
     fn count(&self, path: &str) -> usize {
         self.calls
@@ -855,5 +887,113 @@ fn expired_privacy_normalization_preserves_fresh_continuation() {
         let (status,body)=f.call("/agent/input",Some("a"),Some(json!({"type":"text","continue_token":token})),false).await;
         assert_eq!(status,StatusCode::OK,"work started after privacy expired must survive ordinary hold: {body}");
         assert_eq!(*f.text.lock().unwrap(),"字".repeat(500));
+    });
+}
+
+#[test]
+fn replacement_continuation_keeps_the_target_and_never_clears_or_replays() {
+    block(async {
+        for batch in [false,true] {
+            let f=Fixture::new(true);
+            let token=f.start_replacement(batch).await;
+            let mut next=token.clone();
+            let mut complete=false;
+            for _ in 0..10 {
+                let (_,body)=f.call("/agent/input",Some("a"),Some(json!({"type":"text","continue_token":next})),false).await;
+                if body["ok"]==true {complete=true;break;}
+                assert_eq!(body["characters_uncertain"],0,"{body}");
+                assert_eq!(body["continuation_safe"],true,"{body}");
+                next=body["continue_token"].as_str().expect("next safe token").to_string();
+            }
+            assert!(complete,"the full replacement must complete");
+            assert_eq!(*f.text.lock().unwrap(),"字".repeat(500));
+            assert_eq!(f.count("/ipu/element/bound-field/replace"),1);
+            assert!((2..=9).contains(&f.count("/wda/keys")));
+            for call in f.calls.lock().unwrap().iter().filter(|call|call.contains("/wda/keys")) {
+                let body:Value=serde_json::from_str(call.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+                assert_eq!(body["inputTarget"],"bound-field");
+                assert!(body["value"][0].as_str().unwrap().chars().count()<=200);
+            }
+            assert_eq!(f.count("/clear"),0);
+            assert_eq!(f.count("/click"),0);
+            assert_eq!(f.count("/wda/input-target"),0);
+            let before=f.calls.lock().unwrap().len();
+            let (_,body)=f.call("/agent/input",Some("a"),Some(json!({"type":"text","continue_token":token})),false).await;
+            assert_eq!(body["error"],"input_continuation_expired","{body}");
+            assert_eq!(f.calls.lock().unwrap().len(),before);
+        }
+    });
+}
+
+#[test]
+fn replacement_continuation_rejects_owner_session_privacy_and_intervening_actions() {
+    block(async {
+        for reason in ["release","session","privacy","mutation"] {
+            let f=Fixture::new(true);
+            let token=f.start_replacement(false).await;
+            match reason {
+                "release" => {f.call("/agent/owner",Some("a"),Some(json!({"release":true})),false).await;},
+                "session" => {f.state.runner.as_ref().unwrap().lock().await.invalidate_session();},
+                "privacy" => {f.call("/agent/hold",Some("a"),Some(json!({"secs":1,"private":true})),false).await;},
+                _ => {f.call("/agent/input",Some("a"),Some(json!({"type":"home"})),false).await;},
+            }
+            let before=f.count("/wda/keys");
+            let (_,body)=f.call("/agent/input",Some("a"),Some(json!({"type":"text","continue_token":token})),false).await;
+            assert_ne!(body["ok"],true,"{reason}: {body}");
+            assert_eq!(f.count("/wda/keys"),before,"{reason}");
+            assert_eq!(f.count("/ipu/element/bound-field/replace"),1,"{reason}");
+        }
+    });
+}
+
+#[test]
+fn replacement_unknown_or_changed_prefix_never_issues_a_continuation() {
+    block(async {
+        for fault in ["prefix-transport","prefix-mismatch"] {
+            let f=Fixture::new(true);
+            let action=f.replacement_action(json!(6000)).await;
+            *f.failure.lock().unwrap()=Some(fault);
+            let (_,body)=f.call("/agent/input",Some("a"),Some(action),false).await;
+            assert_eq!(body["ok"],false,"{body}");
+            assert!(body.get("continue_token").is_none(),"{body}");
+            assert_eq!(body["retry_safe"],false,"{body}");
+            assert_eq!(f.count("/ipu/element/bound-field/replace"),1);
+            assert_eq!(f.count("/wda/keys"),0);
+        }
+    });
+}
+
+#[test]
+fn replacement_budget_needs_named_owner_and_capability_before_mutation() {
+    block(async {
+        let f=Fixture::with_capabilities(true,false);
+        let action=f.replacement_action(json!(6000)).await;
+        let (_,body)=f.call("/agent/input",Some("a"),Some(action),false).await;
+        assert_eq!(body["error"],"input_continuation_unsupported","{body}");
+        assert_eq!(f.count("/replace"),0);
+        assert_eq!(f.count("/clear"),0);
+        let f=Fixture::new(true);
+        let (_,body)=f.call("/agent/input",None,Some(json!({"type":"set_value","element":0,"snapshot":"s","value":"x","budget_ms":6000})),false).await;
+        assert_eq!(body["error"],"input_owner_required","{body}");
+        assert_eq!(f.calls.lock().unwrap().len(),0);
+    });
+}
+
+#[test]
+fn replacement_resume_uses_observed_time_before_dispatching_a_slow_tail() {
+    block(async {
+        let f=Fixture::new(true);
+        let action=f.replacement_action(json!(11000)).await;
+        *f.hooks.delay.lock().unwrap()=Some("slow-input");
+        let (_,body)=f.call("/agent/input",Some("a"),Some(action),false).await;
+        assert_eq!(body["characters_confirmed"],200,"{body}");
+        let token=body["continue_token"].as_str().expect("slow confirmed prefix token");
+        let (_,body)=f.call("/agent/input",Some("a"),Some(json!({"type":"text","continue_token":token})),false).await;
+        assert_eq!(body["characters_confirmed"],200,"{body}");
+        assert_eq!(body["characters_uncertain"],0,"{body}");
+        assert_eq!(body["remaining_text"],"字".repeat(100),"{body}");
+        assert_eq!(body["continuation_safe"],true,"{body}");
+        assert_eq!(f.count("/wda/keys"),1,"the slow final 100 were not dispatched");
+        assert_eq!(*f.text.lock().unwrap(),"字".repeat(400));
     });
 }

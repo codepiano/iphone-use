@@ -1073,21 +1073,41 @@ impl RunnerClient {
     /// False is capability absence only. Once dispatched, never use the legacy
     /// clear/type path after a failure or replay an uncertain prefix.
     pub async fn replace_element_if_supported(&mut self, id: &str, text: &str, recover_focus_after_clear: bool) -> Result<bool> {
+        match self.replace_element_budgeted(id, text, recover_focus_after_clear, None).await? {
+            ReplacementResult::Unsupported => Ok(false),
+            ReplacementResult::Complete => Ok(true),
+            ReplacementResult::Paused { .. } | ReplacementResult::BudgetExhausted => anyhow::bail!("unbounded replacement unexpectedly paused"),
+        }
+    }
+
+    pub(crate) async fn replace_element_budgeted(&mut self, id: &str, text: &str, recover_focus_after_clear: bool, deadline: Option<tokio::time::Instant>) -> Result<ReplacementResult> {
         let sid = self.ensure_session().await?.to_string();
         anyhow::ensure!(!recover_focus_after_clear || (self.element_replace && self.replace_focus_recovery),
             "replacement focus recovery unsupported; no replacement input sent");
-        if !self.element_replace { return Ok(false); }
+        if !self.element_replace { return Ok(ReplacementResult::Unsupported); }
+        anyhow::ensure!(deadline.is_none() || self.continuation_input, "bounded replacement needs input continuation support; nothing sent");
         anyhow::ensure!(text.chars().count() <= 1000, "replacement exceeds 1000 Unicode scalars");
-        let pieces = crate::text_input::split(text, crate::text_input::CHUNK_CHARS);
+        // A tight window also pays for clearing/refocusing in its first request.
+        // Smaller chunks leave headroom without raising either public or Native caps.
+        let chunk_chars = if deadline.is_some_and(|end| end.saturating_duration_since(tokio::time::Instant::now()) < Duration::from_secs(8)) {
+            crate::text_input::CHUNK_CHARS / 2
+        } else { crate::text_input::CHUNK_CHARS };
+        let pieces = crate::text_input::split(text, chunk_chars);
         anyhow::ensure!(pieces.iter().all(|piece|piece.chars().count() <= 200), "replacement grapheme exceeds the bounded native chunk; nothing sent");
         let prefix = pieces.first().copied().unwrap_or("");
         let mut body = serde_json::json!({"text":prefix});
         if recover_focus_after_clear { body["recoverFocusAfterClear"] = serde_json::Value::Bool(true); }
         let total = text.chars().count();
         let prefix_len = prefix.chars().count();
+        let prefix_timeout = deadline.map(|end| end.saturating_duration_since(tokio::time::Instant::now()));
+        if prefix_timeout.is_some_and(|left| left < crate::text_input::chunk_admission_time(prefix_len, None)) {
+            return Ok(ReplacementResult::BudgetExhausted);
+        }
+        let chunk_started = tokio::time::Instant::now();
         let prefix_result = async {
-            let response = self.post_req(format!("{}/session/{}/ipu/element/{}/replace",self.base,sid,id))
-                .json(&body).send_signed(&self.auth).await?;
+            let request = self.post_req(format!("{}/session/{}/ipu/element/{}/replace",self.base,sid,id)).json(&body);
+            let request = if let Some(timeout) = prefix_timeout { request.timeout(timeout) } else { request };
+            let response = request.send_signed(&self.auth).await?;
             ensure_runner_success(response,"POST bound element replacement").await
         }.await;
         let result = match prefix_result {
@@ -1105,18 +1125,32 @@ impl RunnerClient {
                 0, prefix_len, total-prefix_len, false)),
         };
         let mut confirmed = prefix_len;
+        let mut previous_elapsed = chunk_started.elapsed();
+        let mut previous_count = prefix_len;
         for chunk in pieces.iter().skip(1) {
             let count = chunk.chars().count();
-            if let Err(error) = self.keys_to_target(chunk,token,Duration::from_secs(20)).await {
+            let mut timeout = Duration::from_secs(20);
+            if let Some(end) = deadline {
+                let left = end.saturating_duration_since(tokio::time::Instant::now());
+                let estimate = crate::text_input::chunk_admission_time(count, Some((previous_count, previous_elapsed)));
+                if left < estimate {
+                    return Ok(ReplacementResult::Paused { confirmed, target: token.to_string(), chunk_chars });
+                }
+                timeout = timeout.min(left);
+            }
+            let started = tokio::time::Instant::now();
+            if let Err(error) = self.keys_to_target(chunk,token,timeout).await {
                 let not_sent = error.chain().any(|e| e.downcast_ref::<reqwest::Error>().is_some_and(reqwest::Error::is_connect))
                     || runner_http_error(&error).is_some_and(RunnerHttpError::nothing_sent)
                     || crate::native_scope::is_revoked(&error);
                 let uncertain = if not_sent { 0 } else { count };
                 return Err(ReplacementDeliveryError::wrap(error, confirmed, uncertain, total-confirmed-uncertain, true));
             }
+            previous_elapsed = started.elapsed();
+            previous_count = count;
             confirmed += count;
         }
-        Ok(true)
+        Ok(ReplacementResult::Complete)
     }
 
     /// Clear a specific element's text (`POST .../element/:id/clear`). Unlike
@@ -1976,6 +2010,16 @@ impl RunnerClient {
         target: String, remaining: String, budget_ms: u64) -> Option<String> {
         if !self.continuation_input { return None; }
         self.input_continuation.issue(scope, self.session.clone()?, target, remaining, budget_ms, std::time::Instant::now())
+    }
+
+    pub(crate) fn save_bounded_input_continuation(&mut self, scope: crate::input_continuation::Scope,
+        target: String, remaining: String, budget_ms: u64, chunk_chars: usize) -> Option<String> {
+        let token = self.save_input_continuation(scope, target, remaining, budget_ms)?;
+        if !self.input_continuation.limit_chunks(&token, chunk_chars) {
+            self.input_continuation.clear();
+            return None;
+        }
+        Some(token)
     }
 
     pub(crate) fn supports_input_continuation(&self) -> bool { self.continuation_input }
@@ -3610,6 +3654,13 @@ async fn ensure_runner_success(
         .await
         .with_context(|| format!("{operation} response body"))?;
     parse_runner_value(&body, operation)
+}
+
+pub(crate) enum ReplacementResult {
+    Unsupported,
+    BudgetExhausted,
+    Complete,
+    Paused { confirmed: usize, target: String, chunk_chars: usize },
 }
 
 /// Delivery counts for one selected-field replacement. A failed later request
