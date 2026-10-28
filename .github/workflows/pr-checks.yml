@@ -238,6 +238,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/test-drag-simulator-verdict.py
+          python3 -I scripts/test-owned-mcp-peer.py
           python3 scripts/test-replacement-recovery-verdict.py
           python3 scripts/test-agent-bench.py
           # Same gate as release-binaries.yml: the installer ships SKILL.md
