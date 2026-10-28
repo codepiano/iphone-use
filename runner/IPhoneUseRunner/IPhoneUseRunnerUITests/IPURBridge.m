@@ -761,10 +761,14 @@ static BOOL IPURUseRequestCache(void)
           NSMethodSignature *errorShape = [future methodSignatureForSelector:errorSelector];
           NSMethodSignature *valueShape = [future methodSignatureForSelector:valueSelector];
           NSMethodSignature *completionShape = [future methodSignatureForSelector:completion];
+          // Older SDKs have no completion selector. Still measure the actual
+          // synchronous waiter; an absent comparison cannot prove a speedup.
+          if ([mode isEqualToString:@"async"] && completionShape == nil) continue;
+          BOOL checkingCompletion = [mode isEqualToString:@"async"];
           if (future == nil || errorShape.numberOfArguments != 2 || errorShape.methodReturnType[0] != '@' ||
               valueShape.numberOfArguments != 2 || valueShape.methodReturnType[0] != '@' ||
-              completionShape.numberOfArguments != 3 || completionShape.methodReturnType[0] != 'v' ||
-              [completionShape getArgumentTypeAtIndex:2][0] != '@')
+              (checkingCompletion && (completionShape.numberOfArguments != 3 || completionShape.methodReturnType[0] != 'v' ||
+              [completionShape getArgumentTypeAtIndex:2][0] != '@')))
           {
             NSMutableDictionary *shapes = [NSMutableDictionary dictionary];
             for (NSString *name in @[@"error",@"value",@"valueWithCompletion:"]) {
@@ -810,7 +814,8 @@ static BOOL IPURUseRequestCache(void)
       }
     }
     return @{@"available":@YES,@"main_thread":@(NSThread.isMainThread),@"samples_per_mode":@30,
-      @"requested_producer_delay_ms":@1,@"ordering":@"interleaved alternating",@"measurements":measurements,
+      @"requested_producer_delay_ms":@1,@"ordering":@"interleaved alternating when both modes exist",@"measurements":measurements,
+      @"async_available":@([measurements[@"async"] count] == 30),
       @"AX_actions_issued":@0,@"cancellation_exercised":@NO,
       @"scope":@"pure Future waiting only; not AX transport speed or input acceptance"};
   } @catch (NSException *exception) {

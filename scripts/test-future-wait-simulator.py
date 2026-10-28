@@ -63,7 +63,12 @@ def main():
         assert payload.get('main_thread') is True and payload.get('AX_actions_issued')==0 and payload.get('cancellation_exercised') is False
         summary={}
         for mode in ['sync','async']:
-            values=payload['measurements'][mode];assert len(values)==30
+            values=payload['measurements'][mode]
+            if mode=='async' and payload.get('async_available') is False:
+                assert values==[], 'unsupported mode unexpectedly has measurements'
+                summary[mode]={'available':False}
+                continue
+            assert len(values)==30, f'incomplete {mode} measurements'
             assert all(isinstance(v[k],(int,float)) and math.isfinite(v[k]) and v[k]>=0 for v in values for k in ['total_ms','producer_ms','post_fulfill_ms'])
             summary[mode]={}
             for metric in ['total_ms','producer_ms','post_fulfill_ms']:
