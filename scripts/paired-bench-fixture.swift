@@ -36,7 +36,7 @@ private final class SelectionField: UITextField {
 @main final class AppDelegate: UIResponder, UIApplicationDelegate {
   func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool { true }
 }
-@objc(InputGuardSceneDelegate) final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+@objc(InputGuardSceneDelegate) final class SceneDelegate: UIResponder, UIWindowSceneDelegate, UITextFieldDelegate {
   var window: UIWindow?
   private let titleLabel = UILabel()
   private let a = SelectionField(), b = UITextField(), secure = UITextField(), multi = UITextView()
@@ -47,6 +47,14 @@ private final class SelectionField: UITextField {
   private var touchesAtShift = 0
   private var initialFocus = false
   private var keyboardShown = false
+  private var insertionVetoes = 0
+  func textField(_ field: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
+    if field === a && clearFault == "insert-veto" && !string.isEmpty {
+      insertionVetoes += 1
+      return false
+    }
+    return true
+  }
   private var activeSeed = "short"
   private func seededValue(_ seed: String) -> String {
     switch seed {
@@ -86,7 +94,7 @@ private final class SelectionField: UITextField {
     a.isEnabled = true; a.isHidden = false; a.isSecureTextEntry = false; a.touchStarts = 0; a.repopulateOnFocus = false
     a.text = seededValue(activeSeed)
     b.text = advanceOnClear ? "keep-b" : ""; multi.text = ""; secure.text = "benchmark-secure-dummy"
-    events = ["a": 0, "b": 0, "secure": 0, "multi": 0]; trigger = 0; touchesAtShift = 0; initialFocus = false
+    events = ["a": 0, "b": 0, "secure": 0, "multi": 0]; trigger = 0; touchesAtShift = 0; initialFocus = false; insertionVetoes = 0
   }
   private func option(_ name: String) -> String {
     let args = ProcessInfo.processInfo.arguments
@@ -150,7 +158,7 @@ private final class SelectionField: UITextField {
               "length": field.offset(from: range.start, to: range.end)]
     }
     let focus = a.isFirstResponder ? "a" : b.isFirstResponder ? "b" : secure.isFirstResponder ? "secure" : multi.isFirstResponder ? "multi" : "none"
-    let body: [String: Any] = ["trial": trial, "title": titleLabel.text ?? "", "seed": activeSeed, "pid": ProcessInfo.processInfo.processIdentifier, "foreground_active": window?.windowScene?.activationState == .foregroundActive, "initial_focus_established": initialFocus, "keyboard_did_show": keyboardShown, "selection_commands": a.selectionCommands, "advance_on_clear": advanceOnClear, "advance_triggered": clearAdvance, "clear_fault":clearFault, "a_touch_starts":a.touchStarts, "a_touches_at_clear":touchesAtClear, "overlay_present":clearOverlay != nil, "overlay_actions":overlayActions, "a_enabled":a.isEnabled, "a_hidden":a.isHidden, "a_secure":a.isSecureTextEntry, "selection": ["a": selection(a), "b": selection(b)], "fields": ["a": state(a.text ?? ""), "b": state(b.text ?? ""), "secure": state(secure.text ?? ""), "multi": state(multi.text ?? "")], "focus": focus, "events": events, "shift_trigger_length": trigger, "a_touches_at_shift": touchesAtShift]
+    let body: [String: Any] = ["trial": trial, "title": titleLabel.text ?? "", "seed": activeSeed, "pid": ProcessInfo.processInfo.processIdentifier, "foreground_active": window?.windowScene?.activationState == .foregroundActive, "initial_focus_established": initialFocus, "keyboard_did_show": keyboardShown, "selection_commands": a.selectionCommands, "advance_on_clear": advanceOnClear, "advance_triggered": clearAdvance, "clear_fault":clearFault, "a_touch_starts":a.touchStarts, "a_touches_at_clear":touchesAtClear, "overlay_present":clearOverlay != nil, "overlay_actions":overlayActions,"insertion_vetoes":insertionVetoes, "a_enabled":a.isEnabled, "a_hidden":a.isHidden, "a_secure":a.isSecureTextEntry, "selection": ["a": selection(a), "b": selection(b)], "fields": ["a": state(a.text ?? ""), "b": state(b.text ?? ""), "secure": state(secure.text ?? ""), "multi": state(multi.text ?? "")], "focus": focus, "events": events, "shift_trigger_length": trigger, "a_touches_at_shift": touchesAtShift]
     guard let data = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]), data != last else { return }
     last = data
     let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -173,6 +181,7 @@ private final class SelectionField: UITextField {
       field.heightAnchor.constraint(equalToConstant: 48).isActive = true
       field.addTarget(self, action: #selector(changed(_:)), for: .editingChanged)
     }
+    a.delegate = self
     secure.isSecureTextEntry = true; secure.text = "benchmark-secure-dummy"
     multi.accessibilityIdentifier = "field-multiline"; multi.accessibilityLabel = "Multiline draft"
     multi.layer.borderWidth = 1; multi.heightAnchor.constraint(equalToConstant: 80).isActive = true

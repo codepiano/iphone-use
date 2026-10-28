@@ -52,6 +52,8 @@ CASES = [
 ]
 
 
+EXPERIMENTAL_CASES = [("insertion-veto", "short", "field-a", 500, True, "insert-veto", False, False)]
+
 def digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
 
@@ -97,6 +99,11 @@ def judge(name, before, after, reply):
         if name == "covered-original":
             need(after.get("overlay_present") is True, "covering control absent")
             need(after.get("overlay_actions") == 0, "overlay action was activated")
+    elif name == "insertion-veto":
+        need(fields.get("a", {}).get("sha256") == digest(""), "App insertion veto was bypassed")
+        need(fields.get("b") == previous.get("b"), "next field changed")
+        need(after.get("insertion_vetoes") == 1, "App insertion veto was not reached exactly once")
+        need(body.get("ok") is False and body.get("outcome") == "unknown" and body.get("retry_safe") is False, "veto was promoted or retryable")
     elif name in ["failed-selection", "partial-selection"]:
         need(fields == previous and not any(after.get("events", {}).values()), "selection refusal edited content")
         need(1 <= after.get("selection_commands", 0) <= 2, "selection fault not exercised within bound")
@@ -193,7 +200,9 @@ def main():
     parser.add_argument("--runner-record", type=Path, required=True)
     parser.add_argument("--mcp", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--case", action="append", choices=[c[0] for c in CASES+EXPERIMENTAL_CASES], help="select a named cohort; omitted means the standard suite; experimental cases require explicit selection")
     args = parser.parse_args()
+    selected_cases=CASES if not args.case else [c for c in CASES+EXPERIMENTAL_CASES if c[0] in args.case]
     uuid.UUID(args.udid)
     args.out = args.out.resolve()
     args.runner_record = args.runner_record.resolve(strict=True)
@@ -242,7 +251,7 @@ def main():
         receipt = documents / "paired-state.json"
         def state():
             return json.loads(receipt.read_text()) if receipt.exists() else {}
-        for number, case in enumerate(CASES):
+        for number, case in enumerate(selected_cases):
             name, seed, target, length, recover, fault, advance, shift = case
             wait_for_native_idle(daemon, args, peer, phase="before_"+name)
             print(json.dumps({"case_started":name}), flush=True)
@@ -308,7 +317,7 @@ def main():
         try:
             if (args.out / "mcp-state").exists(): shutil.rmtree(args.out / "mcp-state")
         except OSError as error: cleanup_errors.append("private state cleanup: " + str(error))
-    result = {"scope":"Simulator-only public MCP recovery regression; expected stops/known limit are not full task successes", "source_commit":pair.fixture.command("git","-C",ROOT,"rev-parse","HEAD"), "source_sha256":{n:hashlib.sha256((ROOT/n).read_bytes()).hexdigest() for n in ["scripts/test-replacement-recovery-simulator.py","scripts/paired-bench-fixture.swift"]}, "mcp_sha256":hashlib.sha256(args.mcp.read_bytes()).hexdigest(), "cases":reports,"harness_error":harness_error,"cleanup_errors":cleanup_errors,"passed":len(reports)==len(CASES) and not harness_error and not cleanup_errors}
+    result = {"scope":"Simulator-only public MCP recovery regression; expected stops/known limit are not full task successes", "source_commit":pair.fixture.command("git","-C",ROOT,"rev-parse","HEAD"), "source_sha256":{n:hashlib.sha256((ROOT/n).read_bytes()).hexdigest() for n in ["scripts/test-replacement-recovery-simulator.py","scripts/paired-bench-fixture.swift"]}, "mcp_sha256":hashlib.sha256(args.mcp.read_bytes()).hexdigest(), "cases":reports,"harness_error":harness_error,"cleanup_errors":cleanup_errors,"selected_cases":[c[0] for c in selected_cases],"passed":len(reports)==len(selected_cases) and not harness_error and not cleanup_errors}
     (args.out / "result.json").write_text(json.dumps(result,ensure_ascii=False,indent=2)+"\n")
     print(json.dumps({k:result[k] for k in ["passed","harness_error","cleanup_errors"]}),flush=True)
     return 0 if result["passed"] else 1

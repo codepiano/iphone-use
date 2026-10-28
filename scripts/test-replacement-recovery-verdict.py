@@ -28,6 +28,17 @@ class VerdictTests(unittest.TestCase):
         for case in recovery.CASES:
             with self.subTest(case=case[0]):self.assertEqual(self.verdict(case[0]),[])
 
+    def test_insertion_veto_requires_app_receipt_and_refusal(self):
+        # Synthetic contract input; this is not a retained device acceptance.
+        record=copy.deepcopy(self.records['strict-advance'])
+        record['after']['insertion_vetoes']=1
+        self.assertEqual(self.verdict('insertion-veto',record),[])
+        bypass=copy.deepcopy(record)
+        bypass['after']['fields']['a']['sha256']=recovery.digest('字'*500)
+        self.assertIn('App insertion veto was bypassed',self.verdict('insertion-veto',bypass))
+        unreached=copy.deepcopy(record);unreached['after']['insertion_vetoes']=0
+        self.assertIn('App insertion veto was not reached exactly once',self.verdict('insertion-veto',unreached))
+
     def test_actual_rejected_overlay_misclick_is_rejected(self):
         data=json.loads(gzip.decompress((FOLDER/'retained-trials.json.gz').read_bytes()))
         found=[]

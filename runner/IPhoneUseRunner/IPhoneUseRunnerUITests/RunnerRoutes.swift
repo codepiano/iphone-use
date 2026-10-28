@@ -1300,7 +1300,7 @@ extension RunnerTests {
     }
     let environment = ProcessInfo.processInfo.environment
     let backend = environment["IPU_BOUNDARY_BACKEND"] ?? environment["TEST_RUNNER_IPU_BOUNDARY_BACKEND"] ?? "ax"
-    guard ["ax","hid"].contains(backend) else { throw RunnerError.invalidArgument("unknown experimental input backend; nothing was sent") }
+    guard ["ax","hid","ax-bulk"].contains(backend) else { throw RunnerError.invalidArgument("unknown experimental input backend; nothing was sent") }
     IPURBridge.setInputForegroundLookupEnabled(true)
     defer {
       NSLog("ipu-input-foreground-lookup %@", IPURBridge.inputForegroundLookupStats())
@@ -1395,17 +1395,20 @@ extension RunnerTests {
     let deadline = Date().addingTimeInterval(10)
     do {
       var boundary = try verifiedBoundary()
-      for character in text {
+      // Diagnostic only: bulk insertion delays App-driven handoff and cannot
+      // make the external focus check atomic with App input validation.
+      let fragments = text.isEmpty ? [] : (backend == "ax-bulk" ? [text] : text.map(String.init))
+      for fragment in fragments {
         if Date() >= deadline { throw RunnerError.failed("experimental boundary budget expired") }
         guard boundaryReads == attempted + 1, inputBinding == token,
               let ax = boundary.node.axElement else { throw RunnerError.failed("original boundary unavailable") }
         let beforeValue = boundary.value
         if backend.hasPrefix("hid") {
           attempted += 1
-          let failure = timed("InputInsert") { IPURBridge.synthesizeText(String(character), charactersPerSecond: 120, pid: original.pid) }
+          let failure = timed("InputInsert") { IPURBridge.synthesizeText(fragment, charactersPerSecond: 120, pid: original.pid) }
           guard failure == nil else { throw RunnerError.failed("experimental HID action not acknowledged") }
         } else {
-          let reply = timed("InputInsert") { IPURBridge.probeAXInsert(element: ax, value: String(character)) }
+          let reply = timed("InputInsert") { IPURBridge.probeAXInsert(element: ax, value: fragment) }
           if reply["invoked"] as? Bool == true { attempted += 1 }
           guard reply["invoked"] as? Bool == true, reply["actionAcknowledged"] as? Bool == true else {
             throw RunnerError.failed("experimental target AX action not acknowledged")
@@ -1416,7 +1419,7 @@ extension RunnerTests {
         elements.renew(token, node: after.node)
         boundary = after
       }
-      return .value(NSNull(), headers:["X-IPU-Gesture":backend.hasPrefix("hid") ? "experimental-unbound-\(backend)-characters" : "target-bound-ax-characters", "X-IPU-Input-Boundary-Checks":String(guardReads),"X-IPU-Full-Value-Reads":String(fullValueReads)])
+      return .value(NSNull(), headers:["X-IPU-Gesture":backend == "ax-bulk" ? "experimental-bulk-ax" : (backend.hasPrefix("hid") ? "experimental-unbound-\(backend)-characters" : "target-bound-ax-characters"), "X-IPU-Input-Boundary-Checks":String(guardReads),"X-IPU-Full-Value-Reads":String(fullValueReads)])
     } catch {
       NSLog("ipu-character-stop reason=%@", String(describing: error))
       throw RunnerError.failed("experimental original-field input stopped; outcome unknown; no fallback or replay")
