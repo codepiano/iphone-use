@@ -765,7 +765,19 @@ static BOOL IPURUseRequestCache(void)
               valueShape.numberOfArguments != 2 || valueShape.methodReturnType[0] != '@' ||
               completionShape.numberOfArguments != 3 || completionShape.methodReturnType[0] != 'v' ||
               [completionShape getArgumentTypeAtIndex:2][0] != '@')
-            return @{@"available":@NO,@"reason":@"Future result shape unavailable"};
+          {
+            NSMutableDictionary *shapes = [NSMutableDictionary dictionary];
+            for (NSString *name in @[@"error",@"value",@"valueWithCompletion:"]) {
+              NSMethodSignature *shape = [future methodSignatureForSelector:NSSelectorFromString(name)];
+              NSMutableArray *arguments = [NSMutableArray array];
+              for (NSUInteger i = 0; i < shape.numberOfArguments; i++)
+                [arguments addObject:[NSString stringWithUTF8String:[shape getArgumentTypeAtIndex:i]]];
+              shapes[name] = shape == nil ? @{@"available":@NO} :
+                @{@"return":[NSString stringWithUTF8String:shape.methodReturnType],@"arguments":arguments};
+            }
+            return @{@"available":@NO,@"reason":@"Future result shape unavailable",
+              @"future_class":future == nil ? @"nil" : NSStringFromClass([future class]),@"shapes":shapes};
+          }
           if ([mode isEqualToString:@"sync"]) {
             id error = ((id (*)(id,SEL))objc_msgSend)(future,errorSelector);
             id secondError = ((id (*)(id,SEL))objc_msgSend)(future,errorSelector);

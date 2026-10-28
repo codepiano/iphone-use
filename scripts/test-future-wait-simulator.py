@@ -57,7 +57,9 @@ def main():
         container=Path(call('xcrun','simctl','get_app_container',args.udid,bundle,'data'))
         raw=(container/'Documents/future-wait-probe.json').read_bytes();payload=json.loads(raw)
         (out/'receipt.json').write_bytes(raw)
-        assert status==0 and payload.get('probe_run_id')==run_id and payload.get('available') is True
+        assert status==0, f'XCTest failed with exit {status}; inspect receipt.json and xcode.log'
+        assert payload.get('probe_run_id')==run_id, 'receipt does not belong to this invocation'
+        assert payload.get('available') is True, 'Future diagnostic unavailable; inspect receipt.json'
         assert payload.get('main_thread') is True and payload.get('AX_actions_issued')==0 and payload.get('cancellation_exercised') is False
         summary={}
         for mode in ['sync','async']:

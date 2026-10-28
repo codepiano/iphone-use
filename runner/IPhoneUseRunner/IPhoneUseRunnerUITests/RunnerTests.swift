@@ -92,6 +92,7 @@ final class RunnerTests: XCTestCase {
     executionTimeAllowance = 30
     var result = IPURBridge.probeFutureWaiter() as! [String: Any]
     let env = ProcessInfo.processInfo.environment
+    result["AX_actions_issued"] = 0
     result["probe_run_id"] = env["IPU_FUTURE_PROBE_RUN_ID"] ?? env["TEST_RUNNER_IPU_FUTURE_PROBE_RUN_ID"] ?? "missing"
     let file = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("future-wait-probe.json")
     try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted,.sortedKeys]).write(to: file, options: .atomic)
