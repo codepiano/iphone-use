@@ -145,10 +145,14 @@ jobs:
             ~/.iphone-use/instances/ci-sim/gesture-acceptance/**/trace.ndjson
             ~/.iphone-use/instances/ci-sim/replacement-continuation/result.json
             ~/.iphone-use/instances/ci-sim/replacement-continuation/traceback.txt
+            ~/.iphone-use/instances/ci-sim/replacement-continuation/pause-rejection.json
+            ~/.iphone-use/instances/ci-sim/replacement-continuation/interrupted-case.json
             ~/.iphone-use/instances/ci-sim/replacement-continuation/mcp.log
             ~/.iphone-use/instances/ci-sim/replacement-continuation/mcp-requests.jsonl
             ~/.iphone-use/instances/ci-sim/replacement-recovery/result.json
             ~/.iphone-use/instances/ci-sim/replacement-recovery/traceback.txt
+            ~/.iphone-use/instances/ci-sim/replacement-recovery/pause-rejection.json
+            ~/.iphone-use/instances/ci-sim/replacement-recovery/interrupted-case.json
             ~/.iphone-use/instances/ci-sim/replacement-recovery/mcp.log
             ~/.iphone-use/instances/ci-sim/replacement-recovery/mcp-requests.jsonl
             ${{ runner.temp }}/input-target-acceptance/results.json

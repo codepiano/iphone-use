@@ -95,6 +95,17 @@ class PausePrefixTests(unittest.TestCase):
             with self.subTest(change=change),self.assertRaises(RuntimeError):
                 recovery.verified_pause_prefix(body,before,receipt,text,0,"a")
 
+    def test_pause_diagnostic_excludes_token_and_text(self):
+        body,_,_,_=self.receipt()
+        body['remaining_text']='PRIVATE-REMAINDER'
+        body['continue_token']='b'*64
+        summary=recovery.pause_reply_summary(body)
+        rendered=json.dumps(summary)
+        self.assertNotIn('PRIVATE-REMAINDER',rendered)
+        self.assertNotIn('b'*64,rendered)
+        self.assertEqual(summary['remaining_sha256'],recovery.digest('PRIVATE-REMAINDER'))
+        self.assertTrue(summary['token_present'])
+
     def test_unknown_progress_or_inconsistent_unsent_text_cannot_resume(self):
         body,before,paused,text=self.receipt()
         for key,value in [("outcome","unknown"),("characters_uncertain",1),("characters_confirmed",0),

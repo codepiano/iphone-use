@@ -123,6 +123,17 @@ def judge(name, before, after, reply):
     return errors
 
 
+def pause_reply_summary(body):
+    # The diagnostic needs delivery counts, never the token or requested text.
+    keys=["ok","error","outcome","retry_safe","continuation_safe","characters_confirmed","characters_uncertain","characters_total"]
+    summary={key:body[key] for key in keys if key in body}
+    summary["token_present"]=isinstance(body.get("continue_token"),str)
+    remaining=body.get("remaining_text")
+    summary["remaining_sha256"]=digest(remaining) if isinstance(remaining,str) else None
+    summary["reported_total_ms"]=(body.get("timing") or {}).get("total_ms")
+    return summary
+
+
 def verified_pause_prefix(body, before, paused, text, cumulative, field):
     """A safe ACK alone cannot authorize another input; require the App receipt."""
     token = body.get("continue_token")
@@ -251,6 +262,9 @@ def main():
     reports = []
     harness_error = None
     cleanup_errors = []
+    state_reader = None
+    active_case = None
+    active_before = None
     environment = {k:v for k,v in os.environ.items() if not k.startswith(("IPHONE_USE_", "PHONE_REMOTE_", "IPU_", "TEST_RUNNER_"))}
     environment.update(IPHONE_USE_URL=daemon.base, IPHONE_USE_OWNER=args.owner, IPHONE_USE_MCP_PREWARM="0", IPHONE_USE_MCP_STRUCTURED="full", IPHONE_USE_STATE_DIR=str(args.out / "mcp-state"), IPHONE_USE_FLOWS_NO_AUTO_UPDATE="1")
     def call(name, arguments):
@@ -277,8 +291,11 @@ def main():
         receipt = documents / "paired-state.json"
         def state():
             return json.loads(receipt.read_text()) if receipt.exists() else {}
+        state_reader = state
         for number, case in enumerate(selected_cases):
             name, seed, target, length, recover, fault, advance, shift = case
+            active_case = name
+            active_before = None
             wait_for_native_idle(daemon, args, peer, phase="before_"+name)
             print(json.dumps({"case_started":name}), flush=True)
             trial = "recovery-" + str(number) + "-" + uuid.uuid4().hex[:8]
@@ -292,6 +309,7 @@ def main():
                 if before.get("trial") == trial and before.get("foreground_active") and before.get("keyboard_did_show") and before.get("focus") == "a": break
                 if time.monotonic() > until: raise RuntimeError("fixture setup did not converge: " + name)
                 time.sleep(.1)
+            active_before = before
             active, _ = drag.runner_call(args, "/wda/activeAppInfo")
             if active.get("value", {}).get("bundleId") != BUNDLE or active["value"].get("pid") != before["pid"]:
                 raise RuntimeError("fixture foreground/process changed before task")
@@ -306,6 +324,7 @@ def main():
             if args.budget_ms is not None: arguments["budget_ms"] = args.budget_ms
             task_started = time.monotonic()
             reply = call("phone_set_value", arguments)
+            reply_received_ns = time.time_ns()
             continuations = []
             cumulative = 0
             while args.budget_ms is not None:
@@ -316,11 +335,31 @@ def main():
                 wait_for_native_idle(daemon,args,peer,phase="paused_"+name)
                 paused = state()
                 field = "b" if target == "field-b" else "a"
-                cumulative = verified_pause_prefix(body,before,paused,text,cumulative,field)
+                try:
+                    cumulative = verified_pause_prefix(body,before,paused,text,cumulative,field)
+                except RuntimeError:
+                    # Preserve the rejected receipt and later readonly samples.
+                    # A later match never promotes this failed trial or sends input.
+                    try: first_mtime=receipt.stat().st_mtime_ns
+                    except OSError: first_mtime=None
+                    samples=[{"sampled_ns":time.time_ns(),"receipt_mtime_ns":first_mtime,"state":paused}]
+                    evidence={"case":name,"trial":trial,"before":before,"reply_received_ns":reply_received_ns,
+                              "confirmed_before":cumulative,"field":field,"reply_summary":pause_reply_summary(body),
+                              "samples":samples,"continuation_sent_after_rejection":False}
+                    diagnostic=args.out/"pause-rejection.json"
+                    diagnostic.write_text(json.dumps(evidence,ensure_ascii=False,indent=2)+"\n")
+                    for delay in [.15,.25]:
+                        time.sleep(delay)
+                        try: sample={"sampled_ns":time.time_ns(),"receipt_mtime_ns":receipt.stat().st_mtime_ns,"state":state()}
+                        except Exception as error: sample={"sampled_ns":time.time_ns(),"read_error":type(error).__name__}
+                        samples.append(sample)
+                        diagnostic.write_text(json.dumps(evidence,ensure_ascii=False,indent=2)+"\n")
+                    raise
                 if token in {pair.payload(previous["reply"])[2]["continue_token"] for previous in continuations}:
                     raise RuntimeError("repeated continuation token; no continuation sent")
                 continuations.append({"reply":reply,"independent_prefix":paused,"confirmed_total":cumulative})
                 reply = call("phone_type", {"continue_token":token,"observe":False})
+                reply_received_ns = time.time_ns()
             task_ms = (time.monotonic()-task_started)*1000
             # No transport timeout is retried. A received refusal is followed
             # only by readonly idle/stability checks, then a distinct trial.
@@ -343,6 +382,14 @@ def main():
     except Exception as error:
         harness_error = str(error)
         (args.out / "traceback.txt").write_text(traceback.format_exc())
+        # This is a readonly fixture receipt, not proof that a pending operation
+        # completed. Keep it even when cleanup must defer to the outer owner.
+        try: observed=state_reader() if state_reader is not None else None
+        except Exception as read_error: observed={"read_error":type(read_error).__name__}
+        pending={"id":peer.pending,"method":peer.pending_method,"tool":peer.pending_tool} if peer is not None else None
+        interrupted={"case":active_case,"error_type":type(error).__name__,"before":active_before,
+                     "observed_state":observed,"pending_request":pending,"diagnostic_only":True}
+        (args.out/"interrupted-case.json").write_text(json.dumps(interrupted,ensure_ascii=False,indent=2)+"\n")
     finally:
         if peer:
             pending = peer.pending is not None
