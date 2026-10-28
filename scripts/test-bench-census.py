@@ -31,8 +31,16 @@ class CensusTests(unittest.TestCase):
                 status, reply = 200, {'ok': True}
                 if self.path == '/agent/status':
                     reply = {'drivable': True, 'version': 'fixture', 'owner': 'bench-census' if fault == 'owned' else None}
-                elif self.path == '/agent/elements' and fault == 'read':
-                    status, reply = 502, {'error': 'read_failed'}
+                elif self.path == '/agent/elements':
+                    reply = {'elements': [], 'snapshot': 'fixture-snapshot'}
+                    if fault == 'read':
+                        status, reply = 502, {'error': 'read_failed'}
+                    elif fault == 'missing-tree':
+                        reply = {'ok': True}
+                    elif fault == 'missing-snapshot':
+                        reply = {'elements': []}
+                    elif fault == 'invalid-tree':
+                        reply = {'elements': {}, 'snapshot': 'fixture-snapshot'}
                 elif self.path == '/agent/input' and body.get('type') == 'tap':
                     if fault == 'unknown':
                         reply = {'ok': False, 'outcome': 'unknown', 'retry_safe': False}
@@ -52,7 +60,7 @@ class CensusTests(unittest.TestCase):
                 elif self.path == '/agent/hold' and body.get('secs') == 0 and fault == 'cleanup':
                     status, reply = 500, {'ok': False}
                 elif self.path == '/agent/screenshot':
-                    reply = b'\x89PNG\r\n\x1a\nfixture'
+                    reply = {'ok': True} if fault == 'json-image' else b'\x89PNG\r\n\x1a\nfixture'
                 raw = reply if isinstance(reply, bytes) else json.dumps(reply).encode()
                 self.send_response(status)
                 self.send_header('Content-Length', str(len(raw)))
@@ -81,6 +89,20 @@ class CensusTests(unittest.TestCase):
                 self.assertNotIn('swipe', actions)
                 self.assertEqual([r[1] for r in requests[-2:]], ['/agent/hold', '/agent/owner'])
                 self.assertIn('stopped without replay', result.stderr)
+
+    def test_unconfirmed_tree_prevents_the_following_tap(self):
+        for fault in ('missing-tree', 'missing-snapshot', 'invalid-tree'):
+            with self.subTest(fault=fault):
+                result, requests = self.run_census(fault)
+                self.assertEqual(result.returncode, 1)
+                failed_read = next(i for i, r in enumerate(requests) if r[1] == '/agent/elements')
+                self.assertFalse(any(r[1] == '/agent/input' for r in requests[failed_read + 1:]))
+
+    def test_json_acknowledgement_is_not_a_screenshot(self):
+        result, requests = self.run_census('json-image')
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(sum(r[1] == '/agent/screenshot' for r in requests), 1)
+        self.assertFalse(any(r[2].get('type') == 'shortcut' for r in requests))
 
     def test_failed_read_prevents_the_following_tap(self):
         result, requests = self.run_census('read')

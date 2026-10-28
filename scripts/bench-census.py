@@ -73,6 +73,14 @@ def main() -> int:
             raise CensusError(f"{method} {path}: unreadable response; stopped without replay") from None
         if not isinstance(parsed, dict) or not parsed:
             raise CensusError(f"{method} {path}: missing response object; stopped without replay")
+        if path == "/agent/elements" and (
+            not isinstance(parsed.get("elements"), list)
+            or not isinstance(parsed.get("snapshot"), str)
+            or not parsed["snapshot"].strip()
+        ):
+            raise CensusError(f"{method} {path}: missing confirmed tree; stopped without replay")
+        if path == "/agent/screenshot":
+            raise CensusError(f"{method} {path}: response is not an image; stopped without replay")
         if parsed.get("ok") is False or parsed.get("error") or parsed.get("outcome") == "unknown":
             raise CensusError(f"{method} {path}: unsuccessful or unknown outcome; stopped without replay")
         if method == "POST" and parsed.get("ok") is not True:
