@@ -29,6 +29,7 @@ FOUNDATION_EXPORT NSString *const IPURTreeExtensionCallsKey; // NSNumber: re-roo
 FOUNDATION_EXPORT NSString *const IPURNodeAXElementKey;
 
 @interface IPURBridge : NSObject
++ (NSDictionary *)probeFutureWaiter NS_SWIFT_NAME(probeFutureWaiter());
 + (NSDictionary *)probeAXInsertForElement:(id)element value:(NSString *)value NS_SWIFT_NAME(probeAXInsert(element:value:));
 + (void)probeBoundaryMetadataForElement:(id)element NS_SWIFT_NAME(probeBoundaryMetadata(element:));
 + (nullable NSDictionary<NSString *, id> *)inputBoundaryForElement:(id)element NS_SWIFT_NAME(inputBoundary(element:));

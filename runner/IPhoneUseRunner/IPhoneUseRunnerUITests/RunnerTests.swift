@@ -87,6 +87,18 @@ final class RunnerTests: XCTestCase {
   /// that never came up), not a request's, and must reach xcodebuild.
   var serveEnded = false
 
+  func testFutureWaiterProbe() throws {
+    serveEnded = true
+    executionTimeAllowance = 30
+    var result = IPURBridge.probeFutureWaiter() as! [String: Any]
+    let env = ProcessInfo.processInfo.environment
+    result["probe_run_id"] = env["IPU_FUTURE_PROBE_RUN_ID"] ?? env["TEST_RUNNER_IPU_FUTURE_PROBE_RUN_ID"] ?? "missing"
+    let file = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("future-wait-probe.json")
+    try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted,.sortedKeys]).write(to: file, options: .atomic)
+    XCTAssertEqual(result["available"] as? Bool, true, "pure Future probe unsupported: \(result)")
+    XCTAssertEqual(result["AX_actions_issued"] as? Int, 0)
+  }
+
   func testServe() throws {
     let patched = IPURBridge.installQuiescenceBypass()
     NSLog("ipu-runner: quiescence bypass installed on %@", patched.joined(separator: ", "))

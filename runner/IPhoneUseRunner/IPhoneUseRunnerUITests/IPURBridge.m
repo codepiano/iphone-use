@@ -707,6 +707,106 @@ static BOOL IPURUseRequestCache(void)
   } @catch (__unused NSException *exception) { return nil; }
 }
 
++ (NSDictionary *)probeFutureWaiter
+{
+#if !TARGET_OS_SIMULATOR
+  return @{@"available":@NO,@"reason":@"Simulator-only pure Future diagnostic"};
+#else
+  if (!NSThread.isMainThread) {
+    __block NSDictionary *result;
+    dispatch_sync(dispatch_get_main_queue(), ^{ result = [self probeFutureWaiter]; });
+    return result;
+  }
+  @try {
+    Class futureClass = NSClassFromString(@"XCTFuture");
+    SEL factory = NSSelectorFromString(@"futureWithTimeout:description:block:");
+    SEL errorSelector = NSSelectorFromString(@"error");
+    SEL valueSelector = NSSelectorFromString(@"value");
+    SEL completion = NSSelectorFromString(@"valueWithCompletion:");
+    SEL fulfill = NSSelectorFromString(@"fulfillWithValue:error:");
+    NSMethodSignature *factoryShape = [futureClass methodSignatureForSelector:factory];
+    if (factoryShape == nil || factoryShape.numberOfArguments != 5 || factoryShape.methodReturnType[0] != '@' ||
+        [factoryShape getArgumentTypeAtIndex:2][0] != 'd' || [factoryShape getArgumentTypeAtIndex:3][0] != '@' ||
+        [factoryShape getArgumentTypeAtIndex:4][0] != '@')
+      return @{@"available":@NO,@"reason":@"Future factory shape unavailable"};
+    double (^now)(void) = ^{ return NSProcessInfo.processInfo.systemUptime; };
+    double probeDeadline = now() + 10;
+    NSMutableDictionary *measurements = [@{@"sync":[NSMutableArray array],@"async":[NSMutableArray array]} mutableCopy];
+    for (NSInteger index = -3; index < 30; index++) {
+      NSArray *order = index % 2 == 0 ? @[@"sync",@"async"] : @[@"async",@"sync"];
+      for (NSString *mode in order) {
+        NSMutableArray *samples = measurements[mode];
+        @autoreleasepool {
+          if (now() >= probeDeadline) return @{@"available":@NO,@"reason":@"pure Future probe budget exceeded"};
+          NSObject *sentinel = [NSObject new];
+          NSError *expectedError = index == -3 ? [NSError errorWithDomain:@"IPURFutureProbe" code:1 userInfo:nil] : nil;
+          id expectedValue = expectedError == nil ? sentinel : nil;
+          NSObject *monitor = [NSObject new];
+          __block double producedAt = 0;
+          __block BOOL done = NO, matched = NO, producerInvalid = NO;
+          double started = now();
+          void (^producer)(id) = ^(id promise) {
+            NSMethodSignature *shape = [promise methodSignatureForSelector:fulfill];
+            if (shape == nil || shape.numberOfArguments != 4 || shape.methodReturnType[0] != 'v' ||
+                [shape getArgumentTypeAtIndex:2][0] != '@' || [shape getArgumentTypeAtIndex:3][0] != '@') {
+              @synchronized(monitor) { producerInvalid = YES; }
+              return;
+            }
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_MSEC), dispatch_get_global_queue(QOS_CLASS_DEFAULT,0), ^{
+              @synchronized(monitor) { producedAt = now(); }
+              ((void (*)(id,SEL,id,id))objc_msgSend)(promise,fulfill,expectedValue,expectedError);
+            });
+          };
+          id future = ((id (*)(id,SEL,double,id,id))objc_msgSend)(futureClass,factory,1.0,@"ipu pure Future probe",producer);
+          NSMethodSignature *errorShape = [future methodSignatureForSelector:errorSelector];
+          NSMethodSignature *valueShape = [future methodSignatureForSelector:valueSelector];
+          NSMethodSignature *completionShape = [future methodSignatureForSelector:completion];
+          if (future == nil || errorShape.numberOfArguments != 2 || errorShape.methodReturnType[0] != '@' ||
+              valueShape.numberOfArguments != 2 || valueShape.methodReturnType[0] != '@' ||
+              completionShape.numberOfArguments != 3 || completionShape.methodReturnType[0] != 'v' ||
+              [completionShape getArgumentTypeAtIndex:2][0] != '@')
+            return @{@"available":@NO,@"reason":@"Future result shape unavailable"};
+          if ([mode isEqualToString:@"sync"]) {
+            id error = ((id (*)(id,SEL))objc_msgSend)(future,errorSelector);
+            id secondError = ((id (*)(id,SEL))objc_msgSend)(future,errorSelector);
+            id value = ((id (*)(id,SEL))objc_msgSend)(future,valueSelector);
+            @synchronized(monitor) { matched = value == expectedValue && error == expectedError && secondError == error; done = YES; }
+          } else {
+            // Compare raw callback identities; never retain or dereference an
+            // uncalibrated callback argument. The first sample verifies errors.
+            void (^reply)(void *,void *) = ^(void *value,void *error) {
+              @synchronized(monitor) {
+                matched = value == (__bridge void *)expectedValue && error == (__bridge void *)expectedError;
+                done = YES;
+              }
+            };
+            ((void (*)(id,SEL,id))objc_msgSend)(future,completion,reply);
+            while (now() < started + 2) {
+              @synchronized(monitor) { if (done) break; }
+              CFRunLoopRunInMode(kCFRunLoopDefaultMode,0.001,true);
+            }
+          }
+          double finished = now(), produced;
+          @synchronized(monitor) {
+            if (!done || !matched || producerInvalid || producedAt == 0)
+              return @{@"available":@NO,@"reason":@"Future result/calibration failed",@"mode":mode,@"sample":@(index)};
+            produced = producedAt;
+          }
+          if (index >= 0) [samples addObject:@{@"total_ms":@((finished-started)*1000),
+              @"producer_ms":@((produced-started)*1000),@"post_fulfill_ms":@((finished-produced)*1000)}];
+        }
+      }
+    }
+    return @{@"available":@YES,@"main_thread":@(NSThread.isMainThread),@"samples_per_mode":@30,
+      @"requested_producer_delay_ms":@1,@"ordering":@"interleaved alternating",@"measurements":measurements,
+      @"AX_actions_issued":@0,@"cancellation_exercised":@NO,
+      @"scope":@"pure Future waiting only; not AX transport speed or input acceptance"};
+  } @catch (NSException *exception) {
+    return @{@"available":@NO,@"reason":@"pure Future probe exception",@"exception":exception.name};
+  }
+#endif
+}
+
 + (NSDictionary *)probeAXInsertForElement:(id)element value:(NSString *)value
 {
   BOOL attempted = NO;
