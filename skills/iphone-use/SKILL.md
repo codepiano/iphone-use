@@ -25,6 +25,12 @@ curl -s -H "$AUTH" "$HOST/agent/status"             # probe first; on failure fo
 
 ## The loop
 
+This local plugin is the codepiano guarded fork. Use its verified local runtime;
+do not run a stock upstream installer or auto-upgrade to an unmodified release
+as a recovery step. Source changes, installed files, and a drivable live daemon
+are separate states and must be reported separately. Respect an explicitly
+paused collection task until the person authorizes resuming it.
+
 For repetitive third-party app work, use the opt-in guarded controller described
 in `docs/development/guarded-touch-execution.md` in a source checkout. It requires
 the external pointer-trajectory 0.4 planner and this fork's `touch_path` endpoint.
