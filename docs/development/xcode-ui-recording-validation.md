@@ -210,6 +210,16 @@ items, so it provides no evidence to validate those round/break settings.
 | Contact drift | No raw coordinate samples | At most one logical point by default; may be stationary |
 | Behaviour after input | Video establishes page changes; it does not reveal the person's internal decision rule | Two unchanged snapshots and explicit anchors; uncertainty latches paused |
 
+After the initial comparison, the person recalled likely double-tapping because
+the first tap appeared to have no response and may have missed. This agrees
+with the recorder's grouping and supplies a reported reason for the extra tap:
+it was feedback-driven correction, rather than an aimless/noise input. It does
+not distinguish a physical miss from an unaccepted touch or delayed app
+response, and does not recover the inter-tap interval. The controller differs
+here deliberately: uncertain delivery/result stops for reconciliation rather
+than immediately emitting another tap. This recollection is not a measured
+retry rate and does not justify unconditional retry for other actions.
+
 The current generator already avoids a mandatory exact-center landing, but its
 position/duration/drift distributions are engineering presets. This recording
 cannot tell whether they match the person's hand. A finger moving between
