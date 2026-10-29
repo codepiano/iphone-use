@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "iphone-use": {
+    "iphone_use": {
       "type": "stdio",
       "command": "/bin/sh",
       "args": [

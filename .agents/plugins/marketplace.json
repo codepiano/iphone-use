@@ -1,7 +1,7 @@
 {
-  "name": "iphone-use",
+  "name": "iphone-use-guarded-local",
   "interface": {
-    "displayName": "iPhone Use"
+    "displayName": "iPhone Use Guarded Local"
   },
   "plugins": [
     {

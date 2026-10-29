@@ -1,26 +1,26 @@
 {
   "name": "iphone-use",
-  "version": "0.27.7",
-  "description": "Drive a real iPhone from your agent: read the screen as text, tap, type, scroll and replay saved per-app flows through the iphone-use daemon on your Mac.",
+  "version": "0.27.7-guarded.1",
+  "description": "Local fork with checkpointed, paced touch execution and an external trajectory planner. Read and operate a real iPhone over USB or Wi-Fi; repetitive work uses explicit page checks and stops on uncertain outcomes.",
   "author": {
     "name": "leeguooooo",
     "url": "https://github.com/leeguooooo"
   },
-  "homepage": "https://github.com/leeguooooo/iphone-use",
-  "repository": "https://github.com/leeguooooo/iphone-use",
+  "homepage": "https://github.com/codepiano/iphone-use",
+  "repository": "https://github.com/codepiano/iphone-use",
   "license": "PolyForm-Shield-1.0.0",
   "keywords": ["iphone", "ios", "mobile", "automation", "xctest", "mcp"],
   "skills": "./skills/",
   "mcpServers": "./.codex-plugin/mcp.json",
   "interface": {
-    "displayName": "iPhone Use",
+    "displayName": "iPhone Use (Guarded)",
     "shortDescription": "Let your agent operate a real iPhone",
     "longDescription": "Operate the apps on your own iPhone that have no API: Health, banking, chat apps and the rest. The iphone-use daemon on your Mac drives the phone through its own XCTest runner over USB or Wi-Fi. The agent reads each screen as a text list of elements, acts on what it names, and replays saved per-app flows in one call. The daemon is installed separately with one curl line; iphone-use doctor then says what the Mac, Xcode or the phone still needs.",
     "developerName": "leeguooooo",
     "category": "Productivity",
     "capabilities": ["Read", "Write"],
-    "websiteURL": "https://github.com/leeguooooo/iphone-use",
-    "privacyPolicyURL": "https://github.com/leeguooooo/iphone-use/blob/main/docs/privacy.md",
+    "websiteURL": "https://github.com/codepiano/iphone-use",
+    "privacyPolicyURL": "https://github.com/codepiano/iphone-use/blob/main/docs/privacy.md",
     "defaultPrompt": [
       "Install iphone-use, run iphone-use doctor, and walk me through anything it says I have to do on the phone.",
       "Check that my iPhone is drivable, then open Settings and tell me which iOS version it runs.",

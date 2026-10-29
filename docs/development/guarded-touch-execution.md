@@ -92,6 +92,18 @@ collection/result anchor: an unchanged title or the transport receipt alone does
 not prove that a business write succeeded. The helper does not infer collection
 membership. There is deliberately no unattended list runner.
 
+The local plugin also ships `scripts/run-guarded.sh --owner <stable-task-owner>`.
+Its remaining arguments are the same `step` / `finish` CLI arguments above.
+This launcher uses a dedicated planner environment at
+`~/.local/share/iphone-use-guarded/venv` (or `IPHONE_USE_GUARDED_PYTHON`) and
+reads the selected native daemon's LaunchAgent configuration in memory. A
+credential is borrowed only for that same local origin/port; a different origin
+requires its own explicit credential. Nothing is printed or put in arguments.
+The launcher neither starts services nor resumes a checkpoint. The underlying
+raw MCP tap tools retain their original semantics; installing this fork alone
+does not make an unguarded tap use trajectory planning. Repetitive third-party
+work must use the guarded entry point as the bundled skill specifies.
+
 The same task's processes must share the state directory. A nonblocking file
 lock rejects competing calls, while daemon owner leases govern other tasks.
 The task checkpoint binds the application, daemon origin and owner. It stores

@@ -32,6 +32,14 @@ It does not run against an unmodified release. Send one checkpointed action,
 check its result, and independently finish each item before the next. A paused
 checkpoint, visible verification/rate limit, unexpected app or ambiguous outcome
 means stop; do not switch to raw tools, Jev or a saved flow to continue it.
+After the local guarded environment is installed, invoke the bundled
+`scripts/run-guarded.sh --owner <stable-task-owner> step --state <private-task-dir>
+--app <exact-application-label> --item <stable-item-id>` from the plugin root,
+with the step document on stdin. It loads the selected local daemon's token in
+memory; never copy the token into a command or chat. The dedicated Python
+environment defaults to `~/.local/share/iphone-use-guarded/venv` and must contain
+the external planner. `IPHONE_USE_GUARDED_PYTHON` can select an isolated one.
+The launcher does not start services, resume paused checkpoints, or retry input.
 The throughput-oriented batching advice below does not override that mode.
 No input variation is a promise of avoiding application detection.
 
