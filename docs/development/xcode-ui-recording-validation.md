@@ -36,6 +36,57 @@ for workflow cadence, or an instrumented calibration receiver for touch samples.
 Whether Xcode's recording protocol exposes additional usable event timestamps
 remains unverified.
 
+## Post-update repeat (2026-10-30)
+
+The repeat used macOS 27.2, iOS 27.2 and Xcode 27.1. After the host update,
+Xcode required its official system components to be installed again. The global
+developer directory pointed at Command Line Tools; commands used a per-process
+`DEVELOPER_DIR` override rather than changing that global setting. CoreDevice
+reported a wired, paired, booted device with Developer Mode enabled and device
+services available.
+
+The former temporary project had disappeared from `/private/tmp` during the
+update/reboot. A new, separate blank probe was created in private local storage,
+using the same probe bundle prefix and separate build products/module cache.
+`build-for-testing` passed before recording. Neither the installed PUA service
+nor the candidate daemon/Runner was started. Xcode entered **Recording UI Test**
+on the physical phone, and the person reported completing the requested
+Dianping navigation before explicitly requesting that recording stop.
+
+After removing recorder query-alternative comments, the saved Swift contains
+26 action statements: 17 taps, 3 double-taps, 4 directional swipes, 1 app
+activation and 1 Home event. These are generated statements, not a count of
+physical touches. The source includes Dianping interactions and back-image
+targets, but many targets are generic windows or indexed elements, and no
+search text was exported. The person's completion report and the generated
+source therefore do not independently establish which exact store/result/detail
+each ambiguous target represented. This is not an accepted replayable business
+unit, and no replay was attempted.
+
+A passive local observer read only the saved source file every 50 ms during
+the manual sample. It retained five distinct source states, with cumulative
+action counts of 1, 14, 21, 24 and 26. The later states were first observed
+about 21.115, 36.652, 53.361 and 71.632 seconds after its initial state.
+Multiple statements arrived in each saved revision. Those times describe
+file visibility on the Mac, not touch occurrence: polling resolution does not
+remove Xcode's batching/save delay. They cannot recover individual action
+intervals or validate the requested 5-second and 10-second pauses.
+
+The final Swift still has no exported timestamps, waits, contact durations or
+sampled touch coordinates. The isolated CLI build contains no `.xcresult`.
+Thus the post-update repeat passes device connectivity and direct physical
+semantic recording, but still does not pass human timing/trajectory capture.
+An independently synchronized screen/event timeline remains necessary for
+cadence comparison; this repeat did not implement or validate that capture.
+
+After the person's completion reply, Xcode's **Stop** was pressed and observed
+disabled, the source was saved, and the workspace was closed. The project test
+was replaced with an unconditional `XCTSkip`. The raw source survives only as
+private plain text alongside the private observation log and summary, outside
+this repository. The observer exited; no `xcodebuild`, relay or candidate
+control process remained. No captured code was rebuilt or replayed, no agent
+business mutation was sent, and batch collection remains paused.
+
 ## Procedure and boundaries
 
 1. Created a separate temporary UI-test project, with a distinct bundle identity,
