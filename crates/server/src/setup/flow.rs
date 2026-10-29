@@ -2154,7 +2154,7 @@ impl Setup {
                     "trust",
                     super::DEVELOPER_TRUST_EN,
                 );
-                return die(&format!("{}\n{}", super::DEVELOPER_TRUST_EN, super::DEVELOPER_TRUST_ZH));
+                return die(format!("{}\n{}", super::DEVELOPER_TRUST_EN, super::DEVELOPER_TRUST_ZH));
             }
             if pid::validate(
                 &self.ctx,
