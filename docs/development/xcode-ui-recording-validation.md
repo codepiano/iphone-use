@@ -156,6 +156,87 @@ mutation was sent, no control service was started, and batch collection remains
 paused. The recorder project/build/cache were isolated from the installed
 control path and the fork's source/build outputs.
 
+## Manual sample versus generated policy (2026-10-30)
+
+This comparison uses the existing synchronized sample and current source only.
+No recording was replayed, no phone service was started, and no pacing or tap
+parameters were changed. The opt-in generated path has not been physically
+measured against this sample. In particular, the requested 5/10/5/3-second
+pauses make this a guided recording, not an unprompted personal behaviour
+baseline. Four interpreted input statements and three intervals cannot fit a
+personal timing distribution, error rate or position/contact model.
+
+### Rhythm
+
+The sample's consecutive visible-transition intervals are 14.403, 9.519 and
+5.818 seconds (first detail/return, results/reopen, second detail/return).
+They vary substantially within this recording, but no claim about the cause
+(reading, familiarity, hesitation or checking) can be established from video.
+They include display response and animation rather than pure decision time.
+
+The controller uses the same `2.0 + U[0,1.5)` second post-verification wait for
+all supported actions, independent of whether the next step reads a detail,
+returns immediately or opens a previously seen page. This is additive pacing,
+not a full dispatch-to-dispatch interval. Each pre/postcondition needs two
+matching snapshots with a one-second polling interval. In an immediately
+stable, zero-network-latency fixture, consecutive input starts therefore include
+the preceding contact duration, one postcondition poll, the pacing wait and one
+next precondition poll: approximately 4.06 to under 5.64 seconds with defaults.
+Real transport, native execution, screen settling and caller/model time add to
+that idealized calculation; slower actual operation is not excluded.
+
+An offline virtual-clock calculation ran a copied controller with the real
+external planner 0.4.0, a fake phone object, synthetic button geometry, one
+navigation unit and deterministic entropy seed 20261030. No `HttpPhone` was
+instantiated and the fake transport only changed local fixture state. Its four
+generated contacts lasted 92, 74, 133 and 98 ms; consecutive virtual dispatch
+gaps were 4.421629, 4.574642 and 4.750743 seconds. These values illustrate the
+current policy, not observed phone timings or measured human coordinates.
+The manual visual intervals and virtual dispatch gaps have different measurement
+bases; no speed ratio, significance test or claimed behavioural match is derived.
+
+There are also explicit task-boundary rules: at least ten seconds between
+completed items, and thirty additional seconds every third completed item.
+The recording contains two visits to one venue and no completed collection
+items, so it provides no evidence to validate those round/break settings.
+
+### Click method and unsupported comparisons
+
+| Dimension | Manual recording evidence | Current opt-in generated policy |
+| --- | --- | --- |
+| Gesture grouping | Xcode interprets three taps and one double-tap; final return is visible, exact touch count unresolved | One contact per tap, one down/up pair; no spontaneous double-tap, noise input or automatic retry |
+| Landing point | Not captured; three inputs target a generic window in generated source | Fresh unique target; center-biased random landing within 15% inset |
+| Contact duration | Not measured by source or ordinary screen video | Default 60–140 ms; varies per action seed |
+| Contact drift | No raw coordinate samples | At most one logical point by default; may be stationary |
+| Behaviour after input | Video establishes page changes; it does not reveal the person's internal decision rule | Two unchanged snapshots and explicit anchors; uncertainty latches paused |
+
+The current generator already avoids a mandatory exact-center landing, but its
+position/duration/drift distributions are engineering presets. This recording
+cannot tell whether they match the person's hand. A finger moving between
+buttons above the glass is not an on-screen contact trajectory; adding a
+screen drag between unrelated tap targets would change the interaction.
+
+For context, the installed original PUA's ordinary selector path calls the
+element `/click`, and coordinate taps call `/wda/tap` with supplied coordinates.
+Those paths do not explicitly apply this planner's per-action position/contact
+variation. The source computes target centers for suggested tap points and
+preview bookkeeping, which alone does not prove the native `/click` always
+lands at that exact center. The separate preview-pointer path has a fixed
+50-ms contact, but that is not the ordinary agent tap path and is not used as
+its duration baseline here. There is no synchronized original-agent sample in
+this recording, so its actual cadence or touch duration is not reconstructed.
+
+The clearest design difference is **role-independent wait rules versus the
+different visible intervals in this guided unit**. A future calibration can
+separately describe page readiness, explicit task-required dwell and actions
+that need no reading. It should preserve single-delivery/uncertainty handling;
+this result does not justify adding noise, copying the ambiguous double-tap,
+claiming avoidance of platform restrictions or fitting a distribution to this
+single instructed sample. Parameters remain unchanged pending better evidence.
+
+The private offline calculation and its source copy remain outside Git in a
+separate analysis directory. Only this sanitized comparison is committed.
+
 ## Procedure and boundaries
 
 1. Created a separate temporary UI-test project, with a distinct bundle identity,
