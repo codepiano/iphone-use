@@ -93,14 +93,17 @@ Only recover a phone for an unfinished task that authorizes its use. For a
 health check, report status and stop. Run host commands on the daemon's Mac,
 not an unrelated remote MCP client.
 
-1. `target_configured:false` is an unselected target, not proof that connected
+1. `target_configured:false` with `recovery_owner:unconfigured` is an unselected
+   target, not proof that connected
    phones are offline. `phone_instances` lists installed daemon instances,
    not paired phones. Inspect `xcrun devicectl list devices` and run
    `iphone-use doctor` yourself. Match the user's named phone; if several
    targets are plausible, ask which one. Never select by list order.
 2. For a confirmed target, run `IPU_RUNNER_UDID=<UDID> iphone-use setup` (add
    `--instance NAME` for a named instance). Do not change another instance,
-   use `--force`, clear a private hold, or take over another owner. With an
+   use `--force`, clear a private hold, or take over another owner.
+   `recovery_owner:external` means recovery belongs on the owning host; do not
+   configure or restart a local runner for it. With an
    already configured phone, follow `setup_blocked_on`, `next_step` and
    `recovery`; reconnect once only when the task needs it, recovery_owner is
    `daemon`, and no blocker, handoff, or reconnect is in progress.

@@ -1037,7 +1037,7 @@ impl PhoneHandler {
 impl PhoneHandler {
     #[tool(
         annotations(read_only_hint = true, open_world_hint = false),
-        description = "List installed local iPhone instances and their read-only status. This inventory is not a list of paired/connected devices. For an unconfigured target, inspect xcrun devicectl list devices and run iphone-use doctor on the daemon host; ask which phone when ambiguous. Does not start, reconnect or claim a phone. Pass instance in any phone_* call to choose one; omitted instance preserves this MCP server's configured daemon. Missing/invalid instances never fall back to another phone."
+        description = "List installed local iPhone instances and their read-only status. This inventory is not a list of paired/connected devices. For recovery_owner=unconfigured, inspect xcrun devicectl list devices and run iphone-use doctor on the daemon host; ask which phone when ambiguous. Does not start, reconnect or claim a phone. Pass instance in any phone_* call to choose one; omitted instance preserves this MCP server's configured daemon. Missing/invalid instances never fall back to another phone."
     )]
     async fn phone_instances(&self) -> CallToolResult {
         let names = match crate::instances::names() {
@@ -1466,7 +1466,7 @@ impl PhoneHandler {
         backend, target_configured, managed_runner, managed_runner_pending, recovery_owner, \
         device_state, screen_state, runner, runner_actionable, locked, drivable, released, \
         hint, next_step, recovery, setup_blocked_on, setup_phase, and setup_message. Gate actions on drivable=true. \
-        If target_configured=false, phone_instances is only installed instances: inspect \
+        If target_configured=false and recovery_owner=unconfigured, phone_instances is only installed instances: inspect \
         xcrun devicectl list devices and run iphone-use doctor on the daemon host; ask which \
         phone if ambiguous, then IPU_RUNNER_UDID=<UDID> iphone-use setup for the confirmed \
         target only when the task authorizes it. Preserve --instance for named instances. \
@@ -3286,9 +3286,9 @@ impl ServerHandler for PhoneHandler {
                  and pass the chosen instance on every phone_* call. Omitted instance describes only the configured daemon, \
                  never all phones. Explicit unavailable instances fail without fallback. \
                  phone_status — act only when drivable=true. If not, pause screen reads/actions and follow recovery/next_step. \
-                 For target_configured=false, inspect xcrun devicectl list devices and run iphone-use doctor on the daemon host; \
+                 For target_configured=false with recovery_owner=unconfigured, inspect xcrun devicectl list devices and run iphone-use doctor on the daemon host; \
                  ask which device if ambiguous, then IPU_RUNNER_UDID=<UDID> iphone-use setup only for an authorized confirmed target. \
-                 Preserve --instance for named instances; do not take over another owner or bypass privacy/handoff. \
+                 Preserve --instance for named instances; external runners recover on their owning host, never via local setup. Do not take over another owner or bypass privacy/handoff. \
                  For trust/passcode blockers, the person acts on the phone; never ask for their passcode, pause screen reads during entry, \
                  then verify status and resume the original task. Do not loop setup or reconnect; \
                  call phone_reconnect once only when the user's current task needs the phone \

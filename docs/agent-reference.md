@@ -45,7 +45,7 @@ passcode.
 | `released` + `ended_on_phone:true` | The person ended the session on the phone (both volume keys) | Nothing restarts the runner on its own and pre-warm skips it. Ask before acting; the next action or `{"mode":"agent"}` starts it again. |
 | `released` + `runner_parked:true` + `ended_on_phone:false` | The test connection was invalidated or the parked evidence is unknown | Automatic schedules and prewarming stay off. A new explicit request may reconnect. `runner_parked_reason` describes the recorded evidence; it does not assert a human exit or a Wi-Fi cause. |
 
-**First setup and selection.** `target_configured:false` / `recovery_owner:unconfigured`
+**First setup and selection.** `target_configured:false` with `recovery_owner:unconfigured`
 means no target was selected; it does not inventory paired phones. `phone_instances`
 returns installed daemon instances (`scope:installed_daemon_instances`), with each
 available row's `target_configured` and `recovery_owner`. On the daemon's Mac,
@@ -53,7 +53,8 @@ inspect `xcrun devicectl list devices` and run `iphone-use doctor`. If multiple
 phones plausibly match the task, ask which one. For an authorized, confirmed
 target, use `IPU_RUNNER_UDID=<UDID> iphone-use setup` (add `--instance NAME`
 for a named instance). Preserve ownership, private holds and human handoffs;
-never use `--force` as routine recovery. Do not loop setup or reconnect while
+never use `--force` as routine recovery. `recovery_owner:external` must recover
+on the owning host, not through local setup/restart. Do not loop setup or reconnect while
 setup is active. After recovery, check status, re-read the screen and resume
 the original task without replaying an uncertain mutation.
 
