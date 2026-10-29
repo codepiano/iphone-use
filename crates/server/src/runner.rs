@@ -76,6 +76,26 @@ fn bounded_read_query() -> String {
     )
 }
 
+pub enum VolumeButton {
+    Up,
+    Down,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum VolumeButtonOutcome {
+    Unsupported,
+    ScopeChanged,
+    Requested,
+}
+
+/// Pre-dispatch refusal or an acknowledged request; post-dispatch uncertainty is an error.
+#[derive(Debug)]
+pub enum SystemCaptureOutcome {
+    Unsupported,
+    ScopeChanged,
+    Requested(serde_json::Value),
+}
+
 /// A runner endpoint plus a lazily-created session id.
 pub struct RunnerClient {
     base: String, // e.g. "http://192.168.0.190:8100"
@@ -100,6 +120,8 @@ pub struct RunnerClient {
     /// runner). Asked again whenever a new session starts (a new runner).
     device_settle: Option<bool>,
     value_read: bool,
+    volume_buttons: bool,
+    system_capture_request: bool,
     /// The last tree read and when: snapshot-bound actions reuse it instead
     /// of reading the whole tree again (see [`Self::recent_tree`]).
     last_tree: Option<(std::sync::Arc<Vec<ElementRow>>, std::time::Instant)>,
@@ -119,6 +141,7 @@ pub struct RunnerClient {
     /// by the next screen-changing POST.
     settled_frame: Option<(std::sync::Arc<Capture>, std::time::Instant)>,
     settled_frame_generation: u64,
+    observation_scope: Option<std::sync::Arc<dyn Fn() -> bool + Send + Sync>>,
     /// Until when screenshots are not used to judge "settled" (a frame was
     /// slow or failed; see `settle_frame` in http.rs).
     settle_frames_paused_until: Option<std::time::Instant>,
@@ -346,12 +369,15 @@ impl RunnerClient {
             no_alert_at: None,
             device_settle: None,
             value_read: false,
+            volume_buttons: false,
+            system_capture_request: false,
             last_tree: None,
             lite_source: false,
             probe: ProbeMemory::default(),
             full_visibility: full_visibility_requested(),
             settled_frame: None,
             settled_frame_generation: 0,
+            observation_scope: None,
             settle_frames_paused_until: None,
             actionability_budget: ACTIONABILITY_PROBE_BUDGET,
             last_actionable: false,
@@ -703,6 +729,10 @@ impl RunnerClient {
             self.no_alert_at = None;
             self.value_read = serde_json::from_str::<serde_json::Value>(&text).ok()
                 .and_then(|value| value.pointer("/value/capabilities/ipu:valueRead").and_then(serde_json::Value::as_bool)) == Some(true);
+            self.volume_buttons = serde_json::from_str::<serde_json::Value>(&text).ok()
+                .and_then(|value| value.pointer("/value/capabilities/ipu:volumeButtons").and_then(serde_json::Value::as_bool)) == Some(true);
+            self.system_capture_request = serde_json::from_str::<serde_json::Value>(&text).ok()
+                .and_then(|value| value.pointer("/value/capabilities/ipu:systemCaptureRequest").and_then(serde_json::Value::as_bool)) == Some(true);
             self.device_settle = None;
             {
                 let sid = self.session.as_deref().unwrap().to_string();
@@ -966,6 +996,35 @@ impl RunnerClient {
         let response=self.http.get(format!("{}/session/{}/element/{}/value?complete=1",self.base,sid,id))
             .query(&[("max_utf16",max_utf16)]).send_signed(&self.auth).await?;
         ensure_runner_success(response,"GET element value").await
+    }
+
+    /// Request one iOS system capture under a live screen/owner permit;
+    /// an acknowledged request still says nothing about Photos persistence.
+    pub async fn request_system_capture(&mut self, allowed: &(dyn Fn() -> bool + Sync)) -> Result<SystemCaptureOutcome> {
+        if !allowed() { return Ok(SystemCaptureOutcome::ScopeChanged); }
+        let sid = self.ensure_session().await?.to_string();
+        if !self.system_capture_request {
+            return Ok(SystemCaptureOutcome::Unsupported);
+        }
+        let (client, request) = self.post_req(format!("{}/session/{}/ipu/system-capture", self.base, sid))
+            .json(&serde_json::json!({})).build_split();
+        let mut request = request.context("build system capture")?;
+        crate::runner_token::sign_request(&self.auth, &mut request);
+        // Session creation and signing may outlive privacy/owner changes.
+        // Refuse before transport admission, never re-send after admission.
+        if !allowed() { return Ok(SystemCaptureOutcome::ScopeChanged); }
+        let response = crate::timing::execute_timed(client, request).await
+            .context("POST system capture")?;
+        let value = ensure_runner_success(response, "POST system capture").await?;
+        match (value.get("invoked").and_then(serde_json::Value::as_bool), value.get("acknowledged").and_then(serde_json::Value::as_bool)) {
+            (Some(false), Some(false)) => Ok(SystemCaptureOutcome::Unsupported),
+            (Some(true), Some(true)) => Ok(SystemCaptureOutcome::Requested(serde_json::json!({
+                "requested": true, "destination": "iPhone Photos", "saved_verified": false,
+                "verification_scope": "system_capture_request_acknowledged",
+                "hint": "If a full-screen preview is open, inspect it and save that existing image with Done/Save to Photos. Check Photos or its picker; never take another screenshot to finish a pending save."
+            }))),
+            _ => anyhow::bail!("system capture dispatch was not acknowledged; outcome unknown; do not repeat"),
+        }
     }
 
     /// Set a date/option PickerWheel to a target value (issue #23). A `scroll`
@@ -1495,6 +1554,32 @@ impl RunnerClient {
             .context("POST /actions (scroll)")?;
         ensure_runner_success(response, "POST /actions (scroll)").await?;
         Ok(())
+    }
+
+    /// Confirms only the button request, never the audible volume level.
+    /// Scope is checked again after session setup and signing, before admission.
+    pub async fn request_volume_button(
+        &mut self,
+        button: VolumeButton,
+        allowed: &(dyn Fn() -> bool + Sync),
+    ) -> Result<VolumeButtonOutcome> {
+        if !allowed() { return Ok(VolumeButtonOutcome::ScopeChanged); }
+        let sid = self.ensure_session().await?.to_string();
+        if !self.volume_buttons { return Ok(VolumeButtonOutcome::Unsupported); }
+        let name = match button {
+            VolumeButton::Up => "volumeUp",
+            VolumeButton::Down => "volumeDown",
+        };
+        let (client, request) = self
+            .post_req(format!("{}/session/{}/wda/pressButton", self.base, sid))
+            .json(&serde_json::json!({"name": name})).build_split();
+        let mut request = request.context("build volume button request")?;
+        crate::runner_token::sign_request(&self.auth, &mut request);
+        if !allowed() { return Ok(VolumeButtonOutcome::ScopeChanged); }
+        let response = crate::timing::execute_timed(client, request).await
+            .context("POST /wda/pressButton volume")?;
+        ensure_runner_success(response, "POST /wda/pressButton volume").await?;
+        Ok(VolumeButtonOutcome::Requested)
     }
 
     /// Press the Home button on-device (`POST /wda/pressButton` `{name:home}`).
@@ -2224,6 +2309,7 @@ impl RunnerClient {
     /// (a timer, a network load, a person's finger); callers must verify the
     /// element live before acting on it.
     pub fn recent_tree(&self, max_age: Duration) -> Option<std::sync::Arc<Vec<ElementRow>>> {
+        if !self.observation_scope_current() { return None; }
         let (rows, read_at) = self.last_tree.as_ref()?;
         let untouched = self.posted_at.is_none_or(|posted| posted < *read_at);
         (untouched && read_at.elapsed() < max_age).then(|| rows.clone())
@@ -2255,6 +2341,7 @@ impl RunnerClient {
     /// The settled screen, when it is younger than `max_age` and nothing that
     /// changes the screen was sent since it was captured.
     pub fn settled_frame(&self, max_age: Duration) -> Option<std::sync::Arc<Capture>> {
+        if !self.observation_scope_current() { return None; }
         let (frame, at) = self.settled_frame.as_ref()?;
         let untouched = self.posted_at.is_none_or(|posted| posted < *at);
         (untouched && at.elapsed() < max_age).then(|| frame.clone())
@@ -2263,6 +2350,22 @@ impl RunnerClient {
     /// Drop the reusable tree so the next snapshot-bound action reads afresh.
     pub fn forget_tree(&mut self) {
         self.last_tree = None;
+    }
+
+    pub fn bind_observation_scope(&mut self, allowed: std::sync::Arc<dyn Fn() -> bool + Send + Sync>) {
+        self.forget_observations();
+        self.observation_scope = Some(allowed);
+    }
+
+    pub(crate) fn observation_scope_current(&self) -> bool {
+        self.observation_scope.as_ref().is_none_or(|allowed| allowed())
+    }
+
+    /// Discard screen-derived data after the caller's authorization scope changes.
+    pub fn forget_observations(&mut self) {
+        self.last_tree = None;
+        self.settled_frame = None;
+        self.no_alert_at = None;
     }
 
     /// Drop a reused "no alert" answer so the next probe asks runner.
@@ -2383,7 +2486,7 @@ impl RunnerClient {
     /// two runner round trips. Anything POSTed since, or 2 s passing, asks again.
     fn no_alert_known(&self) -> bool {
         const NO_ALERT_REUSE: Duration = Duration::from_secs(2);
-        self.no_alert_at.is_some_and(|at| {
+        self.observation_scope_current() && self.no_alert_at.is_some_and(|at| {
             at.elapsed() < NO_ALERT_REUSE && self.posted_at.is_none_or(|posted| posted < at)
         })
     }
@@ -2483,6 +2586,8 @@ impl RunnerClient {
     pub fn invalidate_session(&mut self) {
         self.session = None;
         self.value_read = false;
+        self.volume_buttons = false;
+        self.system_capture_request = false;
         self.window = None;
         self.no_alert_at = None;
         self.last_tree = None;
@@ -3802,6 +3907,114 @@ mod tests {
         assert_eq!(bounded_move_duration_ms(450), 450);
         assert_eq!(bounded_move_duration_ms(2_000), 2_000);
         assert_eq!(bounded_move_duration_ms(u64::MAX), 2_000);
+    }
+
+    #[test]
+    fn volume_scope_revoked_before_setup_does_not_contact_runner() {
+        let mut client = RunnerClient::new("http://127.0.0.1:1").unwrap();
+        block(async {
+            assert_eq!(client.request_volume_button(VolumeButton::Up, &|| false).await.unwrap(),
+                VolumeButtonOutcome::ScopeChanged);
+        });
+    }
+
+    #[test]
+    fn volume_scope_revoked_during_setup_never_posts_a_button() {
+        use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+        let allowed = Arc::new(AtomicBool::new(true));
+        let revoked = allowed.clone();
+        let (base, task) = mock_runner(2, move |request| {
+            if request.starts_with("POST /session ") {
+                revoked.store(false, Ordering::SeqCst);
+                r#"{"value":{"sessionId":"S","capabilities":{"ipu:volumeButtons":true}}}"#.into()
+            } else {
+                assert!(request.contains("/appium/settings "), "button dispatched after revocation");
+                r#"{"value":null}"#.into()
+            }
+        });
+        let mut client = RunnerClient::new(base).unwrap();
+        block(async {
+            assert_eq!(client.request_volume_button(VolumeButton::Down,
+                &|| allowed.load(Ordering::SeqCst)).await.unwrap(), VolumeButtonOutcome::ScopeChanged);
+        });
+        task.join().unwrap();
+    }
+
+    #[test]
+    fn volume_buttons_require_an_explicit_current_session_capability() {
+        for capabilities in [
+            serde_json::json!({}),
+            serde_json::json!({"ipu:volumeButtons": false}),
+            serde_json::json!({"ipu:volumeButtons": "true"}),
+        ] {
+            let (base, task) = mock_runner(2, move |request| {
+                if request.starts_with("POST /session ") {
+                    serde_json::json!({"value":{"sessionId":"S","capabilities":capabilities}})
+                        .to_string()
+                } else {
+                    assert!(
+                        request.contains("/appium/settings "),
+                        "unsupported button was dispatched: {request}"
+                    );
+                    r#"{"value":null}"#.into()
+                }
+            });
+            let mut client = RunnerClient::new(base).unwrap();
+            // A previously capable session must not leak into a new one.
+            client.volume_buttons = true;
+            client.invalidate_session();
+            block(async {
+                assert_eq!(client.request_volume_button(VolumeButton::Up, &|| true).await.unwrap(), VolumeButtonOutcome::Unsupported);
+            });
+            task.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn volume_buttons_send_exactly_one_native_request_each() {
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let observed = seen.clone();
+        let (base, task) = mock_runner(4, move |request| {
+            if request.starts_with("POST /session ") {
+                return r#"{"value":{"sessionId":"S","capabilities":{"ipu:volumeButtons":true}}}"#
+                    .into();
+            }
+            if !request.contains("/appium/settings ") {
+                assert!(request.starts_with("POST /session/S/wda/pressButton "));
+                let body: serde_json::Value =
+                    serde_json::from_str(request.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+                observed
+                    .lock()
+                    .unwrap()
+                    .push(body["name"].as_str().unwrap().to_string());
+            }
+            r#"{"value":null}"#.into()
+        });
+        let mut client = RunnerClient::new(base).unwrap();
+        block(async {
+            assert_eq!(client.request_volume_button(VolumeButton::Up, &|| true).await.unwrap(), VolumeButtonOutcome::Requested);
+            assert_eq!(client.request_volume_button(VolumeButton::Down, &|| true).await.unwrap(), VolumeButtonOutcome::Requested);
+        });
+        task.join().unwrap();
+        assert_eq!(*seen.lock().unwrap(), ["volumeUp", "volumeDown"]);
+    }
+
+    #[test]
+    fn volume_button_lost_ack_does_not_trigger_a_fallback_or_replay() {
+        let (base, task) = mock_runner(1, |request| {
+            assert!(request.starts_with("POST /session/S/wda/pressButton "));
+            "HTTP/1.1 200 OK\r\nContent-Length: 20\r\nConnection: close\r\n\r\n".into()
+        });
+        let mut client = RunnerClient::new(base).unwrap();
+        client.session = Some("S".into());
+        client.volume_buttons = true;
+        block(async {
+            assert!(client
+                .request_volume_button(VolumeButton::Up, &|| true)
+                .await
+                .is_err());
+        });
+        task.join().unwrap();
     }
 
     fn mock_runner(

@@ -29,6 +29,17 @@ use crate::{client::DaemonClient, types::InputMsg};
 // Parameter types (one struct per tool that takes arguments)
 // ---------------------------------------------------------------------------
 
+/// Parameters for [`PhoneHandler::phone_metrics`].
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MetricsParams {
+    /// Latest runs per section (open/recent), default 5, maximum 20.
+    /// A shared 12 KiB row budget can reduce the number returned further.
+    #[serde(default)]
+    #[schemars(range(min = 1, max = 20))]
+    pub limit: Option<usize>,
+}
+
 /// Parameters for [`phone_tap`].
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -227,7 +238,7 @@ pub struct KeyParams {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ShortcutParams {
-    /// Supported names: `home` (Home Screen) and `spotlight` (search).
+    /// Home, Spotlight, Photos capture (`save_screenshot`), or physical-only `volume_up` / `volume_down`.
     /// App Switcher is unsupported by the device runner.
     pub name: String,
     /// Default true: return what the screen settled to (as on phone_tap).
@@ -1101,6 +1112,72 @@ impl PhoneHandler {
     }
 
     #[tool(
+        annotations(read_only_hint = true, open_world_hint = false),
+        description = "Read task performance aggregates for this MCP client's X-Phone-Owner on the selected instance. \
+        Includes recorded HTTP-call counts, batch/flow usage, stale/unknown outcomes, losses and p50/p95 call latency. \
+        HTTP calls are not model turns or token usage; model_round_trips remains null without a complete declared trace. \
+        Read-only: no phone connection, Runner launch or control lease. Default latest 5 open and recent runs, maximum \
+        20 per section and a shared 12 KiB row budget; omitted counts and truncated state are explicit. Never reconnect \
+        solely for metrics. Global cross-owner loss counters are excluded."
+    )]
+    async fn phone_metrics(&self, Parameters(params): Parameters<MetricsParams>) -> CallToolResult {
+        let limit = params.limit.unwrap_or(5);
+        if !(1..=20).contains(&limit) {
+            return CallToolResult::error(vec![Content::text("limit must be between 1 and 20")]);
+        }
+        let response = match self.daemon.metrics().await {
+            Ok(response) => response,
+            Err(error) => return CallToolResult::error(vec![Content::text(format!("metrics failed: {error:#}"))]),
+        };
+        if !response.ok() { return daemon_read_result(&response); }
+        let Some(body) = response.json.as_ref().filter(|body| body.get("ok").and_then(serde_json::Value::as_bool) == Some(true)) else {
+            return CallToolResult::error(vec![Content::text("metrics response did not contain a valid report")]);
+        };
+        let owner = self.daemon.owner().trim();
+        let mut budget = 12 * 1024;
+        let mut report = serde_json::json!({"ok":true,"owner":owner,
+            "definitions":"Counts cover recorded HTTP calls, not model turns or token usage. A missing or incomplete model trace is not zero round trips. Only this client's owner is included; global loss counters are excluded.",
+            "truncated":false});
+        for section in ["open", "recent"] {
+            let Some(rows) = body.get(section).and_then(serde_json::Value::as_array) else {
+                return CallToolResult::error(vec![Content::text("metrics report is missing its open/recent arrays")]);
+            };
+            let mut ordered = Vec::with_capacity(rows.len());
+            for row in rows {
+                if row.pointer("/key/owner").and_then(serde_json::Value::as_str) != Some(owner) {
+                    return CallToolResult::error(vec![Content::text("metrics report did not match this client's owner; no run data returned")]);
+                }
+                let (Some(start), Some(end), Some(incarnation)) = (
+                    row.get("started_ms").and_then(serde_json::Value::as_u64),
+                    row.get("ended_ms").and_then(serde_json::Value::as_u64),
+                    row.pointer("/key/incarnation").and_then(serde_json::Value::as_u64),
+                ) else {
+                    return CallToolResult::error(vec![Content::text("metrics run is missing its timestamps or identity")]);
+                };
+                ordered.push(((end.max(start), incarnation), row));
+            }
+            ordered.sort_by_key(|(key, _)| std::cmp::Reverse(*key));
+            let mut selected = Vec::new();
+            for (_, row) in ordered.into_iter().take(limit) {
+                let bytes = match serde_json::to_vec(row) {
+                    Ok(bytes) => bytes.len(),
+                    Err(_) => return CallToolResult::error(vec![Content::text("could not encode metrics run")]),
+                };
+                if bytes > budget { break; }
+                budget -= bytes;
+                selected.push(row.clone());
+            }
+            let omitted = rows.len() - selected.len();
+            if omitted > 0 { report["truncated"] = serde_json::json!(true); }
+            report[format!("{section}_omitted")] = serde_json::json!(omitted);
+            report[section] = serde_json::json!(selected);
+        }
+        let mut result = CallToolResult::success(vec![Content::text(report.to_string())]);
+        result.structured_content = Some(report);
+        result
+    }
+
+    #[tool(
         annotations(read_only_hint = true, open_world_hint = true),
         description = "Read all home-screen pages, Dock, folder pages and widget stacks from the paired iPhone without opening folders, swiping, or taking screenshots. Optional page selects one zero-based page to reduce output. Requires a configured physical target reachable through usbmuxd. This metadata read does not require drivable=true or a running XCTest Runner; never reconnect or open Home solely for this read. Page indexes refer to persisted icon state, including hidden/Focus-filtered pages; they are not the visible page-control indexes. Zero-based row/col positions are derived from icon-state order and grid metrics; null positions or positions_complete=false mean unknown, never safe drag coordinates. Contains no pixel coordinates and does not restore or modify a layout. An unreadable device returns an error rather than an empty home screen."
     )]
@@ -1325,8 +1402,12 @@ impl PhoneHandler {
             idempotent_hint = false,
             open_world_hint = true,
         ),
-        description = "Navigate to the iOS Home Screen (home) or Spotlight search (spotlight), leaving the current app or \
-        changing its visible state. Use this for system navigation, phone_key for field keys, or \
+        description = "Use Home (home), Spotlight (spotlight), physical volume buttons (volume_up, volume_down), or request a system screenshot in Photos (save_screenshot). \
+        Volume acknowledgement confirms only a button request, not the volume level; Simulator and older Runners without ipu:volumeButtons refuse before dispatch. \
+        save_screenshot is a mutation, unlike phone_screenshot which only returns image bytes. Its receipt means requested, not saved_verified, and requires ipu:systemCaptureRequest. \
+        If iOS opens a screenshot preview, inspect the system UI and choose Done/Save to Photos for that existing image; never take another screenshot to complete its save. \
+        Check Photos or its picker before claiming it saved. Never replay an uncertain capture or volume request. \
+        Navigation leaves the current app or changes its visible state. Use phone_key for field keys, or \
         phone_run_steps with launch_app for a specific app. Requires phone_status.drivable=true. Names are \
         trimmed and case-insensitive. switcher and other names fail before input is sent; the runner cannot \
         synthesize the App Switcher gesture. observe defaults on and returns the settled screen change. \
@@ -1339,7 +1420,7 @@ impl PhoneHandler {
         self.progress_reset();
         let name = name.trim().to_ascii_lowercase();
         match name.as_str() {
-            "home" | "spotlight" => {
+            "home" | "spotlight" | "save_screenshot" | "volume_up" | "volume_down" => {
                 send_input_observed(&self.daemon, &InputMsg::Shortcut { name }, observe).await
             }
             "switcher" => CallToolResult::error(vec![Content::text(
@@ -1348,7 +1429,7 @@ impl PhoneHandler {
                  supported device action instead",
             )]),
             _ => CallToolResult::error(vec![Content::text(format!(
-                "unsupported shortcut '{name}'; supported: home, spotlight"
+                "unsupported shortcut '{name}'; supported: home, spotlight, save_screenshot, volume_up, volume_down"
             ))]),
         }
     }
@@ -2922,7 +3003,11 @@ fn slim_tools(tools: Vec<rmcp::model::Tool>) -> Vec<rmcp::model::Tool> {
 /// is read by the panel, never the model, and its base64 image must reach
 /// `structuredContent` whole.
 fn finish_result(tool: &str, result: CallToolResult, mode: StructuredMode) -> CallToolResult {
-    if tool == crate::screen::FRAME_TOOL {
+    if tool == "phone_metrics" && result.is_error != Some(true) && matches!(mode, StructuredMode::Slim) {
+        // Metrics has its own row and byte bounds; generic slimming loses the
+        // per-run counters and the loss/unknown fields needed to interpret them.
+        shape_structured(result, StructuredMode::Full)
+    } else if tool == crate::screen::FRAME_TOOL {
         result
     } else {
         shape_structured(result, mode)
@@ -3136,6 +3221,13 @@ fn shape_structured(mut result: CallToolResult, mode: StructuredMode) -> CallToo
             }
             let mut slim = serde_json::Map::new();
             for (key, value) in full {
+                if key == "system_capture" {
+                    let receipt: serde_json::Map<String, serde_json::Value> = ["requested", "saved_verified"]
+                        .into_iter().filter_map(|name| value.get(name).filter(|field| field.is_boolean())
+                            .map(|field| (name.to_string(), field.clone()))).collect();
+                    if !receipt.is_empty() { slim.insert(key.clone(), serde_json::Value::Object(receipt)); }
+                    continue;
+                }
                 let keep = match value {
                     serde_json::Value::String(s) => s.len() <= SLIM_STRING_LIMIT,
                     serde_json::Value::Array(_) | serde_json::Value::Object(_) => false,
@@ -3608,9 +3700,9 @@ pub(crate) fn phone_steps_request(steps: Vec<PhoneStep>) -> Result<serde_json::V
             PhoneStep::Shortcut { name, after_ms } => {
                 validate_after(after_ms)?;
                 let name = name.trim().to_ascii_lowercase();
-                if !matches!(name.as_str(), "home" | "spotlight") {
+                if !matches!(name.as_str(), "home" | "spotlight" | "save_screenshot" | "volume_up" | "volume_down") {
                     return Err(format!(
-                        "steps[{index}] has unsupported shortcut {name:?}; supported: home, spotlight; no action was sent"
+                        "steps[{index}] has unsupported shortcut {name:?}; supported: home, spotlight, save_screenshot, volume_up, volume_down; no action was sent"
                     ));
                 }
                 action_step(serde_json::json!({"type":"shortcut","name":name}), after_ms)
@@ -3913,6 +4005,12 @@ fn with_structure(
         .filter(|value| value.is_object())
         .cloned()
     {
+        let capture_requested = json.pointer("/system_capture/requested").and_then(serde_json::Value::as_bool) == Some(true)
+            || json.get("steps").and_then(serde_json::Value::as_array).is_some_and(|steps|
+                steps.iter().any(|step| step.pointer("/system_capture/requested").and_then(serde_json::Value::as_bool) == Some(true)));
+        if capture_requested {
+            result.content.insert(0, Content::text("System screenshot requested; saving to Photos is not independently verified. If a full-screen preview is open, inspect it and save that existing image with Done/Save to Photos. Check Photos or its picker; do not take another screenshot to finish the pending save."));
+        }
         result.structured_content = Some(json);
     }
     result
@@ -4353,6 +4451,96 @@ mod tests {
         (format!("http://{address}"), task)
     }
 
+    #[test]
+    fn volume_shortcuts_are_sent_to_the_selected_daemon() {
+        for name in ["volume_up", "volume_down"] {
+            let (url, task) = scripted_daemon("200 OK", br#"{"ok":true}"#.to_vec());
+            let result = block(handler_for(&url).phone_shortcut(Parameters(ShortcutParams {
+                name: format!("  {}  ", name.to_uppercase()),
+                observe: Some(false),
+            })));
+            assert_ne!(result.is_error, Some(true), "{}", text_of(&result));
+            task.join().unwrap();
+            let step: PhoneStep =
+                serde_json::from_value(serde_json::json!({"kind":"shortcut","name":name})).unwrap();
+            let request = phone_steps_request(vec![step]).unwrap();
+            assert_eq!(request["steps"][0]["action"]["name"], name);
+        }
+    }
+
+    fn metrics_run(owner: &str, incarnation: u64, end: u64) -> serde_json::Value {
+        serde_json::json!({"key":{"kind":"explicit","owner":owner,
+            "run_id":format!("run-{incarnation}"),"incarnation":incarnation},
+            "started_ms":1,"ended_ms":end,"tool_calls":3,"stored_calls":2,
+            "incomplete":true,"dropped_events":1,"outcome_unknown":1,
+            "model_round_trips":null,"failures":{"runner_error":1}})
+    }
+
+    fn metrics_reply(body: serde_json::Value, limit: Option<usize>) -> CallToolResult {
+        let (url, task) = scripted_daemon("200 OK", serde_json::to_vec(&body).unwrap());
+        let handler = PhoneHandler::new(DaemonClient::new(url, None).with_owner("metrics-owner"));
+        let result = block(handler.phone_metrics(Parameters(MetricsParams { limit })));
+        task.join().unwrap();
+        result
+    }
+
+    #[test]
+    fn metrics_keeps_latest_runs_and_unknown_loss_fields_in_slim_mode() {
+        let result = metrics_reply(serde_json::json!({"ok":true,"open":[
+            metrics_run("metrics-owner",1,10),metrics_run("metrics-owner",3,30),
+            metrics_run("metrics-owner",2,20)],"recent":[],"stats":{"unattributed_events":99}}), Some(1));
+        assert_ne!(result.is_error, Some(true));
+        let slim = finish_result("phone_metrics", result, StructuredMode::Slim);
+        let report = slim.structured_content.unwrap();
+        assert_eq!(report["open"][0]["key"]["run_id"], "run-3");
+        assert_eq!(report["open"][0]["dropped_events"], 1);
+        assert_eq!(report["open"][0]["outcome_unknown"], 1);
+        assert!(report["open"][0]["model_round_trips"].is_null());
+        assert_eq!(report["open_omitted"], 2);
+        assert_eq!(report["truncated"], true);
+        assert!(report.get("stats").is_none());
+    }
+
+    #[test]
+    fn metrics_rejects_other_owner_without_returning_their_run_data() {
+        let result = metrics_reply(serde_json::json!({"ok":true,
+            "open":[metrics_run("private-other-owner",1,10)],"recent":[]}), None);
+        assert_eq!(result.is_error, Some(true));
+        assert!(!text_of(&result).contains("private-other-owner"));
+        assert!(result.structured_content.is_none());
+    }
+
+    #[test]
+    fn metrics_reports_byte_budget_omissions_without_forwarding_oversized_data() {
+        let mut run = metrics_run("metrics-owner",1,10);
+        run["extra"] = serde_json::json!("x".repeat(13 * 1024));
+        let result = metrics_reply(serde_json::json!({"ok":true,"open":[run],"recent":[]}), None);
+        assert_ne!(result.is_error, Some(true));
+        let report = result.structured_content.unwrap();
+        assert_eq!(report["open"], serde_json::json!([]));
+        assert_eq!(report["open_omitted"], 1);
+        assert_eq!(report["truncated"], true);
+    }
+
+    #[test]
+    fn metrics_rejects_malformed_run_identity_instead_of_inventing_timing() {
+        let mut run = metrics_run("metrics-owner",1,10);
+        run.as_object_mut().unwrap().remove("started_ms");
+        let result = metrics_reply(serde_json::json!({"ok":true,"open":[run],"recent":[]}), None);
+        assert_eq!(result.is_error, Some(true));
+        assert!(result.structured_content.is_none());
+    }
+
+    #[test]
+    fn metrics_invalid_limit_is_rejected_before_contact() {
+        let handler = handler_for("http://127.0.0.1:1");
+        for limit in [0, 21] {
+            let result = block(handler.phone_metrics(Parameters(MetricsParams { limit:Some(limit) })));
+            assert_eq!(result.is_error, Some(true));
+            assert!(text_of(&result).contains("limit must be"));
+        }
+    }
+
     fn handler_for(url: &str) -> PhoneHandler {
         PhoneHandler::new(DaemonClient::new(url.to_string(), None))
     }
@@ -4404,6 +4592,39 @@ mod tests {
         assert_eq!(structured["settle"]["captures"], 2);
         assert_eq!(structured["delta"]["added"][0], "搜索");
         assert_eq!(structured["snapshot"], "snap-1");
+    }
+
+    #[test]
+    fn system_capture_mcp_preserves_unverified_save_and_explicit_notice() {
+        let (url, task) = scripted_daemon("200 OK", br#"{"ok":true,"transport":"runner","system_capture":{"requested":true,"destination":"iPhone Photos","saved_verified":false}}"#.to_vec());
+        let handler = handler_for(&url);
+        let result = block(handler.phone_shortcut(Parameters(ShortcutParams {
+            name: " SAVE_SCREENSHOT ".into(), observe: Some(false),
+        })));
+        task.join().unwrap();
+        assert_ne!(result.is_error, Some(true));
+        assert!(text_of(&result).contains("not independently verified"));
+        assert_eq!(result.structured_content.unwrap()["system_capture"]["saved_verified"], false);
+    }
+
+    #[test]
+    fn system_capture_receipt_survives_default_structured_slim() {
+        let (url, task) = scripted_daemon("200 OK", br#"{"ok":true,"system_capture":{"requested":true,"saved_verified":false,"image":"PRIVATE","asset":"PRIVATE"}}"#.to_vec());
+        let result = block(handler_for(&url).phone_shortcut(Parameters(ShortcutParams {
+            name: "save_screenshot".into(), observe: Some(false),
+        })));
+        task.join().unwrap();
+        let shaped = shape_structured(result, StructuredMode::Slim);
+        let structured = shaped.structured_content.unwrap();
+        assert_eq!(structured["system_capture"], serde_json::json!({"requested":true,"saved_verified":false}));
+        assert!(!structured.to_string().contains("PRIVATE"));
+    }
+
+    #[test]
+    fn system_capture_batch_validation_accepts_explicit_mutation() {
+        let step: PhoneStep = serde_json::from_value(serde_json::json!({"kind":"shortcut","name":"save_screenshot"})).unwrap();
+        let request = phone_steps_request(vec![step]).unwrap();
+        assert_eq!(request["steps"][0]["action"]["name"], "save_screenshot");
     }
 
     /// With `observe:false` the result stays the short string callers
@@ -4778,7 +4999,7 @@ mod tests {
 
     /// The tools that only read: no phone input, no outward-facing writes.
     /// `IPHONE_USE_MCP_TOOLS=readonly` exposes exactly these.
-    const READ_ONLY_TOOLS: [&str; 14] = [
+    const READ_ONLY_TOOLS: [&str; 15] = [
         "phone_apps",
         "phone_capabilities",
         "phone_crashes",
@@ -4788,6 +5009,7 @@ mod tests {
         "phone_flow_list",
         "phone_home_layout",
         "phone_instances",
+        "phone_metrics",
         "phone_read_value",
         "phone_screen",
         "phone_screen_frame",

@@ -9034,12 +9034,30 @@ fn locator_runner_query(locator: &AgentElementLocator) -> Option<(&'static str, 
     (!clauses.is_empty()).then(|| ("predicate string", clauses.join(" AND ")))
 }
 
+fn is_capture_or_volume(value: &serde_json::Value) -> bool {
+    value.get("type").and_then(serde_json::Value::as_str) == Some("shortcut")
+        && value.get("name").and_then(serde_json::Value::as_str)
+            .is_some_and(|name| matches!(name, "save_screenshot" | "volume_up" | "volume_down"))
+}
+
+fn system_request_private_refusal(state: &AppState, value: &serde_json::Value) -> Option<Response> {
+    (is_capture_or_volume(value) && screen_private_now(&state.private_until)).then(||
+        ControlRefusal::new(StatusCode::LOCKED, "screen_private", false)
+            .with("hint", serde_json::json!("the screen is private; no capture or volume request was sent"))
+            .into_response())
+}
+
+fn capture_scope_refusal() -> RunnerControlOutcome {
+    RunnerControlOutcome::Refused("capture_scope_changed", "screen privacy, control ownership or request lifetime changed; no capture was dispatched")
+}
+
 async fn runner_control_with_client(
     w: &mut crate::runner::RunnerClient,
     actionable: &std::sync::atomic::AtomicBool,
     v: &serde_json::Value,
     detail: &mut Option<serde_json::Value>,
     guard_alert: bool,
+    dispatch_allowed: Option<&(dyn Fn() -> bool + Sync)>,
 ) -> RunnerControlOutcome {
     use std::sync::atomic::Ordering;
     let typ = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
@@ -9303,10 +9321,36 @@ async fn runner_control_with_client(
         "back" => w.back().await,
         "shortcut" => match v.get("name").and_then(|n| n.as_str()) {
             Some("home") => w.press_home().await,
+            Some(name @ ("volume_up" | "volume_down")) => {
+                let button = if name == "volume_up" { crate::runner::VolumeButton::Up } else { crate::runner::VolumeButton::Down };
+                let scope_changed = || RunnerControlOutcome::Refused("volume_scope_changed",
+                    "privacy, control ownership or request lifetime changed; no volume button request was sent");
+                let Some(allowed) = dispatch_allowed else { return scope_changed(); };
+                match w.request_volume_button(button, allowed).await {
+                    Ok(crate::runner::VolumeButtonOutcome::Requested) => Ok(()),
+                    Ok(crate::runner::VolumeButtonOutcome::Unsupported) => return RunnerControlOutcome::Refused("volume_buttons_unsupported",
+                        "volume buttons require a physical device and a capable native Runner; no button request was sent"),
+                    Ok(crate::runner::VolumeButtonOutcome::ScopeChanged) => return scope_changed(),
+                    Err(error) => Err(error),
+                }
+            },
             // Spotlight's Search pill acknowledges coordinate taps without
             // always opening. Resolve and click its accessibility element, then
             // verify the search field before reporting success.
             Some("spotlight") => w.open_spotlight().await,
+            Some("save_screenshot") => {
+                let Some(allowed) = dispatch_allowed else { return capture_scope_refusal(); };
+                match w.request_system_capture(allowed).await {
+                    Ok(crate::runner::SystemCaptureOutcome::Requested(receipt)) => {
+                        *detail = Some(serde_json::json!({"system_capture": receipt}));
+                        Ok(())
+                    }
+                    Ok(crate::runner::SystemCaptureOutcome::Unsupported) => return RunnerControlOutcome::Refused("system_capture_unsupported",
+                        "the native Runner cannot request a system screenshot; update it; nothing was captured"),
+                    Ok(crate::runner::SystemCaptureOutcome::ScopeChanged) => return capture_scope_refusal(),
+                    Err(error) => Err(error),
+                }
+            },
             // App switcher: the swipe-up-from-the-home-indicator is a system
             // gesture runner can't synthesize (hardware-verified: from Home it goes
             // Home, from an app the swipe is absorbed — the switcher never opens).
@@ -9979,6 +10023,7 @@ async fn direct_agent_action(
     value: &serde_json::Value,
     detail: &mut Option<serde_json::Value>,
     deadline: tokio::time::Instant,
+    dispatch_allowed: Option<&(dyn Fn() -> bool + Sync)>,
 ) -> RunnerControlOutcome {
     use std::sync::atomic::Ordering;
 
@@ -10160,7 +10205,7 @@ async fn direct_agent_action(
     };
 
     let Some(result) = custom_result else {
-        return runner_control_with_client(w, actionable, value, detail, true).await;
+        return runner_control_with_client(w, actionable, value, detail, true, dispatch_allowed).await;
     };
     match result {
         Ok(()) => {
@@ -10220,6 +10265,7 @@ async fn direct_control(
     if let Err(refused) = claim_phone_owner(&state, &headers) {
         return refused;
     }
+    let capture_scope = ScreenReadScope::capture(&state);
     if state.managed_runner_pending {
         return target_not_configured_response();
     }
@@ -10235,6 +10281,7 @@ async fn direct_control(
             );
         }
     };
+    if let Some(refused) = system_request_private_refusal(&state, &value) { return refused; }
     let deadline = match direct_control_deadline(&value, tokio::time::Instant::now()) {
         Ok(deadline) => deadline,
         Err(ControlFreshnessError::Missing | ControlFreshnessError::Invalid) => {
@@ -10318,12 +10365,14 @@ async fn direct_control(
             None
         };
         *recover(dispatch_marker.lock()) = Some(client.last_post());
+        let dispatch_allowed = || capture_scope.current(&state) && tokio::time::Instant::now() < deadline;
         let outcome = runner_control_with_client(
             &mut client,
             &state.runner_actionable,
             &value,
             &mut detail,
             false,
+            Some(&dispatch_allowed),
         )
         .await;
         Some((outcome, recorded_locator))
@@ -10350,10 +10399,14 @@ async fn direct_control(
             actionable: true,
             locked,
         };
+        let mut body = serde_json::json!({"ok":true});
+        if let Some(capture) = detail.as_ref().and_then(|value| value.get("system_capture")) {
+            body["system_capture"] = capture.clone();
+        }
         return with_security_headers(
             Response::builder()
                 .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(r#"{"ok":true}"#))
+                .body(Body::from(body.to_string()))
                 .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
         );
     }
@@ -11048,9 +11101,9 @@ fn validate_agent_action_value(
             if !action
                 .get("name")
                 .and_then(serde_json::Value::as_str)
-                .is_some_and(|name| matches!(name, "home" | "spotlight"))
+                .is_some_and(|name| matches!(name, "home" | "spotlight" | "save_screenshot" | "volume_up" | "volume_down"))
             {
-                return invalid("shortcut must be home or spotlight");
+                return invalid("shortcut must be home, spotlight, save_screenshot, volume_up or volume_down");
             }
         }
         "drag" if action.contains_key("points") => {
@@ -11787,6 +11840,7 @@ async fn agent_wait_elements(
         Ok(Err(first_error)) => {
             // Source reads are idempotent. A WebView transition can invalidate
             // one runner session, so rebuild once within the same wait deadline.
+            if !w.observation_scope_current() { return Err(AgentWaitReadError::TimedOut); }
             w.invalidate_session();
             match tokio::time::timeout_at(deadline, w.elements()).await {
                 Ok(Ok(rows)) => Ok(rows),
@@ -11922,25 +11976,23 @@ fn private_batch_refusal_with_steps(index: usize, completed: usize, applied: usi
         "not_sent", applied == 0, steps, None)
 }
 
+fn batch_needs_private_scope(request: &AgentActionsRequest) -> bool {
+    request.observe || request.steps.iter().any(|step|
+        matches!(step, AgentActionStep::WaitFor { .. })
+            || matches!(step, AgentActionStep::Action { action, .. } if is_capture_or_volume(action)))
+}
+
 async fn agent_actions_inner(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     body: String,
 ) -> Response {
     let generation = state.privacy_epoch.load(std::sync::atomic::Ordering::Acquire);
-    let observes_screen = serde_json::from_str::<AgentActionsRequest>(&body).ok().is_some_and(|request|
-        request.observe || request.steps.iter().any(|step| matches!(step, AgentActionStep::WaitFor { .. })));
-    let mut response = agent_actions_generation(State(state.clone()), headers, body, generation).await;
-    if observes_screen && !refused_as_unauthenticated(&response) {
-        response.extensions_mut().insert(BatchPrivacyFence {
-            private_until: state.private_until.clone(), epoch: state.privacy_epoch.clone(), generation,
-        });
-    }
-    response
+    agent_actions_generation(State(state), headers, body, generation).await
 }
 
-fn batch_privacy_revoked(state: &AppState, observes_screen: bool, generation: u64) -> bool {
-    observes_screen && (screen_private_now(&state.private_until)
+fn batch_privacy_revoked(state: &AppState, observes_screen: bool, generation: u64, scope: &ScreenReadScope) -> bool {
+    observes_screen && (!scope.current(state) || screen_private_now(&state.private_until)
         || state.privacy_epoch.load(std::sync::atomic::Ordering::Acquire) != generation)
 }
 
@@ -11968,6 +12020,21 @@ async fn agent_actions_generation(
         Ok(true) => prewarm_on_new_lease(&state, &headers),
         Ok(false) => {}
     }
+    let mut capture_scope = ScreenReadScope::capture(&state);
+    capture_scope.privacy_epoch = privacy_generation;
+    let observes_screen = serde_json::from_str::<AgentActionsRequest>(&body).ok()
+        .is_some_and(|request| batch_needs_private_scope(&request));
+    let mut response = agent_actions_scoped(state.clone(), headers, body, privacy_generation, capture_scope.clone()).await;
+    if observes_screen {
+        response.extensions_mut().insert(BatchPrivacyFence { state, scope: capture_scope });
+    }
+    response
+}
+
+async fn agent_actions_scoped(
+    state: Arc<AppState>, headers: HeaderMap, body: String, privacy_generation: u64,
+    capture_scope: ScreenReadScope,
+) -> Response {
     if body.len() > AGENT_ACTIONS_MAX_BODY_BYTES {
         return agent_actions_invalid(format!(
             "request body exceeds {AGENT_ACTIONS_MAX_BODY_BYTES} bytes"
@@ -11980,10 +12047,8 @@ async fn agent_actions_generation(
     if let Err(error) = validate_agent_actions(&request) {
         return agent_actions_invalid(error);
     }
-    let observes_screen = request.observe || request.steps.iter().any(|step| {
-        matches!(step, AgentActionStep::WaitFor { .. })
-    });
-    if batch_privacy_revoked(&state, observes_screen, privacy_generation) {
+    let observes_screen = batch_needs_private_scope(&request);
+    if batch_privacy_revoked(&state, observes_screen, privacy_generation, &capture_scope) {
         return private_batch_refusal(0, 0, 0);
     }
     // `launch_app {"app": …}` becomes a bundle before the first step runs, so
@@ -12056,7 +12121,9 @@ async fn agent_actions_generation(
     // Control priority first: a health probe must not hold the runner while
     // the focus step (or the action after it) waits for it.
     let _priority = state.begin_runner_control();
-    engage_agent_focus(&state, runner, first_launch.flatten(), true).await;
+    let system_request_only = request.steps.iter().any(|step| matches!(step, AgentActionStep::Action { action, .. } if is_capture_or_volume(action)))
+        && !request.steps.iter().any(|step| matches!(step, AgentActionStep::Action { action, .. } if !is_capture_or_volume(action)));
+    if !system_request_only { engage_agent_focus(&state, runner, first_launch.flatten(), true).await; }
     // Long text steps add their typing time (zero for text up to one chunk).
     let typing_allowance: std::time::Duration = request
         .steps
@@ -12084,11 +12151,16 @@ async fn agent_actions_generation(
         }
     };
 
+    let weak_state = Arc::downgrade(&state);
+    let read_scope = capture_scope.clone();
+    w.bind_observation_scope(Arc::new(move ||
+        weak_state.upgrade().is_some_and(|state| read_scope.current(&state))));
+
     let mut completed = 0_usize;
     let mut applied_actions = 0_usize;
     let mut step_results = Vec::with_capacity(request.steps.len());
     for (index, step) in request.steps.iter().enumerate() {
-        if batch_privacy_revoked(&state, observes_screen, privacy_generation) {
+        if batch_privacy_revoked(&state, observes_screen, privacy_generation, &capture_scope) {
             return private_batch_refusal_with_steps(index, completed, applied_actions, &step_results);
         }
         if state.runner_lifecycle.is_transitioning()
@@ -12122,7 +12194,7 @@ async fn agent_actions_generation(
 
         match step {
             AgentActionStep::Action { action, after_ms } => {
-                if let Err(refusal) = guard_foreground(&mut w, action).await {
+                if let Err(refusal) = scoped_observation(&state, &capture_scope, guard_foreground(&mut w, action)).await {
                     let mut body = agent_actions_failure_body(
                         index,
                         completed,
@@ -12150,6 +12222,7 @@ async fn agent_actions_generation(
                 // not be replayed automatically.
                 let post_mark = w.last_post();
                 let mut step_detail = None;
+                let dispatch_allowed = || capture_scope.current(&state) && tokio::time::Instant::now() < batch_deadline;
                 let outcome = match tokio::time::timeout_at(
                     batch_deadline,
                     direct_agent_action(
@@ -12158,6 +12231,7 @@ async fn agent_actions_generation(
                         action,
                         &mut step_detail,
                         batch_deadline,
+                        Some(&dispatch_allowed),
                     ),
                 )
                 .await
@@ -12373,6 +12447,18 @@ async fn agent_actions_generation(
                 }
                 applied_actions += 1;
                 record_activity(&state, &headers, action);
+                let mut receipt = serde_json::json!({
+                    "index": index,
+                    "kind": "action",
+                    "ok": true
+                });
+                if let Some((_, resolved)) = launch_resolutions.iter().find(|(step, _)| *step == index) {
+                    receipt["resolved"] = resolved.clone();
+                }
+                if let Some(capture) = step_detail.as_ref().and_then(|value| value.get("system_capture")) {
+                    receipt["system_capture"] = capture.clone();
+                }
+                step_results.push(receipt);
                 if *after_ms > 0
                     && tokio::time::timeout_at(
                         batch_deadline,
@@ -12381,6 +12467,8 @@ async fn agent_actions_generation(
                     .await
                     .is_err()
                 {
+                    // The action is confirmed even though its requested pause was interrupted.
+                    step_results.last_mut().unwrap()["after_ms_omitted"] = true.into();
                     return agent_actions_failure(
                         StatusCode::GATEWAY_TIMEOUT,
                         index,
@@ -12393,15 +12481,6 @@ async fn agent_actions_generation(
                         None,
                     );
                 }
-                let mut receipt = serde_json::json!({
-                    "index": index,
-                    "kind": "action",
-                    "ok": true
-                });
-                if let Some((_, resolved)) = launch_resolutions.iter().find(|(step, _)| *step == index) {
-                    receipt["resolved"] = resolved.clone();
-                }
-                step_results.push(receipt);
             }
             AgentActionStep::Pause { ms } => {
                 if tokio::time::timeout_at(
@@ -12440,7 +12519,7 @@ async fn agent_actions_generation(
                     wait_started + std::time::Duration::from_millis(*timeout_ms),
                 );
                 if expect.uses_ocr() {
-                    match agent_wait_ocr(&state, &mut w, expect, privacy_generation, wait_deadline, *poll_ms).await {
+                    match scoped_observation(&state, &capture_scope, agent_wait_ocr(&state, &mut w, expect, privacy_generation, wait_deadline, *poll_ms)).await {
                         OcrWait::Matched(observation) => {
                             step_results.push(serde_json::json!({
                                 "index": index,
@@ -12488,7 +12567,7 @@ async fn agent_actions_generation(
                 let probes = if alert_only { None } else { wait_probe_predicates(expect) };
                 let mut probe_misses = 0_u64;
                 loop {
-                    if batch_privacy_revoked(&state, observes_screen, privacy_generation) {
+                    if batch_privacy_revoked(&state, observes_screen, privacy_generation, &capture_scope) {
                         return private_batch_refusal_with_steps(index, completed, applied_actions, &step_results);
                     }
                     attempts += 1;
@@ -12499,7 +12578,7 @@ async fn agent_actions_generation(
                     if let Some(probes) = &probes {
                         let poll = std::time::Duration::from_millis(*poll_ms);
                         if tokio::time::Instant::now() + poll < probe_deadline
-                            && wait_probe_missed(&mut w, probes, probe_deadline).await
+                            && scoped_observation(&state, &capture_scope, wait_probe_missed(&mut w, probes, probe_deadline)).await
                         {
                             probe_misses += 1;
                             let remaining = probe_deadline
@@ -12509,11 +12588,11 @@ async fn agent_actions_generation(
                         }
                     }
                     let read = if alert_only {
-                        agent_wait_alert(&mut w, wait_deadline).await
+                        scoped_observation(&state, &capture_scope, agent_wait_alert(&mut w, wait_deadline)).await
                     } else {
-                        agent_wait_elements(&mut w, wait_deadline).await
+                        scoped_observation(&state, &capture_scope, agent_wait_elements(&mut w, wait_deadline)).await
                     };
-                    if batch_privacy_revoked(&state, observes_screen, privacy_generation) {
+                    if batch_privacy_revoked(&state, observes_screen, privacy_generation, &capture_scope) {
                         return private_batch_refusal_with_steps(index, completed, applied_actions, &step_results);
                     }
                     let rows = match read {
@@ -12647,7 +12726,7 @@ async fn agent_actions_generation(
         completed += 1;
     }
 
-    if batch_privacy_revoked(&state, observes_screen, privacy_generation) {
+    if batch_privacy_revoked(&state, observes_screen, privacy_generation, &capture_scope) {
         return private_batch_refusal_with_steps(completed, completed, applied_actions, &step_results);
     }
     state.touch_activity();
@@ -12667,8 +12746,8 @@ async fn agent_actions_generation(
         // Observation only: the batch's verdict is already fixed above.
         let budget = std::time::Duration::from_millis(AGENT_INPUT_SETTLE_DEFAULT_MS);
         let (observed, report) =
-            settle_and_read_elements(&mut w, budget, DEVICE_SETTLE_DEFAULT_CAP).await;
-        if batch_privacy_revoked(&state, observes_screen, privacy_generation) {
+            scoped_observation(&state, &capture_scope, settle_and_read_elements(&mut w, budget, DEVICE_SETTLE_DEFAULT_CAP)).await;
+        if batch_privacy_revoked(&state, observes_screen, privacy_generation, &capture_scope) {
             return private_batch_refusal_with_steps(completed, completed, applied_actions, &step_results);
         }
         if let Some((snapshot, rows)) = observed {
@@ -12704,8 +12783,8 @@ async fn agent_actions_generation(
             }
         }
         result["settle"] = report.to_json();
-        if let Some(alert) = alert_json(probe_alert(&mut w).await) {
-            result["alert"] = alert;
+        if capture_scope.current(&state) {
+            if let Some(alert) = alert_json(scoped_observation(&state, &capture_scope, probe_alert(&mut w)).await) { result["alert"] = alert; }
         }
     }
     for (key, block) in flow_after_actions(&state, &headers, &recorded_body) {
@@ -12716,15 +12795,15 @@ async fn agent_actions_generation(
     }
     // A person can start a private hold while a read is in flight. Discard
     // every observation, including earlier step text, before returning it.
-    if batch_privacy_revoked(&state, observes_screen, privacy_generation) {
+    if batch_privacy_revoked(&state, observes_screen, privacy_generation, &capture_scope) {
         return private_batch_refusal_with_steps(completed, completed, applied_actions, &step_results);
     }
     agent_actions_json(StatusCode::OK, result)
 }
 
 #[derive(Clone)]
-struct ValueReadScope { epoch: u64, privacy_epoch: u64, owner: Option<String> }
-impl ValueReadScope {
+struct ScreenReadScope { epoch: u64, privacy_epoch: u64, owner: Option<String> }
+impl ScreenReadScope {
     fn capture(state: &AppState) -> Self {
         let owner = recover(state.owner.lock());
         let now = Instant::now();
@@ -12746,14 +12825,26 @@ impl ValueReadScope {
                     .filter(|owner| now.saturating_duration_since(owner.last_seen) < lease)
                     .map(|owner| owner.name.as_str())
         };
+        let privacy_matches = {
+            let until = recover(state.private_until.lock());
+            self.privacy_epoch == state.privacy_epoch.load(std::sync::atomic::Ordering::Acquire)
+                && !until.is_some_and(|until| until > Instant::now())
+        };
         owner_matches
-            && self.privacy_epoch == state.privacy_epoch.load(std::sync::atomic::Ordering::Acquire)
-            && !screen_private_now(&state.private_until)
+            && privacy_matches
             && !state.released.load(std::sync::atomic::Ordering::Acquire)
             && !state.runner_lifecycle.is_transitioning()
     }
 }
-async fn scoped_value_read<T>(state: &AppState, scope: &ValueReadScope, work: impl std::future::Future<Output=T>) -> Option<T> {
+async fn scoped_observation<T>(state: &Arc<AppState>, scope: &ScreenReadScope,
+    work: impl std::future::Future<Output = T>) -> T {
+    let weak = Arc::downgrade(state);
+    let scope = scope.clone();
+    crate::timing::with_request_permit(Arc::new(move ||
+        weak.upgrade().is_some_and(|state| scope.current(&state))), work).await
+}
+
+async fn scoped_value_read<T>(state: &AppState, scope: &ScreenReadScope, work: impl std::future::Future<Output=T>) -> Option<T> {
     tokio::pin!(work);
     loop {
         if !scope.current(state) { return None; }
@@ -12766,7 +12857,7 @@ async fn scoped_value_read<T>(state: &AppState, scope: &ValueReadScope, work: im
 #[derive(Clone)]
 struct ValueReadFence {
     state: Arc<AppState>,
-    scope: ValueReadScope,
+    scope: ScreenReadScope,
 }
 fn value_scope_failure() -> serde_json::Value {
     serde_json::json!({"ok":false,"error":"value_read_scope_changed","value_omitted":true,"hint":"The value was withheld after owner/privacy changed; check current status before a fresh read"})
@@ -12784,7 +12875,7 @@ async fn agent_value(
     headers: HeaderMap,
     body: String,
 ) -> Response {
-    let scope = ValueReadScope::capture(&state);
+    let scope = ScreenReadScope::capture(&state);
     match agent_auth(&state, &headers) {
         AgentAuth::Ok => {}
         AgentAuth::Denied => {
@@ -13640,6 +13731,7 @@ async fn read_elements_once(
     w: &mut crate::runner::RunnerClient,
     deadline: tokio::time::Instant,
 ) -> SettleRead {
+    if !w.observation_scope_current() { return SettleRead::Deadline; }
     let rows = match tokio::time::timeout_at(deadline, w.elements()).await {
         Err(_) => return SettleRead::Deadline,
         Ok(Ok(rows)) => rows,
@@ -13677,7 +13769,7 @@ async fn settle_frame(
     // it, and the tree read behind it waits. After one slow or failed frame
     // the settle check stays tree-vs-tree for a while.
     const SLOW_FRAME_BACKOFF: std::time::Duration = std::time::Duration::from_secs(600);
-    if !w.settle_frames_usable() {
+    if !w.observation_scope_current() || !w.settle_frames_usable() {
         return None;
     }
     let cap = std::cmp::min(deadline, tokio::time::Instant::now() + SETTLE_FRAME_CAP);
@@ -13707,20 +13799,23 @@ const SETTLED_FRAME_MAX_SIDE: u32 = 1600;
 /// that screen is gone and there is nothing to keep. The next control
 /// request cancels it (see [`AppState::cancel_settled_frame_prefetch`]).
 fn capture_settled_frame_later(
-    state: &AppState,
+    state: &Arc<AppState>,
     runner: Arc<tokio::sync::Mutex<crate::runner::RunnerClient>>,
     post_mark: Option<std::time::Instant>,
+    scope: ScreenReadScope,
 ) {
     let mut slot = recover(state.settled_frame_prefetch.lock());
     if let Some(previous) = slot.take() {
         previous.abort();
     }
     if screen_private_now(&state.private_until) { return; }
+    let weak_state = Arc::downgrade(state);
     let privacy_epoch = state.privacy_epoch.clone();
     let private_until = state.private_until.clone();
     let generation = privacy_epoch.load(std::sync::atomic::Ordering::Acquire);
     let task = tokio::spawn(async move {
         let mut w = runner.lock().await;
+        if !weak_state.upgrade().is_some_and(|state| scope.current(&state)) { return; }
         if privacy_epoch.load(std::sync::atomic::Ordering::Acquire) != generation || screen_private_now(&private_until) { return; }
         w.fence_settled_frame(generation);
         if w.last_post() != post_mark || w.settled_frame(SETTLED_FRAME_MAX_AGE).is_some() {
@@ -13731,9 +13826,12 @@ fn capture_settled_frame_later(
         // is megabytes the 3 s budget may not carry.
         let shot = crate::runner::ShotRequest::jpeg(Some(SETTLED_FRAME_MAX_SIDE));
         let budget = std::time::Duration::from_secs(3);
-        if let Ok(Ok(frame)) = tokio::time::timeout(budget, w.screenshot_sized(shot, budget)).await
+        let Some(state) = weak_state.upgrade() else { return; };
+        if let Ok(Ok(frame)) = tokio::time::timeout(budget,
+            scoped_observation(&state, &scope, w.screenshot_sized(shot, budget))).await
         {
-            if w.last_post() == post_mark && is_valid_capture(&frame)
+            if weak_state.upgrade().is_some_and(|state| scope.current(&state))
+                && w.last_post() == post_mark && is_valid_capture(&frame)
                 && privacy_epoch.load(std::sync::atomic::Ordering::Acquire) == generation && !screen_private_now(&private_until) {
                 w.remember_settled_frame(frame);
             }
@@ -13781,6 +13879,7 @@ async fn settle_on_device(
     }
     // The runner answers within its budget, but the HTTP call allows 3 s
     // more for transport: never past the observation's own deadline.
+    if !w.observation_scope_current() { return None; }
     let device = tokio::time::timeout_at(deadline, w.device_settle(device_budget, QUIET, MIN_WAIT))
         .await
         .ok()
@@ -14092,6 +14191,7 @@ async fn agent_input_inner(
     if let Err(refused) = claim_phone_owner(&state, &headers) {
         return refused;
     }
+    let capture_scope = ScreenReadScope::capture(&state);
     // App install via CoreDevice (`agent_install`): checked on every
     // platform, installed on macOS.
     if body.contains("install") {
@@ -14259,6 +14359,7 @@ async fn agent_input_inner(
     if let Err(response) = reject_invalid_open_url(&value) {
         return response;
     }
+    if let Some(refused) = system_request_private_refusal(&state, &value) { return refused; }
     let mut value = value;
     fresh_launch_while_recording(&state, &mut value);
     match resolve_launch_app_action(&state, &mut value).await {
@@ -14296,7 +14397,9 @@ async fn agent_input_inner(
     // the focus step (or the action after it) waits for it.
     let _priority = state.begin_runner_control();
     let focus_started = tokio::time::Instant::now();
-    engage_agent_focus(&state, runner, crate::focus::launch_bundle(&value), true).await;
+    if !is_capture_or_volume(&value) {
+        engage_agent_focus(&state, runner, crate::focus::launch_bundle(&value), true).await;
+    }
     // A long text gets its typing time on top (zero for text up to one chunk),
     // so the per-chunk timeouts, not this deadline, decide how it ends.
     let agent_runner_deadline = agent_runner_deadline
@@ -14350,15 +14453,19 @@ async fn agent_input_inner(
         {
             return None;
         }
-        unlock_before_action(&state, &mut client, agent_runner_deadline).await;
+        if !is_capture_or_volume(&value) {
+            unlock_before_action(&state, &mut client, agent_runner_deadline).await;
+        }
         *recover(dispatch_marker.lock()) = Some(client.last_post());
         let mut detail = None;
+        let dispatch_allowed = || capture_scope.current(&state) && tokio::time::Instant::now() < agent_runner_deadline;
         let outcome = direct_agent_action(
             &mut client,
             &state.runner_actionable,
             &value,
             &mut detail,
             agent_runner_deadline,
+            Some(&dispatch_allowed),
         )
         .await;
         Some((client, outcome, detail))
@@ -14379,7 +14486,7 @@ async fn agent_input_inner(
     // `settle_ms` and what is left of the endpoint deadline.
     let mut settled = None;
     let mut alert = None;
-    if want_delta && outcome == RunnerControlOutcome::Applied {
+    if want_delta && outcome == RunnerControlOutcome::Applied && capture_scope.current(&state) {
         // The observation's clock starts HERE, after the action is
         // confirmed — it is not carved out of what the action left of its
         // own deadline. Otherwise a slow action silently eats the
@@ -14398,7 +14505,11 @@ async fn agent_input_inner(
         } else {
             DEVICE_SETTLE_DEFAULT_CAP
         };
-        let (observed, report) = settle_and_read_elements(&mut client, budget, device_cap).await;
+        let weak_state = Arc::downgrade(&state);
+        let read_scope = capture_scope.clone();
+        client.bind_observation_scope(Arc::new(move ||
+            weak_state.upgrade().is_some_and(|state| read_scope.current(&state))));
+        let (observed, report) = scoped_observation(&state, &capture_scope, settle_and_read_elements(&mut client, budget, device_cap)).await;
         settled = Some((
             observed.map(|(snapshot, rows)| (snapshot, Arc::new(rows))),
             report,
@@ -14408,17 +14519,26 @@ async fn agent_input_inner(
         // Bounded by its own hard 1.5s cap (see `probe_alert`), which is
         // what the client's timeout budgets for on top of the action
         // deadline and the observation budget.
-        alert = probe_alert(&mut client).await;
+        if capture_scope.current(&state) { alert = scoped_observation(&state, &capture_scope, probe_alert(&mut client)).await; }
     }
     // The settled screen is ready for a screenshot request without a capture:
     // the settle check kept its frame, or — when it judged by the tree (a
     // focused text field, a screen that kept moving) — one is taken now, after
     // the response is on its way, while the agent reads it.
+    let observation_read = settled.is_some();
+    if observation_read && !capture_scope.current(&state) {
+        client.forget_observations();
+        state.cancel_settled_frame_prefetch();
+        recover(state.element_snapshots.lock()).clear();
+        recover(state.owner_snapshots.lock()).clear();
+        settled = None;
+        alert = None;
+    }
     let frame_needed = settled.is_some() && client.settled_frame(SETTLED_FRAME_MAX_AGE).is_none();
     let post_mark = client.last_post();
     drop(client);
     if frame_needed {
-        capture_settled_frame_later(&state, Arc::clone(runner), post_mark);
+        capture_settled_frame_later(&state, Arc::clone(runner), post_mark, capture_scope.clone());
     }
     match outcome {
         RunnerControlOutcome::Applied => {
@@ -14503,16 +14623,31 @@ async fn agent_input_inner(
             };
             let body = attach_alert(body, alert);
             let mut blocks = flow_after_input(&state, &headers, &value);
+            if let Some(capture) = detail.as_ref().and_then(|value| value.get("system_capture")) {
+                blocks.push(("system_capture", capture.clone()));
+            }
             if let Some(block) = recover(state.agent_focus.lock()).take_notice() {
                 blocks.push(("agent_focus", block));
             }
             let body = attach_flow_blocks(body, blocks);
-            with_security_headers(
+            let mut fallback = serde_json::json!({"ok":true,"transport":"runner",
+                "retry_safe":false,"observation_omitted":true,"delta_error":"observation_unavailable"});
+            if let Some(capture) = detail.as_ref().and_then(|value| value.get("system_capture")) {
+                fallback["system_capture"] = serde_json::json!({
+                    "requested":capture.get("requested"),"saved_verified":capture.get("saved_verified")});
+            }
+            let mut response = with_security_headers(
                 Response::builder()
                     .header(header::CONTENT_TYPE, "application/json")
                     .body(Body::from(body))
                     .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
-            )
+            );
+            if observation_read {
+                response.extensions_mut().insert(ActionObservationFence {
+                    state: state.clone(), scope: capture_scope.clone(), fallback,
+                });
+            }
+            response
         }
         RunnerControlOutcome::NotSent => {
             mark_runner_read_path_unactionable(&state);
@@ -16184,10 +16319,16 @@ fn finish_private_read(state: &AppState, generation: u64, response: Response) ->
 }
 
 #[derive(Clone)]
+struct ActionObservationFence {
+    state: Arc<AppState>,
+    scope: ScreenReadScope,
+    fallback: serde_json::Value,
+}
+
+#[derive(Clone)]
 struct BatchPrivacyFence {
-    private_until: Arc<Mutex<Option<Instant>>>,
-    epoch: Arc<std::sync::atomic::AtomicU64>,
-    generation: u64,
+    state: Arc<AppState>,
+    scope: ScreenReadScope,
 }
 
 #[derive(Clone)]
@@ -16201,6 +16342,31 @@ struct ReadPrivacyFence {
 /// fence or lose its fixed-size timing/metrics enrichment before it is installed.
 async fn privacy_read_body_layer(request: axum::extract::Request, next: axum::middleware::Next) -> Response {
     let response = next.run(request).await;
+    if let Some(fence) = response.extensions().get::<ActionObservationFence>().cloned() {
+        let (mut parts, body) = response.into_parts();
+        let bytes = match axum::body::to_bytes(body, 2 << 20).await {
+            Ok(bytes) => bytes,
+            Err(_) => return json_response(StatusCode::OK, fence.fallback),
+        };
+        parts.headers.remove(header::CONTENT_LENGTH);
+        let stream = futures_util::stream::once(async move {
+            let bytes = if fence.scope.current(&fence.state) { bytes } else {
+                let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or(fence.fallback);
+                if let Some(snapshot) = value.get("snapshot").and_then(serde_json::Value::as_str) {
+                    let mut owners = recover(fence.state.owner_snapshots.lock());
+                    if let Some(owner) = fence.scope.owner.as_ref() {
+                        if owners.get(owner).is_some_and(|id| id == snapshot) { owners.remove(owner); }
+                    }
+                    if !owners.values().any(|id| id == snapshot) {
+                        recover(fence.state.element_snapshots.lock()).retain(|(id, _)| id != snapshot);
+                    }
+                }
+                bytes::Bytes::from(crate::observation::redact(value, "authorization_scope_changed").to_string())
+            };
+            Ok::<_, std::io::Error>(bytes)
+        });
+        return Response::from_parts(parts, Body::from_stream(stream));
+    }
     if let Some(fence) = response.extensions().get::<BatchPrivacyFence>().cloned() {
         let (mut parts, body) = response.into_parts();
         let bytes = match axum::body::to_bytes(body, 2 << 20).await {
@@ -16210,8 +16376,7 @@ async fn privacy_read_body_layer(request: axum::extract::Request, next: axum::mi
         };
         parts.headers.remove(header::CONTENT_LENGTH);
         let stream = futures_util::stream::once(async move {
-            let revoked = fence.epoch.load(std::sync::atomic::Ordering::Acquire) != fence.generation
-                || screen_private_now(&fence.private_until);
+            let revoked = !fence.scope.current(&fence.state);
             let bytes = if revoked {
                 let value = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
                 bytes::Bytes::from(crate::observation::redact_batch(value).to_string())
@@ -20619,7 +20784,8 @@ mod tests {
                             &actionable,
                             &action,
                             &mut detail,
-                            tokio::time::Instant::now() + std::time::Duration::from_secs(5)
+                            tokio::time::Instant::now() + std::time::Duration::from_secs(5),
+                            None,
                         ));
                         let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
                         assert_eq!(
@@ -20651,7 +20817,8 @@ mod tests {
                         &actionable,
                         &action,
                         &mut detail,
-                        tokio::time::Instant::now() + std::time::Duration::from_secs(5)
+                        tokio::time::Instant::now() + std::time::Duration::from_secs(5),
+                        None,
                     ));
                     let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
                     assert!(std::future::Future::poll(future.as_mut(), &mut cx).is_ready());
@@ -20687,7 +20854,7 @@ mod tests {
             .split("async fn direct_control(")
             .next()
             .unwrap();
-        assert!(agent.contains("value, detail, true)"));
+        assert!(agent.contains("value, detail, true, dispatch_allowed)"));
     }
     #[test]
     fn scroll_alert_error_keeps_full_json_and_buttons() {
@@ -25815,6 +25982,137 @@ mod tests {
         assert!(started.elapsed() < std::time::Duration::from_secs(1));
     }
 
+    #[test]
+    fn system_capture_capability_and_outcome_contracts() {
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        block(async {
+            // Unsupported/malformed capabilities never reach the capture route;
+            // ACK is request-only, while any post-dispatch ambiguity stays unknown.
+            for (capability, reply, expected, posts) in [
+                (serde_json::Value::Null, r#"{"value":null}"#, RunnerControlOutcome::Refused("system_capture_unsupported", "the native Runner cannot request a system screenshot; update it; nothing was captured"), 0),
+                (serde_json::json!("true"), r#"{"value":null}"#, RunnerControlOutcome::Refused("system_capture_unsupported", "the native Runner cannot request a system screenshot; update it; nothing was captured"), 0),
+                (serde_json::json!(true), r#"{"value":{"invoked":true,"acknowledged":true,"saved_verified":true}}"#, RunnerControlOutcome::Applied, 1),
+                (serde_json::json!(true), r#"{"value":{"invoked":false,"acknowledged":false}}"#, RunnerControlOutcome::Refused("system_capture_unsupported", "the native Runner cannot request a system screenshot; update it; nothing was captured"), 1),
+                (serde_json::json!(true), r#"{"value":{"invoked":true,"acknowledged":false}}"#, RunnerControlOutcome::Failed, 1),
+                (serde_json::json!(true), r#"{"value":{"invoked":true}}"#, RunnerControlOutcome::Failed, 1),
+                (serde_json::json!(true), "HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\n", RunnerControlOutcome::Failed, 1),
+            ] {
+                let calls = Arc::new(AtomicUsize::new(0));
+                let seen = calls.clone();
+                let mut runner = MockRunner::start(move |request| {
+                    if request.starts_with("POST /session ") {
+                        return serde_json::json!({"value":{"sessionId":"SESSION","capabilities":{"ipu:systemCaptureRequest":capability}}}).to_string();
+                    }
+                    if request.starts_with("POST /session/SESSION/ipu/system-capture ") {
+                        seen.fetch_add(1, Ordering::SeqCst);
+                        return reply.to_string();
+                    }
+                    healthy_runner_responder(request)
+                });
+                let mut client = crate::runner::RunnerClient::new(runner.base()).unwrap();
+                let actionable = AtomicBool::new(true);
+                let mut detail = None;
+                let outcome = direct_agent_action(&mut client, &actionable,
+                    &serde_json::json!({"type":"shortcut","name":"save_screenshot"}), &mut detail, far_deadline(),
+                    Some(&|| true),
+                ).await;
+                assert_eq!(outcome, expected);
+                assert_eq!(calls.load(Ordering::SeqCst), posts, "capture must never be replayed");
+                if outcome == RunnerControlOutcome::Applied {
+                    let receipt = detail.unwrap();
+                    assert_eq!(receipt["system_capture"]["requested"], true);
+                    assert_eq!(receipt["system_capture"]["saved_verified"], false, "a backend assertion cannot promote ACK to a saved image");
+                }
+                runner.shutdown();
+            }
+        });
+    }
+
+    #[test]
+    fn system_capture_scope_revoked_during_session_setup_never_dispatches() {
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        block(async {
+            let permitted = Arc::new(AtomicBool::new(true));
+            let permission = permitted.clone();
+            let captures = Arc::new(AtomicUsize::new(0));
+            let seen = captures.clone();
+            let mut runner = MockRunner::start(move |request| {
+                if request.starts_with("POST /session ") {
+                    return r#"{"value":{"sessionId":"SESSION","capabilities":{"ipu:systemCaptureRequest":true}}}"#.into();
+                }
+                if request.contains("/appium/settings") { permission.store(false, Ordering::SeqCst); }
+                if request.contains("/ipu/system-capture") { seen.fetch_add(1, Ordering::SeqCst); }
+                healthy_runner_responder(request)
+            });
+            let mut client = crate::runner::RunnerClient::new(runner.base()).unwrap();
+            let actionable = AtomicBool::new(true);
+            let allowed = || permitted.load(Ordering::SeqCst);
+            let result = direct_agent_action(&mut client, &actionable,
+                &serde_json::json!({"type":"shortcut","name":"save_screenshot"}), &mut None, far_deadline(), Some(&allowed)).await;
+            assert!(matches!(result, RunnerControlOutcome::Refused("capture_scope_changed", _)));
+            assert_eq!(captures.load(Ordering::SeqCst), 0);
+            runner.shutdown();
+        });
+    }
+
+    #[test]
+    fn system_capture_private_hold_refuses_even_without_observation() {
+        block(async {
+            let state = readiness_test_state();
+            set_screen_private(&state, true, 60);
+            let response = system_request_private_refusal(&state,
+                &serde_json::json!({"type":"shortcut","name":"save_screenshot"})).unwrap();
+            assert_eq!(response.status(), StatusCode::LOCKED);
+            let (_, body) = read_json_response(response).await;
+            let body = body.unwrap();
+            assert_eq!(body["error"], "screen_private");
+            assert_eq!(body["outcome"], "not_sent");
+            assert_eq!(body["retry_safe"], true);
+            assert!(system_request_private_refusal(&state, &serde_json::json!({"type":"shortcut","name":"home"})).is_none());
+        });
+    }
+
+    #[test]
+    fn system_capture_browser_control_preserves_request_only_receipt() {
+        block(async {
+            let mut runner = MockRunner::start(|request| {
+                if request.starts_with("POST /session ") {
+                    return r#"{"value":{"sessionId":"SESSION","capabilities":{"ipu:systemCaptureRequest":true}}}"#.into();
+                }
+                if request.contains("/ipu/system-capture") {
+                    return r#"{"value":{"invoked":true,"acknowledged":true}}"#.into();
+                }
+                healthy_runner_responder(request)
+            });
+            let mut state = readiness_test_state();
+            Arc::get_mut(&mut state).unwrap().runner = Some(Arc::new(tokio::sync::Mutex::new(
+                crate::runner::RunnerClient::new(runner.base()).unwrap())));
+            let mut headers = HeaderMap::new();
+            headers.insert("x-phone-control", HeaderValue::from_static("1"));
+            let response = direct_control(State(state), headers, serde_json::json!({"type":"shortcut","name":"save_screenshot","ttl_ms":2500}).to_string()).await;
+            assert_eq!(response.status(), StatusCode::OK);
+            let (_, value) = read_json_response(response).await;
+            let value = value.unwrap();
+            assert_eq!(value["system_capture"]["requested"], true);
+            assert_eq!(value["system_capture"]["saved_verified"], false);
+            runner.shutdown();
+        });
+    }
+
+    #[test]
+    fn interrupted_post_action_wait_preserves_capture_receipt() {
+        let steps = vec![serde_json::json!({"index":0,"kind":"action","ok":true,
+            "after_ms_omitted":true,"system_capture":{"requested":true,"saved_verified":false}})];
+        let body = agent_actions_failure_body(0,0,1,"batch_deadline_after_action",
+            "applied",false,&steps,None);
+        let redacted = crate::observation::redact_batch(body);
+        assert_eq!(redacted["steps"][0]["system_capture"]["requested"],true);
+        assert_eq!(redacted["steps"][0]["system_capture"]["saved_verified"],false);
+        assert_eq!(redacted["steps"][0]["after_ms_omitted"],true);
+        assert_eq!(redacted["applied_actions"],1);
+        assert_eq!(redacted["retry_safe"],false);
+    }
+
     // -- long text ----------------------------------------------------------
 
     /// A mock runner that counts `/wda/keys` requests and fails the
@@ -25859,10 +26157,26 @@ mod tests {
                 &serde_json::json!({"type":"text","text":text}),
                 &mut None,
                 far_deadline(),
+                None,
             )
             .await;
             assert_eq!(outcome, RunnerControlOutcome::Applied);
             assert_eq!(keys.load(std::sync::atomic::Ordering::SeqCst), 1);
+            runner.shutdown();
+        });
+    }
+
+    #[test]
+    fn devanagari_long_text_uses_three_bounded_native_requests() {
+        block(async {
+            let (mut runner, keys, _) = counting_keys_runner(0);
+            let mut client = crate::runner::RunnerClient::new(runner.base()).unwrap();
+            let actionable = std::sync::atomic::AtomicBool::new(false);
+            let outcome = direct_agent_action(&mut client, &actionable,
+                &serde_json::json!({"type":"text","text":"क".repeat(500)}),
+                &mut None, far_deadline(), None).await;
+            assert_eq!(outcome, RunnerControlOutcome::Applied);
+            assert_eq!(keys.load(std::sync::atomic::Ordering::SeqCst), 3);
             runner.shutdown();
         });
     }
@@ -25882,6 +26196,7 @@ mod tests {
                 &serde_json::json!({"type":"text","text":text}),
                 &mut None,
                 far_deadline(),
+                None,
             )
             .await;
             assert_eq!(outcome, RunnerControlOutcome::Applied);
@@ -25900,7 +26215,7 @@ mod tests {
             let text = "a".repeat(1000);
             let action = serde_json::json!({"type":"text","text":text});
             let outcome =
-                direct_agent_action(&mut client, &actionable, &action, &mut None, far_deadline())
+                direct_agent_action(&mut client, &actionable, &action, &mut None, far_deadline(), None)
                     .await;
             assert_eq!(
                 outcome,
@@ -25937,6 +26252,7 @@ mod tests {
                 &serde_json::json!({"type":"text","text":"a".repeat(600)}),
                 &mut None,
                 soon,
+                None,
             )
             .await;
             assert_eq!(outcome, RunnerControlOutcome::NotSent);
@@ -25991,6 +26307,7 @@ mod tests {
                 &serde_json::json!({"type":"scroll","x":0.5,"y":0.5,"dx":0,"dy":80}),
                 &mut detail,
                 far_deadline(),
+                None,
             )
             .await;
             assert_eq!(outcome, RunnerControlOutcome::RunnerRejected);
@@ -26033,6 +26350,7 @@ mod tests {
                 &serde_json::json!({"type":"scroll","x":0.5,"y":0.5,"dx":0,"dy":80}),
                 &mut detail,
                 far_deadline(),
+                None,
             )
             .await;
             assert_eq!(outcome, RunnerControlOutcome::Failed);
@@ -26056,6 +26374,7 @@ mod tests {
                 &serde_json::json!({"type":"scroll","x":0.5,"y":0.5,"dx":0,"dy":80}),
                 &mut detail,
                 far_deadline(),
+                None,
             )
             .await;
             assert_eq!(outcome, RunnerControlOutcome::Failed);

@@ -93,6 +93,10 @@ extension RunnerTests {
       return nil
 
     case "POST":
+      if match(parts, "ipu/system-capture") != nil {
+        defer { IPURBridge.invalidateRequestCache() }
+        return .value(IPURBridge.requestSystemScreenshot())
+      }
       if match(parts, "appium/settings") != nil { return try updateSettings(request) }
       if match(parts, "actions") != nil { return try performActions(request) }
       if match(parts, "elements") != nil { return try findElements(request, from: nil) }
@@ -132,11 +136,18 @@ extension RunnerTests {
   // MARK: - Session
 
   private func capabilities() -> [String: Any] {
-    [
+    #if targetEnvironment(simulator)
+    let volumeButtons = false
+    #else
+    let volumeButtons = true
+    #endif
+    return [
       "device": UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone",
       "sdkVersion": Self.systemVersion,
       "ipu:timedDragPath": true,
       "ipu:valueRead": true,
+      "ipu:volumeButtons": volumeButtons,
+      "ipu:systemCaptureRequest": IPURBridge.systemScreenshotAvailable(),
       "browserName": NSNull(),
       "CFBundleIdentifier": NSNull(),
     ]
@@ -851,8 +862,12 @@ extension RunnerTests {
     default: throw RunnerError.invalidArgument("unsupported button '\(name)'; use home, volumeUp or volumeDown")
     }
     defer { IPURBridge.invalidateRequestCache() }
+    let issuesBefore = recordedIssues.count
     if let exception = IPURBridge.catchException({ XCUIDevice.shared.press(button) }) {
       throw RunnerError.failed("pressButton \(name) failed: \(exception)")
+    }
+    if recordedIssues.count > issuesBefore {
+      throw RunnerError.failed("pressButton \(name) failed: \(recordedIssues.last ?? "unknown issue")")
     }
     return .value(NSNull())
   }
