@@ -564,3 +564,35 @@ fn system_shortcut_setup_cannot_outlive_its_privacy_permission() {
         }
     });
 }
+
+#[test]
+fn fresh_elements_restore_cache_reuse_after_owner_or_privacy_revocation() {
+    block(async {
+        for revoke in ["owner", "privacy"] {
+            let runner = mock_runner(|request, _| Some((Duration::ZERO,
+                if request.contains("/source") {
+                    json!({"value":{"type":"XCUIElementTypeApplication","label":"fresh-cache-fixture",
+                        "rect":{"x":0,"y":0,"width":390,"height":844},"children":[]}}).to_string()
+                } else if request.contains("/window/size") {
+                    json!({"value":{"width":390,"height":844}}).to_string()
+                } else { json!({"value":null}).to_string() }
+            )));
+            let state = build_state_with_runner(runner.url());
+            state.runner.as_ref().unwrap().lock().await.bind_observation_scope(Arc::new(|| false));
+            for round in 0..2 {
+                let response = server::http::router(state.clone()).oneshot(Request::builder()
+                    .uri("/agent/elements?ocr=off").body(Body::empty()).unwrap()).await.unwrap();
+                assert_eq!(response.status(),StatusCode::OK);
+                response.into_body().collect().await.unwrap();
+                assert!(state.runner.as_ref().unwrap().lock().await.recent_tree(Duration::from_secs(10)).is_some(),
+                    "fresh read must restore reusable observations after {revoke}, round {round}");
+                if round == 0 {
+                    if revoke == "owner" { state.owner_epoch.fetch_add(1,std::sync::atomic::Ordering::AcqRel); }
+                    else { hold(state.clone(),true).await; hold(state.clone(),false).await; }
+                    assert!(state.runner.as_ref().unwrap().lock().await.recent_tree(Duration::from_secs(10)).is_none(),
+                        "revocation must still reject the previous tree");
+                }
+            }
+        }
+    });
+}

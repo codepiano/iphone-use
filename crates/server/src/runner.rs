@@ -2357,6 +2357,14 @@ impl RunnerClient {
         self.observation_scope = Some(allowed);
     }
 
+    /// Begin a fresh read after revocation without relabeling any older data.
+    /// A still-current scope retains its reusable observations.
+    pub fn refresh_observation_scope(&mut self, allowed: std::sync::Arc<dyn Fn() -> bool + Send + Sync>) {
+        if self.observation_scope.is_none() || !self.observation_scope_current() {
+            self.bind_observation_scope(allowed);
+        }
+    }
+
     pub(crate) fn observation_scope_current(&self) -> bool {
         self.observation_scope.as_ref().is_none_or(|allowed| allowed())
     }
