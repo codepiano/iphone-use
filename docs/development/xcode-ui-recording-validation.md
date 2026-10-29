@@ -87,6 +87,75 @@ this repository. The observer exited; no `xcodebuild`, relay or candidate
 control process remained. No captured code was rebuilt or replayed, no agent
 business mutation was sent, and batch collection remains paused.
 
+## Synchronized video repeat (2026-10-30)
+
+**Result:** simultaneous QuickTime iPhone-screen capture and Xcode physical UI
+recording worked. For this short sample, manual inspection can associate four
+visible page transitions with four ordered input statements and measure their
+approximate visual cadence. This does not supply raw input timestamps, prove
+every physical touch was recorded, or validate an automatic alignment system.
+
+The person directly performed two result/detail/back cycles for the same venue.
+QuickTime captured the wired phone's **Screen** source, with the phone audio
+source selected rather than the Mac microphone. Video began before Xcode's
+recorder, and both channels were confirmed active before the manual sample.
+The blank probe passed isolated `build-for-testing`; no captured test was run.
+The recording instructions requested approximate pauses, not a calibrated
+external clock or a precise touch-timing ground truth.
+
+The original movie is 74.399617 seconds, 1290 x 2796, H.264, with an average
+rate of about 59.297 fps. Variable frame rate is suspected; the original was
+preserved, and timing analysis uses video presentation times rather than
+frame number divided by 60. The near-silent AAC stereo track is not a usable
+audio sync marker. There is no subtitle track. The media check had no failures
+and reported those three warnings (VFR, near-silent audio, missing subtitles).
+
+After removing query-alternative comments, Xcode exported one app activation
+and four input statements. Scene detection (threshold 3, ratio 1.5, minimum
+scene 0.2 seconds) proposed the following video times. A 16-frame contact sheet
+and additional frame pairs at 34/35, 48/49, 58/59 and 64/65 seconds were inspected
+to confirm the transition identities; the 49-second frame is visibly in the
+return animation, rather than already a stable results page.
+
+| Ordered input statement | Visible transition | Candidate video time | Since preceding transition |
+| --- | --- | ---: | ---: |
+| `element.tap()` (generic window) | Results to venue detail, first visit | ~34.5 s | Not measured from a manual start marker |
+| Back-image `tap()` | Detail to results, first return | ~48.9 s | ~14.4 s |
+| `element.tap()` (generic window) | Results to the same detail, second visit | ~58.4 s | ~9.5 s |
+| `element.doubleTap()` (generic window) | Detail to results, second return | ~64.2 s | ~5.8 s |
+
+These values are scene-change candidates associated by order and visible
+content, not the exact start of an animation or finger-down/up times. They
+include UI response/loading/animation and capture effects, so they do not
+establish pure human dwell time or confirm the nominal requested pauses.
+The initial video segment also contains setup and instruction-reading time;
+its 34.5-second duration is not a five-second pause measurement.
+
+The two generic window taps cannot identify their original physical hit
+coordinates. The final return is interpreted by Xcode as a generic window
+double-tap; the video confirms a return transition, but neither source proves
+the exact tap count, hit position or spacing inside that gesture. No synthetic
+second tap, corrected semantic selector or inferred touch timestamp was added
+to the evidence. This sample supports coarse workflow/cadence comparison only;
+unchanging-screen touches and precise contact trajectories remain unresolved.
+
+The passive source-file observer again saw batched revisions, so its timestamps
+were not substituted for video times. Host start/stop request bounds were saved
+only as supporting local metadata; they are not a calibrated mapping from
+every video PTS to the phone's touch-event clock.
+
+On the person's completion reply, QuickTime was stopped first, then Xcode was
+stopped and observed with its Stop control disabled. The movie was saved to
+private local storage and observed paused, and the Xcode workspace was closed.
+The captured source was archived as `.swift.txt` and the project test replaced
+with unconditional `XCTSkip`; the local observer exited. All raw video, frames,
+source, host timing metadata and private alignment JSON remain outside Git in
+a mode-0700 directory (top-level artifacts mode 0600). Only this sanitized
+report is committed. No device actions were replayed, no automated business
+mutation was sent, no control service was started, and batch collection remains
+paused. The recorder project/build/cache were isolated from the installed
+control path and the fork's source/build outputs.
+
 ## Procedure and boundaries
 
 1. Created a separate temporary UI-test project, with a distinct bundle identity,
