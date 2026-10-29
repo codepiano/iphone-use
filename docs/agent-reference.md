@@ -510,6 +510,13 @@ result. Unknown action outcomes do not trigger this automatic dismissal.
 
 ## Batches first
 
+For repetitive third-party tasks, an opt-in guarded controller takes precedence
+over this throughput guidance. See [Guarded touch execution](development/guarded-touch-execution.md).
+Its `touch_path` action retains all relative sample times, requires a fresh
+snapshot and an exact logical viewport, and runs through the normal agent
+authorization, owner and privacy gates. MCP accepts it as a `phone_run_steps`
+step; the checkpointed Python controller sends one action at a time.
+
 A task should take a few turns, not one per tap. `POST /agent/actions`
 (`phone_run_steps`) runs up to 24 steps under one control lock and stops at the
 first failure; `{"steps":[…], "observe":true}` (MCP: on by default) also

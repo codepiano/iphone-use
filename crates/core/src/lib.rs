@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod control;
 pub mod drag;
+pub mod touch_path;
 pub mod home_layout;
 pub mod env;
 pub mod progress;

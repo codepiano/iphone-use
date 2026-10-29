@@ -1429,6 +1429,21 @@ impl RunnerClient {
         Ok(())
     }
 
+    /// Send exactly one timed contact. The caller has checked the live viewport,
+    /// capability and any snapshot-bound target before calling this method.
+    pub async fn touch_path(&mut self, path: &core::touch_path::Path) -> Result<()> {
+        let actions = path.actions().map_err(|error| anyhow!(error))?;
+        let sid = self.ensure_session().await?.to_string();
+        let response = self.post_req(format!("{}/session/{}/actions", self.base, sid))
+            .timeout(Duration::from_millis(path.total_ms() + 20_000))
+            .json(&serde_json::json!({"actions":[{
+                "type":"pointer", "id":"finger1", "parameters":{"pointerType":"touch"}, "actions":actions
+            }]}))
+            .send_signed(&self.auth).await.context("POST /actions (touch path)")?;
+        ensure_runner_success(response, "POST /actions (touch path)").await?;
+        Ok(())
+    }
+
     /// Press, hold, drag, and release one on-device touch.
     pub async fn drag(
         &mut self,

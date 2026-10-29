@@ -73,8 +73,12 @@ pub fn typing_allowance(text: &str) -> Duration {
     typing_time(chars).mul_f64(1.5) + Duration::from_secs(requests as u64)
 }
 
-/// The extra time a `text` action (or any JSON action) needs; zero otherwise.
+/// Extra explicit contact or typing time above the ordinary request budget.
 pub fn action_allowance(action: &serde_json::Value) -> Duration {
+    if action.get("type").and_then(serde_json::Value::as_str) == Some("touch_path") {
+        return core::touch_path::Path::parse(&action["path"])
+            .map_or(Duration::ZERO, |path| Duration::from_millis(path.total_ms()));
+    }
     if action.get("type").and_then(serde_json::Value::as_str) != Some("text") {
         return Duration::ZERO;
     }
@@ -87,6 +91,15 @@ pub fn action_allowance(action: &serde_json::Value) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn timed_contact_budget_includes_all_holds_and_motion() {
+        let action = serde_json::json!({"type":"touch_path","path":{
+            "viewport":{"width":430,"height":932},
+            "samples":[{"x":20,"y":30,"t_ms":0},{"x":20,"y":40,"t_ms":10000}],
+            "hold_before_ms":3000,"hold_after_ms":3000}});
+        assert_eq!(action_allowance(&action), Duration::from_secs(16));
+    }
 
     fn rejoin(pieces: &[&str]) -> String {
         pieces.concat()

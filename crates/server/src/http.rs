@@ -5383,6 +5383,7 @@ const CAPABILITY_SINGLE_STEP_ACTIONS: &[&str] = &[
     "tap",
     "tap_locator",
     "text",
+    "touch_path",
 ];
 
 /// What agents guess for an action that exists under another name, and the
@@ -5473,6 +5474,7 @@ const CAPABILITY_BATCH_ACTIONS: &[&str] = &[
     "tap",
     "tap_locator",
     "text",
+    "touch_path",
 ];
 
 /// How the caller's `X-Phone-Owner` relates to the current lease.
@@ -5815,6 +5817,13 @@ async fn agent_capabilities(State(state): State<Arc<AppState>>, headers: HeaderM
                 "max_points": core::drag::MAX_POINTS,
                 "max_total_ms": core::drag::MAX_DURATION_MS,
                 "duration_ms": "per_segment",
+            },
+            "touch_path": {
+                "requires_runner_capability": "ipu:timedDragPath",
+                "coordinates": "logical_points_in_exact_live_viewport",
+                "max_samples": core::touch_path::MAX_SAMPLES,
+                "max_total_ms": core::touch_path::MAX_TOTAL_MS,
+                "timing": "per_sample_t_ms",
             },
             "observation": {
                 "return_delta": true,
@@ -7271,6 +7280,71 @@ async fn tap_snapshot_element(
     w.tap_point(x, y)
         .await
         .map_err(SnapshotElementTapError::AfterDispatch)
+}
+
+/// Preserve planner timing without routing around the normal input/lease/privacy
+/// gates. Snapshot-bound taps are checked against a fresh tree, never re-targeted
+/// or replayed after a viewport, occlusion or delivery failure.
+async fn timed_touch_path(
+    w: &mut crate::runner::RunnerClient,
+    value: &serde_json::Value,
+    dispatch_allowed: Option<&(dyn Fn() -> bool + Sync)>,
+) -> Result<(), SnapshotElementTapError> {
+    let path = core::touch_path::Path::parse(&value["path"])
+        .map_err(|_| SnapshotElementTapError::Invalid)?;
+    let (width, height) = w.window_size().await.map_err(SnapshotElementTapError::BeforeDispatch)?;
+    if !path.matches_viewport(width, height) {
+        return Err(SnapshotElementTapError::Refused("viewport_changed",
+            "Planner viewport differs from the live screen; re-observe and re-plan, nothing was sent"));
+    }
+    if !w.supports_timed_drag_path().await.map_err(SnapshotElementTapError::BeforeDispatch)? {
+        return Err(SnapshotElementTapError::Refused("runner_upgrade_required",
+            "Timed contacts require ipu:timedDragPath; no fallback or gesture was sent"));
+    }
+    if value.get("element").is_some() {
+        let (rows, index) = fetch_snapshot_row(w, value).await?;
+        let row = &rows[index];
+        if row.visible == Some(false) || row.enabled == Some(false) {
+            return Err(SnapshotElementTapError::Refused("element_not_interactable",
+                "The planned target is hidden or disabled; nothing was sent"));
+        }
+        let [x, y, width, height] = row.rect;
+        if path.samples.iter().any(|p| p.x < x || p.y < y || p.x > x + width - 1.0 || p.y > y + height - 1.0) {
+            return Err(SnapshotElementTapError::Refused("touch_outside_target",
+                "Every contact sample must stay inside the current target; nothing was sent"));
+        }
+        let end = subtree_end(&rows, index);
+        for (j, cover) in rows.iter().enumerate() {
+            let related = j == index || (j > index && j < end)
+                || (j < index && subtree_end(&rows, j) > index);
+            if related || cover.visible == Some(false)
+                || !OCCLUDER_KINDS.contains(&cover.kind.as_str()) {
+                continue;
+            }
+            let [cx, cy, cw, ch] = cover.rect;
+            let margin = if floating_overlay(cover) { OCCLUDER_MARGIN } else { 0.0 };
+            // A path segment can cross a cover between sampled endpoints. Test
+            // its bounding rectangle too: conservative refusal beats a mis-tap.
+            if path.samples.windows(2).any(|p| p[0].x.min(p[1].x) <= cx + cw + margin
+                && p[0].x.max(p[1].x) >= cx - margin
+                && p[0].y.min(p[1].y) <= cy + ch + margin
+                && p[0].y.max(p[1].y) >= cy - margin) {
+                return Err(SnapshotElementTapError::Refused("element_occluded",
+                    "Planned contact intersects another control; reveal the target and re-observe. Timed contacts do not support an occlusion override"));
+            }
+        }
+    } else {
+        let rows = w.elements().await.map_err(SnapshotElementTapError::BeforeDispatch)?;
+        let current = element_snapshot_id(&rows).map_err(SnapshotElementTapError::BeforeDispatch)?;
+        if value.get("snapshot").and_then(serde_json::Value::as_str) != Some(current.as_str()) {
+            return Err(SnapshotElementTapError::Stale);
+        }
+    }
+    if !dispatch_allowed.is_some_and(|allowed| allowed()) {
+        return Err(SnapshotElementTapError::Refused("capture_scope_changed",
+            "Control scope changed before touch dispatch; nothing was sent"));
+    }
+    w.touch_path(&path).await.map_err(SnapshotElementTapError::AfterDispatch)
 }
 
 /// `{"type":"set_value","element":N,"snapshot":"…","value":"…"}` — write a text
@@ -9365,6 +9439,16 @@ async fn runner_control_with_client(
         // scroll deltas (runner has no scroll-wheel; a delta stream turned into a
         // storm of discrete swipes that kept scrolling after release — issue: the
         // screen "kept moving" after the finger stopped).
+        "touch_path" => {
+            if refuse_scroll_alert(w, guard_alert, detail).await {
+                return RunnerControlOutcome::Refused("alert_present", SCROLL_ALERT_HINT);
+            }
+            let result = timed_touch_path(w, v, dispatch_allowed).await;
+            match snapshot_element_outcome(result, w, "timed touch path") {
+                Ok(result) => result,
+                Err(outcome) => return outcome,
+            }
+        }
         "drag" if v.get("points").is_some() => {
             let path = match core::drag::Path::parse(v) {
                 Ok(path) => path,
@@ -9760,8 +9844,8 @@ fn element_resolution_response(body: &'static str) -> Response {
 /// `/agent/capabilities` advertises and
 /// `capability_catalogue_matches_the_dispatchers` pins to the dispatchers — so
 /// this gate cannot drift into rejecting an action the device can actually
-/// perform. Per-field validation stays exactly where it was: this only decides
-/// whether the action has a name the server knows.
+/// perform. Legacy per-field validation stays where it was. Timed contacts
+/// additionally share the batch validator here, before any Runner probe.
 fn reject_unknown_single_step_action(value: &serde_json::Value) -> Result<(), Response> {
     let named = value
         .get("type")
@@ -9790,6 +9874,13 @@ fn reject_unknown_single_step_action(value: &serde_json::Value) -> Result<(), Re
                 error["hint"] = serde_json::Value::String(hint);
             }
             error
+        }
+        Some("touch_path") => {
+            match value.as_object().map(|action| validate_agent_action_value(action, 0)) {
+                Some(Err(detail)) => serde_json::json!({"ok":false,"error":"invalid_action",
+                    "detail":detail,"outcome":"not_sent","retry_safe":true}),
+                _ => return Ok(()),
+            }
         }
         Some(_) => return Ok(()),
     };
@@ -10296,12 +10387,13 @@ async fn direct_control(
     };
     // Browser controls have a short freshness/acknowledgement deadline. Timed
     // paths belong to the agent endpoints, which budget for the whole gesture.
-    if value.get("type").and_then(serde_json::Value::as_str) == Some("drag")
-        && value.get("points").is_some()
+    if (value.get("type").and_then(serde_json::Value::as_str) == Some("drag")
+        && value.get("points").is_some())
+        || value.get("type").and_then(serde_json::Value::as_str) == Some("touch_path")
     {
         return hinted_control_response(
             StatusCode::UNPROCESSABLE_ENTITY,
-            "drag_path_requires_agent_endpoint",
+            if value["type"] == "touch_path" { "touch_path_requires_agent_endpoint" } else { "drag_path_requires_agent_endpoint" },
             "not_sent",
             "Use /agent/input or /agent/actions for timed drag paths; /control has a short browser deadline",
         );
@@ -11104,6 +11196,20 @@ fn validate_agent_action_value(
                 .is_some_and(|name| matches!(name, "home" | "spotlight" | "save_screenshot" | "volume_up" | "volume_down"))
             {
                 return invalid("shortcut must be home, spotlight, save_screenshot, volume_up or volume_down");
+            }
+        }
+        "touch_path" => {
+            if let Err(hint) = core::touch_path::Path::parse(&action.get("path").cloned().unwrap_or_default()) {
+                return invalid(hint);
+            }
+            if !action.get("snapshot").and_then(serde_json::Value::as_str)
+                .is_some_and(|s| !s.is_empty() && s.len() <= 200)
+                || action.get("element").is_some_and(|e| e.as_u64().is_none()) {
+                return invalid("touch_path needs a fresh snapshot and optional integer element");
+            }
+            if ["x", "y", "x1", "y1", "x2", "y2", "points", "duration_ms", "hold_ms", "allow_occluded"]
+                .iter().any(|key| action.contains_key(*key)) {
+                return invalid("touch_path geometry and timing belong only in path; occlusion cannot be overridden");
             }
         }
         "drag" if action.contains_key("points") => {

@@ -284,6 +284,15 @@ pub struct PhoneHoldPoint {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PhoneStep {
+    /// One timed touch contact in exact logical screen points. Use a planner,
+    /// not screenshot pixels. A snapshot is required; element also binds a tap to its live target.
+    TouchPath {
+        path: serde_json::Value,
+        element: Option<u64>,
+        snapshot: String,
+        #[serde(default)]
+        after_ms: u64,
+    },
     /// Tap normalized screen coordinates. Prefer `tap_locator` (durable in a
     /// saved flow) whenever the target has a label or identifier.
     Tap {
@@ -3576,6 +3585,19 @@ pub(crate) fn phone_steps_request(steps: Vec<PhoneStep>) -> Result<serde_json::V
                     after_ms,
                 )
             }
+            PhoneStep::TouchPath { path, element, snapshot, after_ms } => {
+                validate_after(after_ms)?;
+                iu_core::touch_path::Path::parse(&path)
+                    .map_err(|error| format!("steps[{index}] {error}; no action was sent"))?;
+                if snapshot.is_empty() || snapshot.len() > 200 {
+                    return Err(format!("steps[{index}] touch_path needs a fresh snapshot; no action was sent"));
+                }
+                let mut action = serde_json::json!({"type":"touch_path", "path":path,"snapshot":snapshot});
+                if let Some(element) = element {
+                    action["element"] = serde_json::json!(element);
+                }
+                action_step(action, after_ms)
+            }
             PhoneStep::Drag {
                 x1,
                 y1,
@@ -4231,6 +4253,23 @@ async fn send_input_observed(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn touch_path_steps_keep_timestamps_and_require_snapshot() {
+        let step = serde_json::json!({"kind":"touch_path","snapshot":"fresh","element":1,
+            "path":{"viewport":{"width":430,"height":932},"samples":[
+                {"x":100,"y":200,"t_ms":0},{"x":100,"y":200,"t_ms":100}]}});
+        let encode = |value| phone_steps_request(vec![serde_json::from_value::<PhoneStep>(value).unwrap()]);
+        let result = encode(step.clone()).unwrap();
+        assert_eq!(result["steps"][0]["action"]["type"], "touch_path");
+        assert_eq!(result["steps"][0]["action"]["path"], step["path"]);
+        let mut bad = step.clone();
+        bad["path"]["samples"][1]["t_ms"] = serde_json::json!(0);
+        assert!(encode(bad).is_err());
+        let mut bad = step;
+        bad.as_object_mut().unwrap().remove("snapshot");
+        assert!(serde_json::from_value::<PhoneStep>(bad).is_err());
+    }
+
     #[test]
     fn multi_hold_steps_validate_all_fingers_before_dispatch() {
         let encode = |v| phone_steps_request(vec![serde_json::from_value::<PhoneStep>(v).unwrap()]);

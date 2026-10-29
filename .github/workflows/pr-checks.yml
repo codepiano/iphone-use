@@ -223,6 +223,9 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/test-drag-simulator-verdict.py
+          # Planner code is an optional external dependency; public CI exercises
+          # the independent checkpoint/pacing/transport tests without its source.
+          python3 scripts/test-guarded-phone.py -v
           # Same gate as release-binaries.yml: the installer ships SKILL.md
           # alone, so the skill directory must hold exactly that one file
           # (agent reference lives in docs/agent-reference.md).

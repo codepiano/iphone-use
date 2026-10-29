@@ -25,6 +25,16 @@ curl -s -H "$AUTH" "$HOST/agent/status"             # probe first; on failure fo
 
 ## The loop
 
+For repetitive third-party app work, use the opt-in guarded controller described
+in `docs/development/guarded-touch-execution.md` in a source checkout. It requires
+the external pointer-trajectory 0.4 planner and this fork's `touch_path` endpoint.
+It does not run against an unmodified release. Send one checkpointed action,
+check its result, and independently finish each item before the next. A paused
+checkpoint, visible verification/rate limit, unexpected app or ambiguous outcome
+means stop; do not switch to raw tools, Jev or a saved flow to continue it.
+The throughput-oriented batching advice below does not override that mode.
+No input variation is a promise of avoiding application detection.
+
 1. **Probe.** If the user names a phone or multiple phones are installed, first
    use `phone_instances`, then pass that `instance` on every MCP read/action.
    Omitted instance reports only the configured daemon, never all phones.
