@@ -1473,8 +1473,9 @@ impl PhoneHandler {
         `lock_readiness` says whether the phone locks on its own when idle (passcode_protected, \
         auto_lock_secs, keep_awake, verdict, hint): will_lock_needs_person means a person must \
         unlock it after a pause; tell the owner the hint instead of retrying. \
-        Trust the developer certificate on the iPhone under Settings > General > VPN & Device Management; \
-        this differs from Trust This Computer. A separate passcode/automation prompt may appear later. \
+        For trust, distinguish Trust This Computer pairing from developer-certificate approval \
+        under iPhone Settings > General > VPN & Device Management; use setup_message evidence. \
+        A separate passcode/automation prompt may appear later. \
         needs_passcode_on_phone records a possible authorization requirement, not a confirmed visible prompt. \
         Relay next_step; never request a passcode, pause screenshots/elements during sensitive input, \
         and check status after the person finishes. Do not loop reconnect. \

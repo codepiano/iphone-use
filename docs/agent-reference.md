@@ -210,7 +210,10 @@ KeepAlive keeps the last concrete blocker while it re-checks).
   are not the problem; do not reconnect or run doctor for this.
 - **`proxy`**: an enabled macOS HTTP/HTTPS/SOCKS entry is malformed or points at
   a loopback port with no listener; start that proxy app or disable the stale entry.
-- **`trust`**: on the iPhone, open **Settings > General > VPN & Device Management**,
+- **`trust`**: can mean computer pairing or developer-certificate approval.
+  For **Trust This Computer**, the person unlocks and confirms on the iPhone.
+  If `setup_message` reports an untrusted **Apple Development** certificate,
+  on the iPhone open **Settings > General > VPN & Device Management**,
   select the matching **Apple Development** certificate and trust it. This is
   separate from **Trust This Computer** pairing. If no certificate or prompt
   appears, run doctor and inspect the runner log instead of looping reconnect.

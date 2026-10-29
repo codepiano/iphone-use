@@ -281,6 +281,7 @@ mod tests {
         let output = serde_json::to_value(&status).unwrap();
         assert_eq!(output["locked"], true);
         assert_eq!(output["viewer_count"], 2);
+        assert_eq!(output["recovery"]["cause"], "trust");
         assert_eq!(output["recovery"]["actor"], "person_on_phone");
         assert_eq!(output["recovery"]["pause_screen_reads"], true);
         assert!(output.get("runner_locked").is_none());

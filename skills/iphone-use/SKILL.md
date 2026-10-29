@@ -108,7 +108,10 @@ not an unrelated remote MCP client.
    `recovery`; reconnect once only when the task needs it, recovery_owner is
    `daemon`, and no blocker, handoff, or reconnect is in progress.
 3. While setup is active, inspect progress/status without repeatedly restarting
-   setup. For `trust`, the person uses **iPhone Settings > General > VPN &
+   setup. For `trust`, distinguish computer pairing from certificate approval:
+   the person confirms **Trust This Computer** on the phone if that prompt
+   appears. For an untrusted Apple Development certificate in `setup_message`,
+   the person uses **iPhone Settings > General > VPN &
    Device Management > the matching Apple Development certificate > Trust**.
    This is separate from **Trust This Computer**. If there is no certificate
    or prompt, inspect doctor output and runner logs; do not assume a popup
