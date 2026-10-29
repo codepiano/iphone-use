@@ -178,3 +178,38 @@ the planner, 20 passed and the three planner integration tests explicitly skippe
 The Runner's 274 existing device-independent Swift checks passed, including its
 W3C timing parser, with compiler module caches isolated from running services.
 Neither the private library's implementation nor its repository is modified here.
+
+## First physical acceptance (2026-10-30)
+
+On macOS/iOS 27.2 with Xcode 27.1, a separately signed native Runner and
+locally built fork daemon ran on independent loopback ports/state/build/cache
+directories. The installed PUA service stayed stopped and its configuration was
+not replaced during acceptance. After the person unlocked the phone, fresh
+drivable status and a 430 x 932 logical viewport were observed in Dianping.
+
+The pilot preserved two paused checkpoints rather than bypassing them. One
+input was refused with HTTP 409; the Runner audit for that request contained
+queries only and no touch dispatch. Its error body was not retained, so the
+exact refusal cause is not claimed. A reviewed fresh attempt then applied a
+123-ms planned contact to a home-page venue card. That card opened a ranking
+page, while the pilot had expected a detail page, so postcondition verification
+correctly timed out and paused. The actual page was inspected before planning
+another step; the applied contact was not repeated.
+
+From that observed ranking page, a new navigation unit successfully opened the
+venue detail and returned to the ranking page. Both steps passed independent
+two-snapshot page checks, and the unit's final result was independently checked
+and checkpointed complete. Its planned contacts were 61 and 94 ms with five and
+seven timed samples, respectively, each with a single down/up pair. The detail
+screen was visually inspected and its favorite remained unselected. No favorite,
+purchase, message, recorded replay or batch-collection action was sent.
+
+This accepts fresh target selection, dispatch through the timed-contact route,
+page verification, conservative stops and a bounded real-app navigation unit.
+It does not measure the OS's physical touch-sampling fidelity, prove a personal
+behavioural match, validate long batches or establish avoidance of platform
+restrictions. Wireless operation was not repeated after the system update.
+Raw screenshots, tokens, device identifiers, timing audits and checkpoints stay
+in private local storage outside this repository. The person authorized formal
+integration replacement only after this pilot succeeded; installation and host
+tool loading still require their own delivery verification.
