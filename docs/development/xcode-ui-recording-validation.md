@@ -247,6 +247,87 @@ single instructed sample. Parameters remain unchanged pending better evidence.
 The private offline calculation and its source copy remain outside Git in a
 separate analysis directory. Only this sanitized comparison is committed.
 
+## Untimed sample and recording interference (2026-10-30)
+
+The next sample deliberately prescribed neither a navigation route nor pauses.
+It used an independent blank XCTest project and simultaneous QuickTime screen
+capture. Both recorders were stopped on the person's completion reply; the
+workspace was closed, captured source archived as text, and its test replaced
+with unconditional `XCTSkip`. The private file observer exited as well.
+
+The movie is 103.557650 seconds, 1290 x 2796, H.264, averaging about 57.423 fps
+(suspected VFR). Final Xcode source contains 54 interpreted action statements:
+one activation, 26 taps and 27 directional swipes, with no `doubleTap` statement.
+These are not 53 independently timestamped physical inputs. Two final statements
+became visible in the saved source during the channel-stop interval: QuickTime
+was stopped before Xcode, roughly four seconds apart. They could be buffered or
+outside the video; no complete one-to-one temporal alignment or action rate is
+claimed. The detector's 60 visual scenes likewise are not 60 human gestures;
+scrolling and animation can yield multiple scene boundaries.
+
+One consecutive same-target pair appears as two taps on the **Offers** tab.
+The person explicitly confirmed it was a repeat after the first appeared not
+to respond. Thus a feedback-driven correction can be exported as two separate
+`tap()` statements, not just as `doubleTap()`. Counting only double-tap calls
+would miss this reported case. Neither source nor video establishes its exact
+inter-tap interval or distinguishes a missed target from input/response delay.
+No general repeat/error probability is inferred from this one case.
+
+Crucially, the person reported that swipes travelled noticeably farther during
+recording than in normal use, and that the feel returned to normal after
+recording stopped. **This dual-channel sample is not accepted as an ordinary
+natural-motion/timing baseline.** Its faster/shorter intervals and apparent
+corrections may be influenced by capture conditions. The agent sent no phone
+clicks, text or gestures, but that does not rule out recorder interference.
+The exact mechanism was not established, and further investigation was stopped
+at the person's request.
+
+A short follow-up kept Xcode recording off and used QuickTime alone. The person
+reported normal swipe feel and completed a freely chosen, untimed browse. Its
+original movie is 18.561625 seconds, 1290 x 2796, H.264, averaging about 46.902 fps
+(suspected VFR). It includes leaving/reopening the app, browsing the feed and
+opening/scanning an article. A contact sheet plus six selected frames were
+inspected. For example, the main feed content is broadly unchanged between the
+5.7- and 9.0-second frames, while a later feed card opens into an article near
+15.7 seconds followed by visible scrolling. Scene candidates suggest quiet
+content windows of roughly 3.4 and 5.7 seconds, but do not delimit touch-event
+or pure reading intervals; the 15.7-second inspected frame already shows the
+opening animation. Without Xcode's step stream or touch indicators, raw
+per-input timing and the presence/absence of invisible repeat taps remain
+unresolved in this short normal-feel sample.
+
+The sequential comparison associates the reported abnormal feel with Xcode
+recording or its combination with screen capture, rather than establishing a
+particular component's causal defect. It is not a randomized/controlled latency
+benchmark. It does support using a less intrusive screen-only sample for coarse
+visual cadence, while retaining the reported Offers correction as a qualitative
+case. The prior generated-policy settings were not fitted to either sample.
+
+Both originals were preserved with presentation timestamps. Media checks had
+no failures and the same VFR, near-silent audio and missing-subtitle warnings.
+All videos, frames, source, feedback and timing artifacts remain local and
+outside Git. The dual-channel video also shows manual favorite-state feedback;
+the agent did not send that mutation or undo the person's actions. This probe
+must not be described as proof that account favorites were unchanged. No
+recorded operations were replayed and automated batch collection stayed paused.
+
+Android's built-in touch displays are a potential future capture route:
+[Show taps / Pointer Location](https://developer.android.com/studio/debug/dev-options#input)
+visualize contacts, coordinates and paths, while system screen recording can
+[include touches](https://support.google.com/android/answer/9075928).
+[AOSP getevent](https://source.android.com/docs/core/interaction/input/getevent)
+can expose labeled input events with monotonic timestamps when device
+permissions permit (the official example uses `su`). The visual options do
+not by themselves export a raw event trace. No Android device was connected or
+validated, and Android geometry/interaction timing would still need separate
+acceptance before reuse on iPhone.
+
+The person subsequently chose to stop pursuing capture fidelity and try the
+existing guarded execution approach. A bounded navigation trial, with no
+recorded replay or batch collection, is a separate acceptance step. Permission
+to replace the existing integration is conditional on that trial succeeding;
+this recording report does not claim that trial or replacement has occurred.
+
 ## Procedure and boundaries
 
 1. Created a separate temporary UI-test project, with a distinct bundle identity,
