@@ -7339,7 +7339,7 @@ async fn timed_touch_path(
             (rows, index)
         } else { fetch_snapshot_row(w, value).await? };
         let row = &rows[index];
-        if row.visible == Some(false) || row.enabled == Some(false) {
+        if row_is_hidden(&rows, index) || row.enabled == Some(false) {
             return Err(SnapshotElementTapError::Refused("element_not_interactable",
                 "The planned target is hidden or disabled; nothing was sent"));
         }
@@ -7357,7 +7357,7 @@ async fn timed_touch_path(
         for (j, cover) in rows.iter().enumerate() {
             let related = j == index || (j > index && j < end)
                 || (j < index && subtree_end(&rows, j) > index);
-            if related || cover.visible == Some(false)
+            if related || row_is_hidden(&rows, j)
                 || !OCCLUDER_KINDS.contains(&cover.kind.as_str())
                 || layout_bar_wraps_target(cover, row)
                 || background_cell_behind_control(&rows, index, j)
@@ -8538,7 +8538,7 @@ fn tap_target_refusal(
         return None;
     }
     let target = rows.get(index)?;
-    if target.visible == Some(false) && !center_off_screen(rows, index) {
+    if row_is_hidden(rows, index) && !center_off_screen(rows, index) {
         tracing::info!("tap refused: row {index} '{}' is not drawn", target.label);
         return Some(("element_not_visible", ELEMENT_NOT_VISIBLE_HINT));
     }
@@ -8575,6 +8575,25 @@ fn subtree_end(rows: &[crate::runner::ElementRow], index: usize) -> usize {
         .map_or(rows.len(), |(i, _)| i)
 }
 
+/// Hidden retained ancestors also hide their stale accessibility children.
+/// Zero-area layout wrappers are excluded from inheritance: lite reads mark
+/// their geometry invisible even when their children are actually drawn.
+fn row_is_hidden(rows: &[crate::runner::ElementRow], index: usize) -> bool {
+    if rows[index].visible == Some(false) {
+        return true;
+    }
+    let mut depth = rows[index].depth;
+    for row in rows[..index].iter().rev() {
+        if row.depth < depth {
+            depth = row.depth;
+            if row.visible == Some(false) && row.rect[2] > 0.0 && row.rect[3] > 0.0 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// The application's frame, from the Application root row when the tree
 /// has one with a real size. No root, no frame: nothing is called off-screen.
 fn screen_rect(rows: &[crate::runner::ElementRow]) -> Option<[f64; 4]> {
@@ -8586,7 +8605,7 @@ fn screen_rect(rows: &[crate::runner::ElementRow]) -> Option<[f64; 4]> {
 
 fn row_is_on_screen(rows: &[crate::runner::ElementRow], index: usize) -> bool {
     let row = &rows[index];
-    if row.visible == Some(false) {
+    if row_is_hidden(rows, index) {
         return false;
     }
     let Some([sx, sy, sw, sh]) = screen_rect(rows) else {
@@ -8780,7 +8799,7 @@ fn occluding_row(rows: &[crate::runner::ElementRow], index: usize) -> Option<&cr
         (j != index
             && !descendant
             && !ancestor
-            && row.visible != Some(false)
+            && !row_is_hidden(rows, j)
             && OCCLUDER_KINDS.contains(&row.kind.as_str())
             && contains(row.rect, cx, cy)
             && !wraps_target(row.rect)
@@ -8822,7 +8841,7 @@ fn clear_tap_point(rows: &[crate::runner::ElementRow], index: usize) -> Option<(
             *j != index
                 && !descendant
                 && !ancestor
-                && row.visible != Some(false)
+                && !row_is_hidden(rows, *j)
                 && OCCLUDER_KINDS.contains(&row.kind.as_str())
                 && !wraps_target(row.rect)
                 && can_cover(rows, index, *j)

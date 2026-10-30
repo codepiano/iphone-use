@@ -317,3 +317,11 @@ Router regressions cover strict and context-bound proxy contacts and require
 zero Runner writes for a real button overlay, a foreground cell, mismatched or
 ambiguous buttons, and a contact outside the matched native button. Historical
 paused checkpoints remain unchanged; device acceptance is recorded separately.
+
+### Hidden ancestor visibility (2026-10-31)
+
+A retained hidden, positive-area ancestor makes its descendants hidden for
+contact targeting and occlusion checks. This handles offscreen preview cells
+whose stale child frames overlap live controls. Zero-area layout wrappers do
+not propagate geometry-only invisibility. Visible ancestor children still
+block contacts; hidden descendants cannot themselves be targeted.

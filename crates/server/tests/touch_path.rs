@@ -153,6 +153,21 @@ async fn exercise(case: &'static str) -> (StatusCode, Value, Vec<Value>) {
             }
             let read = reads.load(std::sync::atomic::Ordering::SeqCst);
             let mut source: Value = serde_json::from_str(&tree(case.ends_with("covered"))).unwrap();
+            if case.contains("ancestor_") {
+                let root = &mut source["value"];
+                let target = root["children"][0].clone();
+                let hidden = !case.ends_with("visible_cover");
+                let zero = case.ends_with("zero_cover");
+                let child = if case.ends_with("target") { target.clone() } else {
+                    json!({"type":"XCUIElementTypeCell","label":"Preview row",
+                        "isVisible":true,"rect":{"x":80,"y":180,"width":160,"height":80}})
+                };
+                let container = json!({"type":"XCUIElementTypeCell","isVisible":!hidden,
+                    "rect":{"x":0,"y":899,"width":430,"height":if zero {0} else {709}},
+                    "children":[child]});
+                root["children"] = if case.ends_with("target") {json!([container])}
+                    else {json!([target,container])};
+            }
             if case.contains("tab_proxy") {
                 let root = &mut source["value"];
                 let target = json!({"type":"XCUIElementTypeOther","label":"Target",
@@ -484,6 +499,24 @@ fn tab_accessibility_proxies_share_the_native_button_but_not_real_overlays() {
             assert_eq!(value["error"], "element_occluded", "{case}: {value}");
             assert_eq!(value["outcome"], "not_sent");
             assert!(writes.is_empty(), "{case}: {writes:?}");
+        }
+    });
+}
+
+#[test]
+fn hidden_ancestor_children_neither_cover_controls_nor_receive_contacts() {
+    block(async {
+        for case in ["ancestor_hidden_cover", "scoped_ancestor_hidden_cover"] {
+            let (status, value, writes) = exercise(case).await;
+            assert_eq!(status, StatusCode::OK, "{case}: {value}");
+            assert_eq!(writes.len(), 1);
+        }
+        for case in ["ancestor_visible_cover", "ancestor_zero_cover", "ancestor_hidden_target", "scoped_ancestor_hidden_target"] {
+            let (status, value, writes) = exercise(case).await;
+            assert_eq!(status, StatusCode::CONFLICT, "{case}: {value}");
+            assert_eq!(value["error"], if case.ends_with("target") {"element_not_interactable"} else {"element_occluded"});
+            assert_eq!(value["outcome"], "not_sent");
+            assert!(writes.is_empty());
         }
     });
 }
