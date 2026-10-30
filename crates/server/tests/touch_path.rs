@@ -27,9 +27,16 @@ async fn request(
     path: &str,
     body: Value,
 ) -> (StatusCode, Value) {
+    request_as(state, method, path, body, "touch-test").await
+}
+
+async fn request_as(
+    state: &Arc<AppState>, method: &str, path: &str, body: Value, owner: &str,
+) -> (StatusCode, Value) {
     let req = Request::builder()
         .method(method)
         .uri(path)
+        .header("x-phone-owner", owner)
         .header("x-phone-control", "1")
         .header("content-type", "application/json")
         .body(if method == "GET" {
@@ -81,6 +88,16 @@ fn validates_before_runner_contact() {
                 a.as_object_mut().unwrap().remove("snapshot");
                 a
             },
+            {
+                let mut a = action("snapshot");
+                a["context"] = json!({"application":"Fixture", "present":[]});
+                a
+            },
+            {
+                let mut a = action("snapshot");
+                a["context"] = json!({"application":"Fixture", "present":["Target"], "ignore_all":true});
+                a
+            },
         ] {
             let (status, value) = request(&state, "POST", "/agent/input", invalid).await;
             assert_eq!(status, StatusCode::BAD_REQUEST, "{value}");
@@ -120,12 +137,12 @@ async fn exercise(case: &'static str) -> (StatusCode, Value, Vec<Value>) {
             if reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst) > 0 {
                 if let Some(state) = revoke.lock().unwrap().as_ref() {
                     match case {
-                        "privacy_revoked" => {
+                    "privacy_revoked" | "scoped_privacy_revoked" => {
                             state
                                 .privacy_epoch
                                 .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
                         }
-                        "owner_revoked" => {
+                    "owner_revoked" | "scoped_owner_revoked" => {
                             state
                                 .owner_epoch
                                 .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
@@ -134,14 +151,44 @@ async fn exercise(case: &'static str) -> (StatusCode, Value, Vec<Value>) {
                     }
                 }
             }
-            return Some((Duration::ZERO, tree(case == "covered")));
+            let read = reads.load(std::sync::atomic::Ordering::SeqCst);
+            let mut source: Value = serde_json::from_str(&tree(case.ends_with("covered"))).unwrap();
+            if case.starts_with("scoped_") || case == "strict_dynamic" {
+                let root = &mut source["value"];
+                if case == "scoped_app" && read > 1 { root["label"] = json!("Other"); }
+                let children = root["children"].as_array_mut().unwrap();
+                children.push(json!({"type":"XCUIElementTypeStaticText","label":"Context page",
+                    "rect":{"x":20,"y":90,"width":120,"height":20}}));
+                if case == "scoped_anchor" && read > 1 { children.last_mut().unwrap()["label"] = json!("Other page"); }
+                let timer = json!({"type":"XCUIElementTypeStaticText","label":format!("Countdown {read}"),
+                    "rect":{"x":120,"y":if case=="scoped_corridor" {220} else {500},"width":80,"height":20}});
+                if case == "scoped_index_shift" && read > 1 { children.insert(0, timer); }
+                else { children.push(timer); }
+                if read > 1 {
+                    match case {
+                        "scoped_moved" => children[0]["rect"]["x"] = json!(101),
+                        "scoped_state" => children[0]["isEnabled"] = json!(false),
+                        "scoped_replaced" => children[0]["label"] = json!("Replacement"),
+                        "scoped_duplicate" => {
+                            let mut duplicate = children[0].clone();
+                            duplicate["rect"]["x"] = json!(300); children.push(duplicate);
+                        },
+                        "scoped_warning" => children.push(json!({"type":"XCUIElementTypeStaticText",
+                            "label":"请完成安全验证","rect":{"x":20,"y":600,"width":180,"height":20}})),
+                        "scoped_overlay" => children.push(json!({"type":"XCUIElementTypeButton",
+                            "label":"Overlay","rect":{"x":80,"y":180,"width":160,"height":80}})),
+                        _ => {},
+                    }
+                }
+            }
+            return Some((Duration::ZERO, source.to_string()));
         }
         if request.starts_with("POST ") && request.contains("/actions ") {
             let body = request.split("\r\n\r\n").nth(1).unwrap();
             seen.lock()
                 .unwrap()
                 .push(serde_json::from_str(body).unwrap());
-            if case == "lost_reply" {
+            if case.ends_with("lost_reply") {
                 return None;
             }
         }
@@ -149,9 +196,21 @@ async fn exercise(case: &'static str) -> (StatusCode, Value, Vec<Value>) {
     });
     let state = build_state_with_runner(runner.url());
     *state_holder.lock().unwrap() = Some(state.clone());
+    if case.starts_with("scoped_") && case != "scoped_unclaimed" {
+        let (status, _) = request(&state, "POST", "/agent/owner", json!({"claim":true})).await;
+        assert_eq!(status, StatusCode::OK);
+    }
     let (status, screen) = request(&state, "GET", "/agent/elements", Value::Null).await;
     assert_eq!(status, StatusCode::OK, "{screen}");
     let mut body = action(screen["snapshot"].as_str().unwrap());
+    if case == "scoped_expired" { tokio::time::sleep(Duration::from_millis(5050)).await; }
+    if case == "scoped_released" {
+        request(&state, "POST", "/agent/owner", json!({"release":true})).await;
+        request(&state, "POST", "/agent/owner", json!({"claim":true})).await;
+    }
+    if case.starts_with("scoped_") {
+        body["context"] = json!({"application":"Fixture","present":["Context page"],"absent":["Wrong page"]});
+    }
     match case {
         "stale" => body["snapshot"] = json!("stale"),
         "viewport" => body["path"]["viewport"]["width"] = json!(932),
@@ -159,6 +218,9 @@ async fn exercise(case: &'static str) -> (StatusCode, Value, Vec<Value>) {
         "unbound" => {
             body.as_object_mut().unwrap().remove("element");
         }
+        "scoped_unbound" => { body.as_object_mut().unwrap().remove("element"); },
+        "scoped_bad_token" => body["snapshot"] = json!("not-observed"),
+        "scoped_viewport" => body["path"]["viewport"]["width"] = json!(932),
         _ => {}
     }
     let (status, value) = request(&state, "POST", "/agent/input", body).await;
@@ -226,5 +288,92 @@ fn privacy_or_owner_revocation_during_preparation_never_dispatches_contact() {
             assert!(!status.is_success(), "{case}: {value}");
             assert!(writes.is_empty(), "{case}: {writes:?}");
         }
+    });
+}
+
+#[test]
+fn scoped_contacts_tolerate_only_unrelated_live_updates() {
+    block(async {
+        for case in ["scoped_valid", "scoped_index_shift", "scoped_unbound"] {
+            let (status, value, writes) = exercise(case).await;
+            assert!(status.is_success(), "{case}: {value}");
+            assert_eq!(writes.len(), 1, "{case}");
+            let actions = writes[0]["actions"][0]["actions"].as_array().unwrap();
+            assert_eq!(actions.iter().filter(|s| s["type"] == "pointerDown").count(), 1);
+            assert_eq!(actions.iter().filter(|s| s["type"] == "pointerUp").count(), 1);
+        }
+        let (status, value, writes) = exercise("strict_dynamic").await;
+        assert_eq!(status, StatusCode::CONFLICT, "{value}");
+        assert_eq!(value["error"], "stale_element_snapshot");
+        assert!(writes.is_empty());
+    });
+}
+
+#[test]
+fn scoped_contacts_reject_changed_context_and_unobserved_baselines() {
+    block(async {
+        for (case, error) in [
+            ("scoped_moved", "touch_context_changed"),
+            ("scoped_state", "touch_context_changed"),
+            ("scoped_replaced", "touch_context_changed"),
+            ("scoped_anchor", "touch_context_changed"),
+            ("scoped_app", "touch_context_changed"),
+            ("scoped_corridor", "touch_context_changed"),
+            ("scoped_overlay", "touch_context_changed"),
+            ("scoped_duplicate", "touch_target_changed"),
+            ("scoped_warning", "touch_context_blocked"),
+            ("scoped_covered", "element_occluded"),
+            ("scoped_bad_token", "touch_context_expired"),
+            ("scoped_unclaimed", "touch_context_expired"),
+            ("scoped_released", "touch_context_expired"),
+            ("scoped_expired", "touch_context_expired"),
+            ("scoped_viewport", "viewport_changed"),
+        ] {
+            let (status, value, writes) = exercise(case).await;
+            assert!(status.is_client_error(), "{case}: {value}");
+            assert_eq!(value["error"], error, "{case}: {value}");
+            assert_eq!(value["outcome"], "not_sent", "{case}: {value}");
+            assert!(writes.is_empty(), "{case}: {writes:?}");
+        }
+    });
+}
+
+#[test]
+fn scoped_contact_still_obeys_privacy_and_owner_revocation() {
+    block(async {
+        for case in ["scoped_privacy_revoked", "scoped_owner_revoked"] {
+            let (status, value, writes) = exercise(case).await;
+            assert!(!status.is_success(), "{case}: {value}");
+            assert!(writes.is_empty(), "{case}: {writes:?}");
+        }
+    });
+}
+
+#[test]
+fn a_scoped_lost_reply_is_not_replayed() {
+    block(async {
+        let (status, value, writes) = exercise("scoped_lost_reply").await;
+        assert!(status.is_server_error(), "{value}");
+        assert_eq!(writes.len(), 1);
+        assert_eq!(value["retry_safe"], false, "{value}");
+    });
+}
+
+#[test]
+fn reserving_an_owner_neither_drives_nor_takes_over_or_clears_privacy() {
+    block(async {
+        let contacts = Arc::new(Mutex::new(0));
+        let count = contacts.clone();
+        let runner = mock_runner(move |_, _| { *count.lock().unwrap() += 1; None });
+        let state = build_state_with_runner(runner.url());
+        *state.private_until.lock().unwrap() = Some(std::time::Instant::now() + Duration::from_secs(60));
+        let (status, _) = request(&state, "POST", "/agent/owner", json!({"claim":true})).await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, _) = request_as(&state, "POST", "/agent/owner", json!({"claim":true}), "other").await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        let (status, _) = request(&state, "POST", "/agent/owner", json!({"claim":true,"release":true})).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(state.private_until.lock().unwrap().is_some());
+        assert_eq!(*contacts.lock().unwrap(), 0);
     });
 }

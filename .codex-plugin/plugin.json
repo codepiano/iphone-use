@@ -1,6 +1,6 @@
 {
   "name": "iphone-use",
-  "version": "0.27.7-guarded.2",
+  "version": "0.27.7-guarded.3",
   "description": "Local fork with checkpointed, paced touch execution and an external trajectory planner. Read and operate a real iPhone over USB or Wi-Fi; repetitive work uses explicit page checks and stops on uncertain outcomes.",
   "author": {
     "name": "leeguooooo",

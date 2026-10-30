@@ -685,7 +685,8 @@ fn owner_status(state: &AppState) -> (Option<String>, u64) {
 
 /// `POST /agent/owner {"release":true}` — give up the lease. Only the current
 /// owner (matching `X-Phone-Owner`) may release it; anyone may release a
-/// lapsed one. Never takes a lease itself.
+/// lapsed one. `{"claim":true}` only reserves a free/own lease, without
+/// reconnecting, changing privacy state or sending Runner input.
 /// `/agent/owner` (claim or release the lease): a run boundary for the
 /// owner's `no_progress` tracker.
 async fn agent_owner(state: State<Arc<AppState>>, headers: HeaderMap, body: String) -> Response {
@@ -716,16 +717,27 @@ async fn agent_owner_inner(
     if !has_phone_control_header(&headers) {
         return missing_phone_control_header_response();
     }
-    let release = serde_json::from_str::<serde_json::Value>(&body)
-        .ok()
-        .and_then(|value| value.get("release").and_then(serde_json::Value::as_bool))
-        .unwrap_or(false);
+    let parsed = serde_json::from_str::<serde_json::Value>(&body).ok();
+    let release = parsed.as_ref().and_then(|v| v.get("release")).and_then(serde_json::Value::as_bool) == Some(true);
+    let claim = parsed.as_ref().and_then(|v| v.get("claim")).and_then(serde_json::Value::as_bool) == Some(true);
+    if claim && !release {
+        // Reserve the control lease before observing. No prewarm, Runner call,
+        // privacy-hold change or UI input: the following read binds this epoch.
+        if let Err(refused) = claim_phone_owner(&state, &headers) { return refused; }
+        let (owner, remaining) = owner_status(&state);
+        return json_response(StatusCode::OK, serde_json::json!({
+            "ok": true, "owner": owner, "owner_lease_remaining_secs": remaining
+        }));
+    }
+    if claim && release {
+        return json_response(StatusCode::BAD_REQUEST, serde_json::json!({"ok":false,"error":"invalid_owner_request"}));
+    }
     if !release {
         return with_security_headers(
             Response::builder()
                 .status(StatusCode::BAD_REQUEST)
                 .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(r#"{"ok":false,"error":"invalid_owner_request","hint":"send {"release":true}"}"#))
+                .body(Body::from(r#"{"ok":false,"error":"invalid_owner_request","hint":"send claim:true or release:true"}"#))
                 .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
         );
     }
@@ -7292,6 +7304,18 @@ async fn timed_touch_path(
 ) -> Result<(), SnapshotElementTapError> {
     let path = core::touch_path::Path::parse(&value["path"])
         .map_err(|_| SnapshotElementTapError::Invalid)?;
+    let context = value.get("context").map(crate::touch_context::Context::parse)
+        .transpose().map_err(SnapshotElementTapError::InvalidValue)?;
+    // The previous read belongs to the current owner/privacy epoch and must
+    // still be the exact snapshot supplied by the planner. Nothing POSTed to
+    // Runner may intervene. Capture it BEFORE the independent live read below.
+    let baseline = if context.is_some() {
+        let rows = w.recent_tree(std::time::Duration::from_secs(5))
+            .filter(|rows| element_snapshot_id(rows).ok().as_deref() == value["snapshot"].as_str())
+            .ok_or(SnapshotElementTapError::Refused("touch_context_expired",
+                "The observed context expired or its scope changed; nothing was sent"))?;
+        Some(rows)
+    } else { None };
     let (width, height) = w.window_size().await.map_err(SnapshotElementTapError::BeforeDispatch)?;
     if !path.matches_viewport(width, height) {
         return Err(SnapshotElementTapError::Refused("viewport_changed",
@@ -7301,8 +7325,19 @@ async fn timed_touch_path(
         return Err(SnapshotElementTapError::Refused("runner_upgrade_required",
             "Timed contacts require ipu:timedDragPath; no fallback or gesture was sent"));
     }
+    let scoped = if let (Some(context), Some(baseline)) = (&context, &baseline) {
+        let rows = w.elements().await.map_err(SnapshotElementTapError::BeforeDispatch)?;
+        let element = value.get("element").and_then(serde_json::Value::as_u64)
+            .and_then(|n| usize::try_from(n).ok());
+        let index = crate::touch_context::verify(context, baseline, &rows, element, &path)
+            .map_err(|code| SnapshotElementTapError::Refused(code,
+                "Page anchors, contact corridor or target changed; nothing was sent"))?;
+        Some((rows, index))
+    } else { None };
     if value.get("element").is_some() {
-        let (rows, index) = fetch_snapshot_row(w, value).await?;
+        let (rows, index) = if let Some((rows, Some(index))) = scoped {
+            (rows, index)
+        } else { fetch_snapshot_row(w, value).await? };
         let row = &rows[index];
         if row.visible == Some(false) || row.enabled == Some(false) {
             return Err(SnapshotElementTapError::Refused("element_not_interactable",
@@ -7333,7 +7368,7 @@ async fn timed_touch_path(
                     "Planned contact intersects another control; reveal the target and re-observe. Timed contacts do not support an occlusion override"));
             }
         }
-    } else {
+    } else if scoped.is_none() {
         let rows = w.elements().await.map_err(SnapshotElementTapError::BeforeDispatch)?;
         let current = element_snapshot_id(&rows).map_err(SnapshotElementTapError::BeforeDispatch)?;
         if value.get("snapshot").and_then(serde_json::Value::as_str) != Some(current.as_str()) {
@@ -11201,6 +11236,9 @@ fn validate_agent_action_value(
         "touch_path" => {
             if let Err(hint) = core::touch_path::Path::parse(&action.get("path").cloned().unwrap_or_default()) {
                 return invalid(hint);
+            }
+            if let Some(context) = action.get("context") {
+                if let Err(hint) = crate::touch_context::Context::parse(context) { return invalid(hint); }
             }
             if !action.get("snapshot").and_then(serde_json::Value::as_str)
                 .is_some_and(|s| !s.is_empty() && s.len() <= 200)

@@ -87,7 +87,7 @@ class HttpPhone:
 
     def request(self, method, path, body=None, *, timeout=60):
         if (method, path) not in (("GET", "/agent/status"), ("GET", "/agent/elements"),
-                                 ("POST", "/agent/input?return=delta")):
+                                 ("POST", "/agent/owner"), ("POST", "/agent/input?return=delta")):
             raise ValueError("unsupported guarded endpoint")
         request = urllib.request.Request(self.url + path, method=method,
             data=None if body is None else json.dumps(body, allow_nan=False).encode(),
@@ -347,10 +347,15 @@ class GuardedPhone:
                 status = self.phone.request("GET", "/agent/status")
                 if status.get("drivable") is not True:
                     self._stop("phone_not_drivable")
+                # Claim without UI input before the fresh reads, so their
+                # cached baseline belongs to this exact owner epoch.
+                self.phone.request("POST", "/agent/owner", {"claim": True})
                 screen = self._wait(before, request)
                 seed = None
                 if request.get("kind") in ("tap", "drag", "scroll", "flick"):
                     action, seed = plan_touch(request, screen, self.entropy(32))
+                    action["context"] = {"application": self.app_label,
+                        "present": list(before.present), "absent": list(before.absent)}
                 elif request.get("kind") == "text":
                     if set(request) - {"kind", "text"} or not isinstance(request.get("text"), str) or not 1 <= len(request["text"]) <= 200:
                         raise ValueError("one short text insertion required; replacement is not implicit")

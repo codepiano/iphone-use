@@ -9,7 +9,7 @@ Python package, contract `>=0.4,<0.5`. No planner implementation is vendored or
 downloaded at runtime. Install the authorized package from its own checkout into
 a dedicated Python environment, rather than changing a running service's Python
 environment. Public CI runs the policy tests without that optional dependency;
-the three real-planner tests require it and report skips when absent.
+the four real-planner tests require it and report skips when absent.
 
 ## Planning and dispatch
 
@@ -47,6 +47,34 @@ Send to `POST /agent/input?return=delta`, or use the same fields with
 not normalized fractions or screenshot pixels. A fresh snapshot is mandatory;
 `element` additionally binds a tap to one current target. For movement, omit
 `element` but keep the snapshot. The daemon re-reads the tree before dispatch.
+
+The guarded controller additionally sends an opt-in `context` on the single
+HTTP action (raw MCP `touch_path` keeps its existing strict full-tree contract):
+
+```json
+{"context":{"application":"大众点评","present":["美食排行","美食餐厅"],"absent":["吃喝玩乐指南"]}}
+```
+
+Before reading, it reserves the existing owner lease with
+`POST /agent/owner {"claim":true}`. This does not start Runner, read the screen,
+change a privacy hold or take over another owner. The context's snapshot must
+match the daemon's own last read, younger than five seconds, still in the same
+owner/privacy epoch, with no intervening Runner POST. Unknown/expired baselines
+stop without an automatic refresh/retry. Single HTTP actions are the supported
+entry point; an intervening batch scope reset intentionally invalidates a cached
+baseline.
+
+The daemon independently reads again and checks the exact application root,
+positive/negative page anchors and their frames/states, the original unique
+semantic target and its complete row, and all visible rows intersecting the
+contact corridor (segment bounds plus two logical points). The original target
+can move to a different row index when unrelated rows appear, but cannot be
+replaced, moved, duplicated, hidden or disabled. New warnings, alerts and
+recognized verification/rate-limit/empty-result text anywhere stop the contact.
+Other controls are still checked for occlusion immediately before dispatch.
+Unrelated countdown text outside these areas may change; arbitrary stale
+snapshots are not accepted. Paths without `context` retain the original exact
+full-snapshot check. Neither mode retries unknown or refused deliveries.
 
 The whole path has 2–512 samples, strictly increasing integer times starting at
 zero, 10–16000 ms total, at most 10000 ms movement and at most 3000 ms per hold.
@@ -238,3 +266,13 @@ override. Six device-free regressions cover changing countdowns, moving targets
 and anchors, viewport changes, disappearing anchors, later challenges and absent
 conditions. Previously paused records remain paused; this correction does not
 retroactively verify their results.
+
+The subsequent `0.27.7-guarded.3` correction also carries this context across
+the single-action dispatch check, using the binding described above. Isolated
+validation passed 10 touch-route tests (multiple changing-tree cases per test),
+21 action-outcome, 34 settle, 15 privacy-capture and two coordinate regressions,
+plus 30 controller and five launcher tests with the external planner. Previously
+captured category frames independently show that the intended ranking/edge-back
+contact regions remained equal while the full snapshots changed. Physical
+acceptance and deployment have separate private receipts; paused historical
+checkpoints are never retroactively resumed by this correction.

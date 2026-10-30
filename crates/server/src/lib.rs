@@ -44,6 +44,7 @@ pub mod syslog;
 pub mod telemetry;
 pub mod text_input;
 pub mod timing;
+pub mod touch_context;
 pub mod tunnel;
 pub mod update;
 pub mod usbmux;

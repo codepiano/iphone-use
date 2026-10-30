@@ -41,6 +41,8 @@ class Phone:
     def request(self, method, path, body=None, **kwargs):
         if path == "/agent/status":
             return {"drivable": self.drivable}
+        if path == "/agent/owner":
+            return {"ok": True}
         if method == "GET":
             self.reads += 1
             return copy.deepcopy(self.current)
@@ -283,7 +285,7 @@ class GuardTests(unittest.TestCase):
     def test_checkpoint_is_written_before_transport(self):
         original = self.phone.request
         def request(method, path, body=None, **kwargs):
-            if method == "POST":
+            if method == "POST" and path.startswith("/agent/input"):
                 self.assertEqual(self.journal()["phase"], "dispatching")
             return original(method, path, body, **kwargs)
         self.phone.request = request
@@ -313,6 +315,26 @@ except ImportError:
 
 @unittest.skipUnless(HAS_PLANNER, "external pointer-trajectory 0.4 not installed")
 class PlannerIntegrationTests(unittest.TestCase):
+    def test_controller_binds_contact_to_page_after_claim_and_fresh_reads(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            phone, clock, calls = Phone(), Clock(), []
+            original = phone.request
+            def request(method, path, body=None, **kwargs):
+                calls.append((method, path))
+                return original(method, path, body, **kwargs)
+            phone.request = request
+            session = gp.GuardedPhone(phone, tmp, "Fixture", clock=clock.time,
+                sleep=clock.sleep, monotonic=clock.time)
+            session.step("tap", {"kind":"tap", "locator":{"label":"Ready"}},
+                step_id="target", before=gp.Expectation(("Ready",), ("Other page",)),
+                after=gp.Expectation(("Done",)))
+            self.assertLess(calls.index(("POST", "/agent/owner")),
+                            calls.index(("GET", "/agent/elements")))
+            self.assertEqual(len(phone.posts), 1)
+            self.assertEqual(phone.posts[0]["snapshot"], "Ready")
+            self.assertEqual(phone.posts[0]["context"], {"application":"Fixture",
+                "present":["Ready"], "absent":["Other page"]})
+
     def test_real_taps_vary_and_stay_in_button_without_approach_path(self):
         outputs = [gp.plan_touch({"kind": "tap", "locator": {"label": "Ready"}}, screen(), seed)[0]
                    for seed in range(30)]

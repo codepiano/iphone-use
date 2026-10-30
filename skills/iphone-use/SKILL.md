@@ -46,6 +46,12 @@ memory; never copy the token into a command or chat. The dedicated Python
 environment defaults to `~/.local/share/iphone-use-guarded/venv` and must contain
 the external planner. `IPHONE_USE_GUARDED_PYTHON` can select an isolated one.
 The launcher does not start services, resume paused checkpoints, or retry input.
+The guarded fork reserves its owner lease before fresh reads and binds planned
+contacts to a daemon-observed context younger than five seconds. It independently
+rechecks page anchors, target state/frame and the contact corridor, allowing
+unrelated live text to change. Unknown/expired contexts, moved targets, new
+blockers and occlusion still stop without input. This opt-in HTTP mode does not
+weaken the full-snapshot contract of raw MCP or ordinary touch actions.
 The throughput-oriented batching advice below does not override that mode.
 No input variation is a promise of avoiding application detection.
 

@@ -149,7 +149,10 @@ device_release_in_progress` (with `Retry-After`) means release already started.
 `mcp-<pid>`). Status shows `owner` and `owner_lease_remaining_secs`. If `owner`
 is someone else, do not drive: control calls answer `409 phone_owned`. Never
 send `X-Phone-Owner-Takeover: 1` unless the user confirms the other session is
-abandoned. Release yours when done: `POST /agent/owner {"release":true}` / MCP
+abandoned. A guarded client can reserve its lease before fresh observations with
+`POST /agent/owner {"claim":true}`; this does not reconnect, drive the phone,
+take over another owner or clear a privacy hold. Release yours when done:
+`POST /agent/owner {"release":true}` / MCP
 `phone_release_owner`.
 
 **Hold.** For a human-in-the-loop pause inside a task (operator types a PIN,
