@@ -153,6 +153,15 @@ async fn exercise(case: &'static str) -> (StatusCode, Value, Vec<Value>) {
             }
             let read = reads.load(std::sync::atomic::Ordering::SeqCst);
             let mut source: Value = serde_json::from_str(&tree(case.ends_with("covered"))).unwrap();
+            if case.contains("background_cell") || case == "foreground_cell" {
+                let root = &mut source["value"];
+                let mut target = root["children"][0].clone();
+                target["type"] = json!("XCUIElementTypeOther");
+                let cell = json!({"type":"XCUIElementTypeOther", "children":[{
+                    "type":"XCUIElementTypeCell", "rect":{"x":0,"y":190,"width":430,"height":150}}]});
+                root["children"] = if case == "foreground_cell" { json!([target, cell["children"][0].clone()]) }
+                    else { json!([cell, target]) };
+            }
             if case.contains("layout_bar") {
                 let mut wrapper = json!({"type":"XCUIElementTypeToolbar","label":"Toolbar",
                     "rect":{"x":0,"y":0,"width":430,"height":932}});
@@ -223,6 +232,8 @@ async fn exercise(case: &'static str) -> (StatusCode, Value, Vec<Value>) {
     let (status, screen) = request(&state, "GET", "/agent/elements", Value::Null).await;
     assert_eq!(status, StatusCode::OK, "{screen}");
     let mut body = action(screen["snapshot"].as_str().unwrap());
+    body["element"] = json!(screen["elements"].as_array().unwrap().iter()
+        .position(|r| r["label"] == "Target").unwrap());
     if case == "scoped_expired" { tokio::time::sleep(Duration::from_millis(5050)).await; }
     if case == "scoped_released" {
         request(&state, "POST", "/agent/owner", json!({"release":true})).await;
@@ -414,5 +425,21 @@ fn layout_bar_wrappers_do_not_occlude_but_real_controls_still_do() {
             assert_eq!(value["outcome"], "not_sent");
             assert!(writes.is_empty(), "{case}: {writes:?}");
         }
+    });
+}
+
+#[test]
+fn a_background_list_cell_does_not_cover_a_later_footer_control() {
+    block(async {
+        for case in ["background_cell", "scoped_background_cell"] {
+            let (status, value, writes) = exercise(case).await;
+            assert_eq!(status, StatusCode::OK, "{case}: {value}");
+            assert_eq!(writes.len(), 1);
+        }
+        let (status, value, writes) = exercise("foreground_cell").await;
+        assert_eq!(status, StatusCode::CONFLICT, "{value}");
+        assert_eq!(value["error"], "element_occluded");
+        assert_eq!(value["outcome"], "not_sent");
+        assert!(writes.is_empty());
     });
 }

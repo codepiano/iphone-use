@@ -7354,7 +7354,8 @@ async fn timed_touch_path(
                 || (j < index && subtree_end(&rows, j) > index);
             if related || cover.visible == Some(false)
                 || !OCCLUDER_KINDS.contains(&cover.kind.as_str())
-                || layout_bar_wraps_target(cover, row) {
+                || layout_bar_wraps_target(cover, row)
+                || background_cell_behind_control(&rows, index, j) {
                 continue;
             }
             let [cx, cy, cw, ch] = cover.rect;
@@ -8650,6 +8651,21 @@ fn can_cover(rows: &[crate::runner::ElementRow], index: usize, j: usize) -> bool
         && (!bar_item(rows, index)
             || row.kind == "Keyboard"
             || (BAR_KINDS.contains(&row.kind.as_str()) && row.rect[3] <= MAX_BAR_HEIGHT))
+}
+
+/// Flattened web/native lists may omit layout-only ancestors. A fixed
+/// footer control then follows the list's deeper cells under the same retained
+/// parent. The earlier, larger cell is behind that control (the same sibling
+/// relationship ordinary taps already accept), not an overlay. Later cells,
+/// buttons, keyboards and controls inside a cell still undergo occlusion checks.
+fn background_cell_behind_control(
+    rows: &[crate::runner::ElementRow], index: usize, j: usize,
+) -> bool {
+    rows[index].kind == "Other"
+        && rows[j].kind == "Cell"
+        && j < index
+        && rows[j].depth > rows[index].depth
+        && larger_sibling(rows, index, j)
 }
 
 /// The nearest row above `rows[index]` in the tree.

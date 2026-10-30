@@ -292,3 +292,11 @@ A router regression exercises strict and context-bound contacts through the
 wrapper and checks zero Runner writes for a covering child, keyboard, button,
 fixed bar or partially enclosing wrapper. Device acceptance and deployment are
 recorded separately; this change does not rewrite paused task checkpoints.
+
+The same flattened list can leave a deeper `Cell` from scrolling content behind
+an unlabeled fixed footer control. Timed contacts now apply the existing
+larger-sibling background rule to earlier cells behind a later `Other` control;
+ancestor/descendant checks still run first. A foreground cell later in the tree,
+real buttons and keyboard overlays retain their refusal behavior. Strict and
+context-bound router cases cover the background-cell layout and a foreground
+cell that must produce zero touch writes.
