@@ -320,8 +320,9 @@ paused checkpoints remain unchanged; device acceptance is recorded separately.
 
 ### Hidden ancestor visibility (2026-10-31)
 
-A retained hidden, positive-area ancestor makes its descendants hidden for
-contact targeting and occlusion checks. This handles offscreen preview cells
-whose stale child frames overlap live controls. Zero-area layout wrappers do
-not propagate geometry-only invisibility. Visible ancestor children still
-block contacts; hidden descendants cannot themselves be targeted.
+Visibility is folded on the raw Runner tree before unlabeled wrappers are
+omitted. Explicitly hidden ancestors and positive-area nodes clipped by a
+scroll container hide their stale descendants. Retained-row depths alone
+cannot reconstruct ancestry: an unrelated hidden sibling can precede a deeper
+visible target. Zero-area geometry-only wrappers do not hide their children.
+Visible foreground controls continue to block contacts.

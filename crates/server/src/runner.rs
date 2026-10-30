@@ -2206,6 +2206,7 @@ impl RunnerClient {
         if lite {
             mark_rows_outside_root(tree, &mut rows);
         }
+        mark_rows_clipped_by_scroll_containers(tree, &mut rows);
         // The Application node's frame IS the window in points: keep the
         // window-size cache fresh for free instead of a GET /window/size.
         // Read it from the raw root (an unlabeled root is not emitted as a row).
@@ -2804,7 +2805,6 @@ fn mark_rows_outside_root(tree: &serde_json::Value, rows: &mut [ElementRow]) {
             row.visible = Some(false);
         }
     }
-    mark_rows_clipped_by_scroll_containers(tree, rows);
 }
 
 /// Kinds that clip their content to their own frame.
@@ -2838,6 +2838,7 @@ fn mark_rows_clipped_by_scroll_containers(tree: &serde_json::Value, rows: &mut [
         node: &serde_json::Value,
         clip: Option<[f64; 4]>,
         out: &mut Vec<(String, [f64; 4], bool)>,
+        ancestor_hidden: bool,
     ) {
         let kind = node
             .get("type")
@@ -2846,22 +2847,29 @@ fn mark_rows_clipped_by_scroll_containers(tree: &serde_json::Value, rows: &mut [
             .trim_start_matches("XCUIElementType")
             .to_string();
         let rect = frame(node);
+        let native_hidden = runner_bool(node, "isVisible") == Some(false);
         let clipped = clip.is_some_and(|clip| !intersects(rect, clip));
+        let hidden = ancestor_hidden || native_hidden || clipped;
+        // Fold on the raw tree, before unlabeled wrappers are omitted. Depths
+        // in retained rows cannot reliably reconstruct parent relationships.
+        // Zero-area wrappers may still have drawn children on lite snapshots.
+        let descendants_hidden = ancestor_hidden || native_hidden
+            || (clipped && rect[2] > 0.0 && rect[3] > 0.0);
         let inner =
             if SCROLL_CONTAINER_KINDS.contains(&kind.as_str()) && rect[2] > 0.0 && rect[3] > 0.0 {
                 Some(rect)
             } else {
                 clip
             };
-        out.push((kind, rect, clipped));
+        out.push((kind, rect, hidden));
         if let Some(children) = node.get("children").and_then(serde_json::Value::as_array) {
             for child in children {
-                walk(child, inner, out);
+                walk(child, inner, out, descendants_hidden);
             }
         }
     }
     let mut nodes = Vec::new();
-    walk(tree, None, &mut nodes);
+    walk(tree, None, &mut nodes, false);
     let mut next = 0;
     for (kind, rect, clipped) in nodes {
         let Some(row) = rows.get_mut(next) else {

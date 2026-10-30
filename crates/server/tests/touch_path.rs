@@ -162,11 +162,28 @@ async fn exercise(case: &'static str) -> (StatusCode, Value, Vec<Value>) {
                     json!({"type":"XCUIElementTypeCell","label":"Preview row",
                         "isVisible":true,"rect":{"x":80,"y":180,"width":160,"height":80}})
                 };
-                let container = json!({"type":"XCUIElementTypeCell","isVisible":!hidden,
+                let container = json!({"type":"XCUIElementTypeCell","isVisible":!hidden || zero,
                     "rect":{"x":0,"y":899,"width":430,"height":if zero {0} else {709}},
                     "children":[child]});
                 root["children"] = if case.ends_with("target") {json!([container])}
                     else {json!([target,container])};
+            }
+            if case == "ancestor_clipped_cover" {
+                let target = source["value"]["children"][0].clone();
+                source["value"]["children"] = json!([target,{
+                    "type":"XCUIElementTypeTable","rect":{"x":0,"y":0,"width":430,"height":850},
+                    "children":[{"type":"XCUIElementTypeCell","rect":{"x":0,"y":899,"width":430,"height":709},
+                        "children":[{"type":"XCUIElementTypeCell","label":"Stale preview row",
+                            "rect":{"x":80,"y":180,"width":160,"height":80}}]}]
+                }]);
+            }
+            if case == "flattened_hidden_sibling" {
+                let target = source["value"]["children"][0].clone();
+                source["value"]["children"] = json!([
+                    {"type":"XCUIElementTypeOther","label":"Offscreen sibling", "isVisible":false,
+                        "rect":{"x":-298,"y":865,"width":298,"height":30}},
+                    {"type":"XCUIElementTypeOther","children":[{"type":"XCUIElementTypeOther","children":[target]}]}
+                ]);
             }
             if case.contains("tab_proxy") {
                 let root = &mut source["value"];
@@ -506,7 +523,7 @@ fn tab_accessibility_proxies_share_the_native_button_but_not_real_overlays() {
 #[test]
 fn hidden_ancestor_children_neither_cover_controls_nor_receive_contacts() {
     block(async {
-        for case in ["ancestor_hidden_cover", "scoped_ancestor_hidden_cover"] {
+        for case in ["ancestor_hidden_cover", "scoped_ancestor_hidden_cover", "flattened_hidden_sibling", "ancestor_clipped_cover"] {
             let (status, value, writes) = exercise(case).await;
             assert_eq!(status, StatusCode::OK, "{case}: {value}");
             assert_eq!(writes.len(), 1);
