@@ -7353,7 +7353,8 @@ async fn timed_touch_path(
             let related = j == index || (j > index && j < end)
                 || (j < index && subtree_end(&rows, j) > index);
             if related || cover.visible == Some(false)
-                || !OCCLUDER_KINDS.contains(&cover.kind.as_str()) {
+                || !OCCLUDER_KINDS.contains(&cover.kind.as_str())
+                || layout_bar_wraps_target(cover, row) {
                 continue;
             }
             let [cx, cy, cw, ch] = cover.rect;
@@ -8608,6 +8609,23 @@ const OCCLUDER_KINDS: &[&str] = &[
 const BAR_KINDS: &[&str] = &["NavigationBar", "TabBar", "Toolbar"];
 /// Taller than this is a container that happens to be typed as a bar.
 const MAX_BAR_HEIGHT: f64 = 200.0;
+
+/// Some app accessibility trees expose a screen-sized Toolbar as a sibling
+/// of their content (observed in AMap's add-place sheet). It is a layout
+/// wrapper, not a fixed bar. Ignore only oversized bar wrappers enclosing the
+/// entire target; still inspect their children, real bars and other controls.
+fn layout_bar_wraps_target(
+    cover: &crate::runner::ElementRow,
+    target: &crate::runner::ElementRow,
+) -> bool {
+    let [cx, cy, cw, ch] = cover.rect;
+    let [tx, ty, tw, th] = target.rect;
+    BAR_KINDS.contains(&cover.kind.as_str())
+        && ch > MAX_BAR_HEIGHT
+        && cw > 0.0 && tw > 0.0 && th > 0.0
+        && cx <= tx && cy <= ty
+        && cx + cw >= tx + tw && cy + ch >= ty + th
+}
 
 /// `rows[index]` is an item of a bar: it sits under a bar-sized
 /// NavigationBar, TabBar or Toolbar in the tree.

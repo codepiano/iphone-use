@@ -153,6 +153,26 @@ async fn exercise(case: &'static str) -> (StatusCode, Value, Vec<Value>) {
             }
             let read = reads.load(std::sync::atomic::Ordering::SeqCst);
             let mut source: Value = serde_json::from_str(&tree(case.ends_with("covered"))).unwrap();
+            if case.contains("layout_bar") {
+                let mut wrapper = json!({"type":"XCUIElementTypeToolbar","label":"Toolbar",
+                    "rect":{"x":0,"y":0,"width":430,"height":932}});
+                if case.ends_with("child") {
+                    wrapper["children"] = json!([{"type":"XCUIElementTypeButton","label":"Overlay",
+                        "rect":{"x":100,"y":200,"width":120,"height":44}}]);
+                }
+                source["value"]["children"].as_array_mut().unwrap().push(wrapper);
+            }
+            if matches!(case, "large_keyboard" | "large_button" | "fixed_bar" | "partial_layout_bar") {
+                let (kind, x, y, width, height) = match case {
+                    "large_keyboard" => ("Keyboard", 0, 0, 430, 932),
+                    "large_button" => ("Button", 0, 0, 430, 932),
+                    "partial_layout_bar" => ("Toolbar", 130, 0, 300, 932),
+                    _ => ("Toolbar", 0, 200, 430, 44),
+                };
+                source["value"]["children"].as_array_mut().unwrap().push(json!({
+                    "type":format!("XCUIElementType{kind}"), "label":"Cover",
+                    "rect":{"x":x,"y":y,"width":width,"height":height}}));
+            }
             if case.starts_with("scoped_") || case == "strict_dynamic" {
                 let root = &mut source["value"];
                 if case == "scoped_app" && read > 1 { root["label"] = json!("Other"); }
@@ -375,5 +395,24 @@ fn reserving_an_owner_neither_drives_nor_takes_over_or_clears_privacy() {
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert!(state.private_until.lock().unwrap().is_some());
         assert_eq!(*contacts.lock().unwrap(), 0);
+    });
+}
+
+#[test]
+fn layout_bar_wrappers_do_not_occlude_but_real_controls_still_do() {
+    block(async {
+        for case in ["layout_bar", "scoped_layout_bar"] {
+            let (status, value, writes) = exercise(case).await;
+            assert_eq!(status, StatusCode::OK, "{case}: {value}");
+            assert_eq!(writes.len(), 1, "{case}");
+        }
+        for case in ["layout_bar_child", "scoped_layout_bar_child", "large_keyboard",
+            "large_button", "fixed_bar", "partial_layout_bar"] {
+            let (status, value, writes) = exercise(case).await;
+            assert_eq!(status, StatusCode::CONFLICT, "{case}: {value}");
+            assert_eq!(value["error"], "element_occluded", "{case}: {value}");
+            assert_eq!(value["outcome"], "not_sent");
+            assert!(writes.is_empty(), "{case}: {writes:?}");
+        }
     });
 }

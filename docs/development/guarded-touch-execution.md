@@ -276,3 +276,19 @@ captured category frames independently show that the intended ranking/edge-back
 contact regions remained equal while the full snapshots changed. Physical
 acceptance and deployment have separate private receipts; paused historical
 checkpoints are never retroactively resumed by this correction.
+
+## Oversized accessibility bar wrappers (2026-10-30)
+
+AMap's add-place sheet exposes a screen-sized `Toolbar` sibling around otherwise
+visible search results. The timed-contact guard used to treat its whole frame as
+an intercepting control, unlike ordinary tap resolution, and refused the result
+before dispatch. Oversized accessibility bars (height above the existing 200-point
+bar/container threshold) that enclose the complete target are now classified as
+layout wrappers. Their children are still checked individually. Partial wrappers,
+normal fixed bars, keyboards and buttons retain the previous intersection guard;
+no occlusion override, retargeting or retry is added.
+
+A router regression exercises strict and context-bound contacts through the
+wrapper and checks zero Runner writes for a covering child, keyboard, button,
+fixed bar or partially enclosing wrapper. Device acceptance and deployment are
+recorded separately; this change does not rewrite paused task checkpoints.
