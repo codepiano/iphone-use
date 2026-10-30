@@ -153,6 +153,28 @@ async fn exercise(case: &'static str) -> (StatusCode, Value, Vec<Value>) {
             }
             let read = reads.load(std::sync::atomic::Ordering::SeqCst);
             let mut source: Value = serde_json::from_str(&tree(case.ends_with("covered"))).unwrap();
+            if case.contains("tab_proxy") {
+                let root = &mut source["value"];
+                let target = json!({"type":"XCUIElementTypeOther","label":"Target",
+                    "rect":{"x":100,"y":200,"width":120,"height":44}});
+                let button = json!({"type":"XCUIElementTypeButton",
+                    "label":if case.ends_with("different_label") {"Unrelated"} else {""},
+                    "rect":{"x":100,"y":200,"width":120,"height":40}});
+                let mut bar = json!({"type":"XCUIElementTypeTabBar","label":"Tabs",
+                    "rect":{"x":0,"y":190,"width":430,"height":70},"children":[button.clone()]});
+                if case.ends_with("ambiguous") { bar["children"].as_array_mut().unwrap().push(button); }
+                let background = json!({"type":"XCUIElementTypeOther","children":[{
+                    "type":"XCUIElementTypeCell","rect":{"x":0,"y":150,"width":430,"height":650}}]});
+                root["children"] = json!([background,bar,target]);
+                if case.ends_with("overlay") || case.ends_with("foreground_cell") {
+                    root["children"].as_array_mut().unwrap().push(json!({
+                        "type":if case.ends_with("foreground_cell") {"XCUIElementTypeCell"} else {"XCUIElementTypeButton"},
+                        "label":"Real overlay","rect":{"x":100,"y":200,"width":120,"height":44}}));
+                }
+                if case.ends_with("outside_button") {
+                    root["children"][1]["children"][0]["rect"] = json!({"x":110,"y":200,"width":110,"height":40});
+                }
+            }
             if case.contains("background_cell") || case == "foreground_cell" {
                 let root = &mut source["value"];
                 let mut target = root["children"][0].clone();
@@ -250,6 +272,9 @@ async fn exercise(case: &'static str) -> (StatusCode, Value, Vec<Value>) {
             body.as_object_mut().unwrap().remove("element");
         }
         "scoped_unbound" => { body.as_object_mut().unwrap().remove("element"); },
+        "tab_proxy_outside_button" => {
+            body["path"]["samples"][0]["x"] = json!(105);
+        },
         "scoped_bad_token" => body["snapshot"] = json!("not-observed"),
         "scoped_viewport" => body["path"]["viewport"]["width"] = json!(932),
         _ => {}
@@ -441,5 +466,24 @@ fn a_background_list_cell_does_not_cover_a_later_footer_control() {
         assert_eq!(value["error"], "element_occluded");
         assert_eq!(value["outcome"], "not_sent");
         assert!(writes.is_empty());
+    });
+}
+
+#[test]
+fn tab_accessibility_proxies_share_the_native_button_but_not_real_overlays() {
+    block(async {
+        for case in ["tab_proxy", "scoped_tab_proxy"] {
+            let (status, value, writes) = exercise(case).await;
+            assert_eq!(status, StatusCode::OK, "{case}: {value}");
+            assert_eq!(writes.len(), 1, "{case}");
+        }
+        for case in ["tab_proxy_overlay", "scoped_tab_proxy_overlay", "tab_proxy_foreground_cell",
+            "tab_proxy_different_label", "tab_proxy_ambiguous", "tab_proxy_outside_button"] {
+            let (status, value, writes) = exercise(case).await;
+            assert_eq!(status, StatusCode::CONFLICT, "{case}: {value}");
+            assert_eq!(value["error"], "element_occluded", "{case}: {value}");
+            assert_eq!(value["outcome"], "not_sent");
+            assert!(writes.is_empty(), "{case}: {writes:?}");
+        }
     });
 }

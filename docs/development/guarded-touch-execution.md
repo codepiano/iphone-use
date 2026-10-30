@@ -300,3 +300,20 @@ ancestor/descendant checks still run first. A foreground cell later in the tree,
 real buttons and keyboard overlays retain their refusal behavior. Strict and
 context-bound router cases cover the background-cell layout and a foreground
 cell that must produce zero touch writes.
+
+## Separate tab accessibility proxies (2026-10-31)
+
+Dianping exposes its named bottom tabs as `Other` siblings after a native
+`TabBar` containing unnamed buttons. Earlier scrolling cells, the bar and the
+native button were therefore all treated as covers of the named tab. Timed
+contacts now recognize this representation only when one earlier sibling bar
+fully encloses the proxy and exactly one enabled, visible native button overlaps
+at least 75% of both frames. Its label must be empty or agree with the proxy.
+Every planned contact must also remain inside the native button. Only that
+bar/button and earlier background cells are excluded from occlusion checks;
+foreground cells and unrelated buttons still block delivery.
+
+Router regressions cover strict and context-bound proxy contacts and require
+zero Runner writes for a real button overlay, a foreground cell, mismatched or
+ambiguous buttons, and a contact outside the matched native button. Historical
+paused checkpoints remain unchanged; device acceptance is recorded separately.

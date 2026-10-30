@@ -7349,13 +7349,20 @@ async fn timed_touch_path(
                 "Every contact sample must stay inside the current target; nothing was sent"));
         }
         let end = subtree_end(&rows, index);
+        let tab_proxy = semantic_tab_proxy(&rows, index).filter(|(_, button)| {
+            let [bx, by, bw, bh] = rows[*button].rect;
+            path.samples.iter().all(|p| p.x >= bx && p.y >= by
+                && p.x <= bx + bw - 1.0 && p.y <= by + bh - 1.0)
+        });
         for (j, cover) in rows.iter().enumerate() {
             let related = j == index || (j > index && j < end)
                 || (j < index && subtree_end(&rows, j) > index);
             if related || cover.visible == Some(false)
                 || !OCCLUDER_KINDS.contains(&cover.kind.as_str())
                 || layout_bar_wraps_target(cover, row)
-                || background_cell_behind_control(&rows, index, j) {
+                || background_cell_behind_control(&rows, index, j)
+                || tab_proxy.is_some_and(|(bar, button)| j == bar || j == button
+                    || (cover.kind == "Cell" && j < bar)) {
                 continue;
             }
             let [cx, cy, cw, ch] = cover.rect;
@@ -8666,6 +8673,43 @@ fn background_cell_behind_control(
         && j < index
         && rows[j].depth > rows[index].depth
         && larger_sibling(rows, index, j)
+}
+
+/// Some tab bars expose unnamed native buttons, followed by separate labelled
+/// accessibility proxies (Dianping). Match only one overlapping button in an
+/// earlier sibling TabBar. The caller additionally requires every contact to
+/// stay in that button; real overlays and later cells are still checked.
+fn semantic_tab_proxy(rows: &[crate::runner::ElementRow], index: usize) -> Option<(usize, usize)> {
+    let target = rows.get(index)?;
+    if target.kind != "Other" || target.label.is_empty() || target.visible == Some(false) {
+        return None;
+    }
+    let parent = parent_index(rows, index)?;
+    let [tx, ty, tw, th] = target.rect;
+    if tw <= 0.0 || th <= 0.0 { return None; }
+    let mut matches = Vec::new();
+    for (bar, row) in rows[..index].iter().enumerate() {
+        let [x, y, w, h] = row.rect;
+        if row.kind != "TabBar" || row.visible == Some(false) || h <= 0.0 || h > MAX_BAR_HEIGHT
+            || parent_index(rows, bar) != Some(parent)
+            || x > tx || y > ty || x + w < tx + tw || y + h < ty + th {
+            continue;
+        }
+        for button in bar + 1..subtree_end(rows, bar) {
+            let candidate = &rows[button];
+            let [bx, by, bw, bh] = candidate.rect;
+            if candidate.kind != "Button" || candidate.visible == Some(false)
+                || candidate.enabled == Some(false)
+                || (!candidate.label.is_empty() && candidate.label != target.label)
+                || bw <= 0.0 || bh <= 0.0 { continue; }
+            let overlap = ((tx + tw).min(bx + bw) - tx.max(bx)).max(0.0)
+                * ((ty + th).min(by + bh) - ty.max(by)).max(0.0);
+            if overlap >= 0.75 * tw * th && overlap >= 0.75 * bw * bh {
+                matches.push((bar, button));
+            }
+        }
+    }
+    match matches.as_slice() { [only] => Some(*only), _ => None }
 }
 
 /// The nearest row above `rows[index]` in the tree.
