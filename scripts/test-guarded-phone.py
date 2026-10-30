@@ -133,6 +133,92 @@ class GuardTests(unittest.TestCase):
             self.step(before="Wrong page")
         self.assertFalse(self.phone.posts)
 
+    def test_live_countdown_does_not_block_page_or_item_verification(self):
+        original = self.phone.request
+        def request(method, path, body=None, **kwargs):
+            result = original(method, path, body, **kwargs)
+            if path == "/agent/elements":
+                result["snapshot"] = str(self.phone.reads)
+                result["elements"].append({"kind": "StaticText", "label":
+                    f"Countdown {self.phone.reads}", "rect": [10, 500, 80, 20]})
+            return result
+        self.phone.request = request
+        self.step()
+        self.session.finish_item("one", verified=gp.Expectation(("Done",)))
+        self.assertEqual(len(self.phone.posts), 1)
+        self.assertEqual(self.journal()["phase"], "ready")
+        self.assertEqual(len(self.journal()["completed"]), 1)
+        self.assertEqual(self.phone.reads, 6)  # fresh pre, post and item reads
+
+    def test_moving_tap_target_never_dispatches_despite_stable_page_anchor(self):
+        self.phone.current["elements"].append({"kind": "Button", "label": "Target",
+                                               "rect": [10, 300, 100, 40]})
+        original = self.phone.request
+        def request(method, path, body=None, **kwargs):
+            result = original(method, path, body, **kwargs)
+            if path == "/agent/elements":
+                result["elements"][-1]["rect"][0] += self.phone.reads
+            return result
+        self.phone.request = request
+        with self.assertRaises(gp.Paused):
+            self.session.step("one", {"kind": "tap", "locator": {"label": "Target"}},
+                step_id="tap", before=gp.Expectation(("Ready",)), after=gp.Expectation(("Done",)))
+        self.assertFalse(self.phone.posts)
+        self.assertEqual(self.journal()["reason"], "postcondition_timeout")
+
+    def test_moving_anchor_or_changing_viewport_cannot_confirm_page(self):
+        for variant in ("anchor", "viewport"):
+            original = Phone().request
+            counter = [0]
+            def request(method, path, body=None, **kwargs):
+                result = original(method, path, body, **kwargs)
+                if path == "/agent/elements":
+                    counter[0] += 1
+                    if variant == "anchor":
+                        result["elements"][1]["rect"][0] += counter[0]
+                    else:
+                        result["screen"]["width"] += counter[0]
+                return result
+            self.phone.request = request
+            with tempfile.TemporaryDirectory() as tmp:
+                session = gp.GuardedPhone(self.phone, tmp, "Fixture", self.policy,
+                    clock=self.clock.time, sleep=self.clock.sleep, monotonic=self.clock.time)
+                with self.assertRaises(gp.Paused), session._locked():
+                    session._wait(gp.Expectation(("Ready",)))
+
+    def test_disappearing_anchor_resets_the_consecutive_read_requirement(self):
+        self.session.pacing = gp.Pacing(observe_timeout_s=6)
+        original = self.phone.request
+        def request(method, path, body=None, **kwargs):
+            result = original(method, path, body, **kwargs)
+            if path == "/agent/elements" and self.phone.reads == 2:
+                result["elements"][1]["label"] = "Loading"
+            return result
+        self.phone.request = request
+        with self.session._locked():
+            self.session._wait(gp.Expectation(("Ready",)))
+        self.assertEqual(self.phone.reads, 4)
+        self.assertFalse(self.phone.posts)
+
+    def test_live_content_does_not_hide_a_later_challenge(self):
+        original = self.phone.request
+        def request(method, path, body=None, **kwargs):
+            result = original(method, path, body, **kwargs)
+            if path == "/agent/elements" and self.phone.reads == 2:
+                result["elements"].append({"kind": "StaticText", "label": "请完成安全验证"})
+            return result
+        self.phone.request = request
+        with self.assertRaises(gp.Paused):
+            self.step()
+        self.assertEqual(self.journal()["reason"], "verification_or_rate_limit_visible")
+        self.assertFalse(self.phone.posts)
+
+    def test_absent_condition_is_not_ignored_on_an_otherwise_stable_page(self):
+        self.phone.current["elements"].append({"kind": "StaticText", "label": "Wrong page"})
+        with self.assertRaises(gp.Paused), self.session._locked():
+            self.session._wait(gp.Expectation(("Ready",), ("Wrong page",)))
+        self.assertFalse(self.phone.posts)
+
     def test_late_matching_read_does_not_escape_observation_deadline(self):
         original = self.phone.request
         def request(method, path, body=None, **kwargs):

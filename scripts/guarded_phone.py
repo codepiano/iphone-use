@@ -267,7 +267,32 @@ class GuardedPhone:
                 self._stop("empty_result_requires_review")
         return screen
 
-    def _wait(self, expectation):
+    @staticmethod
+    def _observation_key(screen, expectation, request):
+        # A countdown or carousel elsewhere must not prevent a stable page
+        # check. Keep the anchors' actual geometry/state, and the intended
+        # tap target or text focus, stable across two independent fresh reads.
+        # The latest full snapshot still binds the eventual daemon dispatch.
+        keys = ("kind", "label", "value", "identifier", "rect", "visible",
+                "enabled", "selected", "focused")
+        def signature(rows):
+            return sorted(json.dumps({k: row[k] for k in keys if k in row},
+                                     sort_keys=True, allow_nan=False) for row in rows)
+        rows = [row for row in screen["elements"] if row.get("visible") is not False]
+        anchors = [row for row in rows if any(str(row.get(k, "")) in expectation.present
+                                             for k in ("label", "value"))]
+        targets = []
+        if request and request.get("kind") == "tap":
+            locator = request.get("locator")
+            if isinstance(locator, dict) and locator:
+                targets = [row for row in screen["elements"]
+                           if all(row.get(k) == v for k, v in locator.items())]
+        elif request and request.get("kind") == "text":
+            targets = [row for row in rows if row.get("focused") is True]
+        return (json.dumps(screen["screen"], sort_keys=True, allow_nan=False),
+                signature(anchors), signature(targets))
+
+    def _wait(self, expectation, request=None):
         if not isinstance(expectation, Expectation):
             raise ValueError("explicit Expectation required")
         deadline, previous = self.monotonic() + self.pacing.observe_timeout_s, None
@@ -279,11 +304,12 @@ class GuardedPhone:
             if self.monotonic() > deadline:
                 self._stop("postcondition_timeout")
             matched = expectation.matches(screen)
-            # Two fresh matching, unchanged observations; elapsed sleep by itself
-            # never proves the page loaded or that the business write succeeded.
-            if matched and screen["snapshot"] == previous:
+            # Unrelated live text can change; relevant page anchors and the
+            # intended target must agree. Each read still checks all blockers.
+            current = self._observation_key(screen, expectation, request) if matched else None
+            if matched and current == previous:
                 return screen
-            previous = screen["snapshot"] if matched else None
+            previous = current
             if self.monotonic() + self.pacing.poll_s > deadline:
                 self._stop("postcondition_timeout")
             self.sleep(self.pacing.poll_s)
@@ -321,7 +347,7 @@ class GuardedPhone:
                 status = self.phone.request("GET", "/agent/status")
                 if status.get("drivable") is not True:
                     self._stop("phone_not_drivable")
-                screen = self._wait(before)
+                screen = self._wait(before, request)
                 seed = None
                 if request.get("kind") in ("tap", "drag", "scroll", "flick"):
                     action, seed = plan_touch(request, screen, self.entropy(32))

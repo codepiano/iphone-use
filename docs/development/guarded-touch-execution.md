@@ -113,8 +113,11 @@ entered text or credentials. Its write is fsynced **before** sending input.
 For every action the controller:
 
 1. Waits for its persisted cadence deadline and confirms drivable status.
-2. Requires two fresh, unchanged screen observations matching explicit
-   preconditions. Empty/partial screens, changed app and system alerts stop it.
+2. Requires two fresh observations with matching explicit page anchors and
+   unchanged anchor geometry/state, viewport and intended tap target or text
+   focus. Unrelated countdowns/carousels can change. The latest full snapshot
+   still binds dispatch; stale snapshots and occlusion remain hard refusals.
+   Empty/partial screens, changed app and system alerts stop it.
 3. Sends one action, then requires two matching observations of its explicit
    postcondition. An unsettled response alone never causes the action to repeat.
 4. Requires an independent business postcondition at `finish_item` before a new
@@ -213,3 +216,25 @@ Raw screenshots, tokens, device identifiers, timing audits and checkpoints stay
 in private local storage outside this repository. The person authorized formal
 integration replacement only after this pilot succeeded; installation and host
 tool loading still require their own delivery verification.
+
+## Live-page waiting correction (2026-10-30)
+
+Formal installation of the verified native build exposed two acceptance issues.
+A planned bottom-tab contact was rejected as `element_occluded`; daemon task
+metrics and the pre-dispatch guard identify a refusal, with zero unknown
+outcomes. That checkpoint remains paused. A separate food-category navigation
+then applied, but its guessed `筛选` postcondition was not exposed under that
+label: the accessibility tree reported `FilterButtonTitle`. The page was
+inspected, and the applied contact was not repeated.
+
+Two read-only observations also showed the same category anchors while a coupon
+countdown changed once per second, changing the full snapshot every time.
+Requiring whole-screen equality would indefinitely reject this otherwise stable
+page even with correct anchors. Plugin `0.27.7-guarded.2` instead compares the
+explicit anchors' geometry/state, viewport and the pre-action target/focus across
+two fresh reads. It still inspects every read for blockers and retains full
+snapshot/target binding at dispatch. It does not add a retry, unpause or occlusion
+override. Six device-free regressions cover changing countdowns, moving targets
+and anchors, viewport changes, disappearing anchors, later challenges and absent
+conditions. Previously paused records remain paused; this correction does not
+retroactively verify their results.
