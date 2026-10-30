@@ -326,3 +326,10 @@ scroll container hide their stale descendants. Retained-row depths alone
 cannot reconstruct ancestry: an unrelated hidden sibling can precede a deeper
 visible target. Zero-area geometry-only wrappers do not hide their children.
 Visible foreground controls continue to block contacts.
+
+### Blank footers behind floating buttons (2026-10-31)
+
+An earlier unlabeled Cell fully enclosing a later named Button, at least twice
+its area, is a background footer or list layout container.
+Named, partial, later cells and interactive descendants still block contact.
+This handles a fixed Add button over list footer spacing without an override.

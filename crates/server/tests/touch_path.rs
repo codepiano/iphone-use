@@ -153,6 +153,19 @@ async fn exercise(case: &'static str) -> (StatusCode, Value, Vec<Value>) {
             }
             let read = reads.load(std::sync::atomic::Ordering::SeqCst);
             let mut source: Value = serde_json::from_str(&tree(case.ends_with("covered"))).unwrap();
+            if case.contains("footer_cell") {
+                let target = source["value"]["children"][0].clone();
+                let mut cell = json!({"type":"XCUIElementTypeCell",
+                    "label":if case.ends_with("named") {"Interactive row"} else {""},
+                    "rect":{"x":0,"y":190,"width":430,"height":100}});
+                if case.ends_with("partial") { cell["rect"]["x"] = json!(130); }
+                if case.ends_with("child") { cell["children"] = json!([{
+                    "type":"XCUIElementTypeButton","label":"Foreground child",
+                    "rect":{"x":100,"y":200,"width":120,"height":44}}]); }
+                source["value"]["children"] = if case.ends_with("later") {json!([target,cell])}
+                    else if case.ends_with("nested") {json!([cell,{"type":"XCUIElementTypeOther","children":[target]}])}
+                    else {json!([cell,target])};
+            }
             if case.contains("ancestor_") {
                 let root = &mut source["value"];
                 let target = root["children"][0].clone();
@@ -533,6 +546,24 @@ fn hidden_ancestor_children_neither_cover_controls_nor_receive_contacts() {
             assert_eq!(status, StatusCode::CONFLICT, "{case}: {value}");
             assert_eq!(value["error"], if case.ends_with("target") {"element_not_interactable"} else {"element_occluded"});
             assert_eq!(value["outcome"], "not_sent");
+            assert!(writes.is_empty());
+        }
+    });
+}
+
+#[test]
+fn blank_earlier_footers_are_behind_named_floating_buttons() {
+    block(async {
+        for case in ["footer_cell", "scoped_footer_cell", "footer_cell_nested"] {
+            let (status,value,writes)=exercise(case).await;
+            assert_eq!(status,StatusCode::OK,"{case}: {value}");
+            assert_eq!(writes.len(),1);
+        }
+        for case in ["footer_cell_later","footer_cell_named","footer_cell_partial","footer_cell_child"] {
+            let (status,value,writes)=exercise(case).await;
+            assert_eq!(status,StatusCode::CONFLICT,"{case}: {value}");
+            assert_eq!(value["error"],"element_occluded");
+            assert_eq!(value["outcome"],"not_sent");
             assert!(writes.is_empty());
         }
     });

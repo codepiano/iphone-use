@@ -8668,6 +8668,19 @@ fn can_cover(rows: &[crate::runner::ElementRow], index: usize, j: usize) -> bool
 fn background_cell_behind_control(
     rows: &[crate::runner::ElementRow], index: usize, j: usize,
 ) -> bool {
+    let (target, cell) = (&rows[index], &rows[j]);
+    let [tx, ty, tw, th] = target.rect;
+    let [cx, cy, cw, ch] = cell.rect;
+    // Native floating buttons can follow a blank list footer, separated by
+    // omitted containers. Do not infer parentage from retained row depths.
+    // Only an earlier, unlabeled cell fully enclosing the named button is
+    // background. Its interactive descendants remain separate blockers.
+    if target.kind == "Button" && !target.label.is_empty() && cell.kind == "Cell"
+        && cell.label.is_empty() && j < index
+        && cw * ch > 2.0 * tw * th
+        && cx <= tx && cy <= ty && cx + cw >= tx + tw && cy + ch >= ty + th {
+        return true;
+    }
     rows[index].kind == "Other"
         && rows[j].kind == "Cell"
         && j < index
